@@ -1,0 +1,1 @@
+This repository includes code to generate a spatial index of services for Delhi, based on publicly available data. Although the data is not provided in this repository, the scripts and Notebooks used to generate the spatial index are available
