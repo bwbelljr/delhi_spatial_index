@@ -310,7 +310,7 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
                     centroid_colname='centroid',
                     neighbor_colname = "polygon_neighbors",
                     neighbor_id_col='USO_AREA_U'):
-    """Add column with distances to neighbors
+    """Add column with distances to neighbors (in kilometers)
 
     Calculate distances between centroids of polygons and centroids of their
     neighbors and add this as additional column to polygon_gdf
@@ -352,6 +352,9 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
             # .array[0] to extract the Shapely Point object
             neighbor_centroid = neighbor_row[centroid_colname].array[0]
             neighbor_distance = row_centroid.distance(neighbor_centroid)
+
+            # Convert neighbor_distance unit to kilometers
+            neighbor_distance = neighbor_distance/1000
 
             gdf_copy.loc[idx, nbr_dist_colname].append((neighbor_id, \
                                                 neighbor_distance))
