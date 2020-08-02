@@ -55,6 +55,57 @@ def gdf_has_duplicate_rows(gdf):
     # Return True if there are any duplicate rows
     return number_duplicate_rows > 0
 
+
+def remove_duplicate_geom(gdf, geom_colname='geometry'):
+    """Removes rows with duplicates geometries
+
+    Checks if any rows have duplicate geometries and removes
+    them. This is based on Shapely's `object.equals(other)` method
+    to compare two geometries. Note that this function currently
+    runs in O(n^2) time.
+
+    Args:
+        gdf: GeoDataFrame with Shapely objects (e.g., Point,
+            Line, or Polygon)
+        geom_colname: Name of geometry column. Default is
+            'geometry'.
+
+    Returns:
+        GeoDataFrame with all rows removed having duplicate
+        geometries. Note that this returns a GeoDataFrame
+        with a new index (instead of preserving the old index).
+    """
+
+    # Initialize new column `not_duplicate`
+    # Assumes that every row is not a duplicate
+    gdf['not_duplicate'] = True
+
+    for idx, row in gdf.iterrows():
+        row_geom = row[geom_colname]
+
+        # Iterate over rows again starting at idx+1 index
+        # https://stackoverflow.com/questions/38596056/how-to-change-the-starting-index-of-iterrows
+        for idx2, row2 in islice(gdf.iterrows(), idx+1, None):
+            other_geom = row2[geom_colname]
+
+            if row_geom.equals(other_geom):
+
+                # Keeps first occurrence but removes the subsequent ones
+                gdf.loc[idx2, 'not_duplicate'] = False
+
+    # Only select rows that are not duplicate
+    # In other words, the 'not_duplicate' value is True
+    gdf = gdf[gdf['not_duplicate']]
+
+    # Remove 'not_duplicate' column
+    gdf = gdf.drop(columns=['not_duplicate'])
+
+    # Reset index
+    gdf = gdf.reset_index()
+
+    return gdf
+
+
 def plot_polygons_and_points(polygon1=None, polygon2=None, points=None):
     """Plots up to two polygon layers and an additional point layer
 
