@@ -105,6 +105,36 @@ def remove_duplicate_geom(gdf, geom_colname='geometry'):
 
     return gdf
 
+def check_geometries(gdf, geom_type):
+    """ Returns True if all geometries are of geom_type
+
+    Args:
+        gdf: GeoDataFrame with any type of geometry (Point, Line, Polygon)
+        geom_type: string with either "Point", "Line", or "Polygon"
+
+    Returns:
+        Boolean where True means all geometries are of the type specified.
+        For this function, Polygon and MultiPolygon are considered valid
+        geometries for geom_type='Polygon'
+    """
+
+    assert geom_type in ["Point", "Line", "Polygon"], "Input valid geom_type"
+
+    # Create new column with type of each row geometry
+    gdf['geom_type'] = type(gdf['geometry'])
+
+    # Find unique values of geometry types
+    geom_type_list = gdf.geom_type.unique()
+
+    # Check if each type is of geom_type
+    geom_is_geom_type = [geom_type in geom for geom in geom_type_list]
+
+    # If at least one geometry is not of geom_type, return False
+    # Otherwise, return True
+    if False in geom_is_geom_type:
+        return False
+    else:
+        return True
 
 def plot_polygons_and_points(polygon1=None, polygon2=None, points=None):
     """Plots up to two polygon layers and an additional point layer
