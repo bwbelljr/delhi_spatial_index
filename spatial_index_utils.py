@@ -34,6 +34,27 @@ def reproject_gdf(gdf, epsg_code):
 
     return reprojected_gdf
 
+def gdf_has_duplicate_rows(gdf):
+    """Returns True if gdf GeoDataFrame has duplicate rows
+
+    Args:
+        gdf: GeoDataFrame
+
+    Returns:
+        Boolean value returned based on whether gdf has duplicate
+        rows (True) or not (False)
+
+    """
+
+    # Create mask for all duplicate rows
+    gdf_duplicate_mask = gdf.duplicated()
+
+    # Calculate # duplicate rows
+    number_duplicate_rows = len(gdf[gdf_duplicate_mask])
+
+    # Return True if there are any duplicate rows
+    return number_duplicate_rows > 0
+
 def plot_polygons_and_points(polygon1=None, polygon2=None, points=None):
     """Plots up to two polygon layers and an additional point layer
 
