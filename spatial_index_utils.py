@@ -266,7 +266,8 @@ def add_polygon_neighbors_column_refugee(polygon_gdf,
 
 def add_polygon_neighbors_column(polygon_gdf,
                                  neighbor_colname = "polygon_neighbors",
-                                 neighbor_id_col='USO_AREA_U'):
+                                 neighbor_id_col='USO_AREA_U',
+                                 barrier_colname='barrier'):
     """In polygon GeoDataframe, add column with indices of neighboring polygons
 
     Finds all the neighboring polygons in a polygon GeoDataFrame by identifying
@@ -280,7 +281,8 @@ def add_polygon_neighbors_column(polygon_gdf,
             of neighboring polygons. By default, set to 'polygon_neighbors'
         neighbor_id_col: name of the column used as the identifier (or unique
             key) for neighboring polygons. By default, set to 'USO_AREA_U'
-
+        barrier_colname: name of column that indicates if polygon intersects
+            a barrier
     Returns:
         polygon_with_neighbors_gdf: geopandas GeoDataFrame having an additional
         column with list of indices of neighboring polygons
@@ -317,10 +319,12 @@ def add_polygon_neighbors_column(polygon_gdf,
                poly.overlaps(row2['geometry']) or \
                poly.crosses(row2['geometry']):
 
-                # Append index of neighbors to the 2 rows
-                polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
+               # Append index of neighbors to the 2 rows
+               if not row2['barrier']:
+                   polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
                                             append(row2[neighbor_id_col])
-                polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
+               if not row['barrier']:
+                   polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
                                             append(row[neighbor_id_col])
 
     return polygon_with_neighbors_gdf
