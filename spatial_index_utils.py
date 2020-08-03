@@ -136,6 +136,40 @@ def check_geometries(gdf, geom_type):
     else:
         return True
 
+def barrier_intersection(colonies_gdf, barrier_gdf, barrier_colname,
+    id_colname="USO_AREA_U"):
+    """ Add new column indicating intersection with barrier
+
+    Args:
+        colonies_gdf: GeoDataFrame with colonies shapefile
+        barrier_gdf: GeoDataFrame with barrier (e.g., canal, railway, drain)
+        barrier_colname: string, e.g., "canal", "railway", or "drain"
+        id_colname: unique ID for colonies_gdf. Default is "USO_AREA_U"
+
+    Returns:
+        GeoDataFrame having column (barrier_colname) with boolean value
+        indicating whether the Shapefile intersects barrier or now
+    """
+    # Assume all colonies do not intersect barrier
+    colonies_gdf[barrier_colname] = False
+
+    # Spatial (inner) join
+    joined_colonies_barrier = gpd.sjoin(colonies_gdf, barrier_gdf, how='inner')
+
+    # List of colonies (by unique id) that intersect barrier
+    colony_ids_with_intersection = list(joined_colonies_barrier[id_colname].\
+                                    unique())
+
+    for colony_id in colony_ids_with_intersection:
+        # Extract index number of row with colony_id
+        colony_index = colonies_gdf[colonies_gdf[id_colname] == colony_id].\
+                        index.values[0]
+
+        # Add True for intersecting colonies
+        colonies_gdf.loc[colony_index, barrier_colname] = True
+
+    return colonies_gdf
+
 def plot_polygons_and_points(polygon1=None, polygon2=None, points=None):
     """Plots up to two polygon layers and an additional point layer
 
