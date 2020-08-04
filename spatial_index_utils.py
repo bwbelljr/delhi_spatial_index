@@ -446,6 +446,84 @@ def add_point_count_column(polygon_gdf, point_gdf, count_colname,
 
     return polygon_gdf_with_point_counts
 
+def calc_colony_road_length(small_gdf, poly_geom_colname, line_geom_colname):
+    """Calculate length of all PWD roads in a colony
+
+    Args:
+        small_gdf: GeoDataFrame, which is a derived from a groupby
+            object based on 'USO_AREA_U'
+        poly_geom_colname: name of geometry column for colonies
+        line_geom_colname: name of geometry column for roads
+
+    Returns:
+        Road length (meters) as a float.
+    """
+
+    total_road_length = 0
+
+    for i, row in small_gdf.iterrows():
+        polygon = row[poly_geom_colname]
+        line = row[line_geom_colname]
+        intersection = polygon.intersection(line)
+        road_length = intersection.length
+        total_road_length += road_length
+
+    return total_road_length
+
+def add_service_length_column(polygon_gdf, line_gdf, length_colname,
+    id_colname='USO_AREA_U'):
+    """Add distance of (poly)line services for each polygon in polygon_gdf
+
+    Calculates distance of (poly)line service within each polygon (e.g., roads).
+    The function first does a spatial join between polygon_gdf and line_gdf,
+    keeping both geometries. This joined GeoDataFrame is grouped by id_colname.
+    Within each group, the length of the intersection of each (poly)line with
+    the polygon is added up. This aggregate length is added to polygon_gdf as
+    length_colname.
+
+    Args:
+        polygon_gdf: GeoDataFrame with polygon geometries. Assumes that its
+            geometry column is named 'geometry'.
+        line_gdf: GeoDataFrame with (poly)line geometries.  Assumes that its
+            geometry column is named 'geometry'.
+        length_colname: name of new column that will have distance of service
+            (poly)line(s) in polygon
+        id_colname: unique key that identifies colonies. Default id column
+            name is 'USO_AREA_U'
+
+    Returns:
+        A GeoDataFrame has polygon_gdf with an additional column
+        (length_colname) with distance of service (poly)line(s) in each polygon.
+    """
+
+    polygon_gdf[length_colname] = 0
+
+    # Spatial join removes geometry column from one GeoDataFrame
+    # Copy geometry so that it can be used after the spatial join
+    line_geom_colname = 'line_geometry'
+    line_gdf[line_geom_colname] = line_gdf['geometry']
+
+    # Inner spatial join
+    joined = gpd.sjoin(polygon_gdf, line_gdf)
+
+    # Create groupby object based on id_colname
+    joined_grouped= joined.groupby(id_colname)
+
+    for name, group in joined_grouped:
+        # Compute index of id. Will be used to locate
+        # and modify rows of polygon_gdf
+        name_index = polygon_gdf[polygon_gdf[id_colname] == name].index.\
+                                                                values[0]
+
+        total_road_length = calc_colony_road_length(small_gdf=group,
+                                            poly_geom_colname="geometry",
+                                            line_geom_colname=line_geom_colname)
+
+        polygon_gdf.loc[name_index, length_colname] = total_road_length
+
+    return polygon_gdf
+
+
 def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
                     centroid_colname='centroid',
                     neighbor_colname = "polygon_neighbors",
