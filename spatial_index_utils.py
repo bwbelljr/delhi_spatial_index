@@ -446,29 +446,29 @@ def add_point_count_column(polygon_gdf, point_gdf, count_colname,
 
     return polygon_gdf_with_point_counts
 
-def calc_colony_road_length(small_gdf, poly_geom_colname, line_geom_colname):
-    """Calculate length of all PWD roads in a colony
-
+def calc_service_length(small_gdf, poly_geom_colname, line_geom_colname):
+    """Calculate length of all (poly)line services in a colony
     Args:
+
         small_gdf: GeoDataFrame, which is a derived from a groupby
             object based on 'USO_AREA_U'
         poly_geom_colname: name of geometry column for colonies
-        line_geom_colname: name of geometry column for roads
+        line_geom_colname: name of geometry column for (poly)line services
 
     Returns:
-        Road length (meters) as a float.
+        Length (meters) as a float.
     """
 
-    total_road_length = 0
+    total_length = 0
 
     for i, row in small_gdf.iterrows():
         polygon = row[poly_geom_colname]
         line = row[line_geom_colname]
         intersection = polygon.intersection(line)
-        road_length = intersection.length
-        total_road_length += road_length
+        length = intersection.length
+        total_length += length
 
-    return total_road_length
+    return total_length
 
 def add_service_length_column(polygon_gdf, line_gdf, length_colname,
     id_colname='USO_AREA_U'):
@@ -515,7 +515,7 @@ def add_service_length_column(polygon_gdf, line_gdf, length_colname,
         name_index = polygon_gdf[polygon_gdf[id_colname] == name].index.\
                                                                 values[0]
 
-        total_road_length = calc_colony_road_length(small_gdf=group,
+        total_road_length = calc_service_length(small_gdf=group,
                                             poly_geom_colname="geometry",
                                             line_geom_colname=line_geom_colname)
 
