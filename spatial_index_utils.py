@@ -61,6 +61,50 @@ def gdf_has_duplicate_rows(gdf):
     # Return True if there are any duplicate rows
     return number_duplicate_rows > 0
 
+def check_shapefile(gdf, gdf_name, geom_type):
+    """Prints information on validity of shapefile
+
+    Checks if shapefile has duplicate rows,
+
+    Args:
+        gdf: GeoDataFrame with geometry column named
+            as 'geometry'
+        geom_type: string, representing one of 3
+            Shapely objects. Possible values are
+            Point, Line, and Polygon
+
+    Returns:
+        n/a. Just prints statements
+    """
+    assert geom_type in ['Point', 'Line', 'Polygon'], 'invalid geom_type'
+    assert isinstance(gdf_name, str), 'gdf_name is not a string'
+    assert 'geometry' in gdf.columns, 'there is no "geometry" column'
+
+    separator = '----------------------------------------------------'
+
+    # Check for duplicate rows
+    print(gdf_name, 'has duplicate rows:', gdf_has_duplicate_rows(gdf))
+
+    # Print rows with invalid geometries
+    print(separator)
+    print('rows with invalid geometries \n')
+    print_invalid_rows(gdf)
+    print(separator)
+
+    # Check that all geometries are geom_type
+    all_geom_type = check_geometries(gdf, geom_type)
+    print('all geometries in {} are of type {}: {}'.format(gdf_name,
+                                                    geom_type, all_geom_type))
+    print(separator)
+
+    # Print all rows where geometry=None
+    rows_with_none_geom = gdf[gdf['geometry'] == None]
+    print('Rows with None value in geometry column are below')
+    print(rows_with_none_geom)
+    print(separator)
+
+    print('Done with shapefile evaluation')
+
 
 def remove_duplicate_geom(gdf, geom_colname='geometry'):
     """Removes rows with duplicates geometries
