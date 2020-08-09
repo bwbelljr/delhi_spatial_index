@@ -162,7 +162,7 @@ def remove_duplicate_geom(gdf, geom_colname='geometry'):
     new_size = len(gdf)
 
     print('Original number of rows is {}:'.format(old_size))
-    print('New number of rows after deduplication is {}:'.format(new_size))
+    print('New number of rows after deduplication is: {}'.format(new_size))
 
     return gdf
 
