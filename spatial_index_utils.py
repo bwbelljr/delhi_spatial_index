@@ -128,6 +128,9 @@ def remove_duplicate_geom(gdf, geom_colname='geometry'):
         with a new index (instead of preserving the old index).
     """
 
+    # Original size of gdf
+    old_size = len(gdf)
+
     # Initialize new column `not_duplicate`
     # Assumes that every row is not a duplicate
     gdf['not_duplicate'] = True
@@ -154,6 +157,12 @@ def remove_duplicate_geom(gdf, geom_colname='geometry'):
 
     # Reset index
     gdf = gdf.reset_index()
+
+    # Original size of gdf
+    new_size = len(gdf)
+
+    print('Original number of rows is {}:'.format(old_size))
+    print('New number of rows after deduplication is {}:'.format(new_size))
 
     return gdf
 
