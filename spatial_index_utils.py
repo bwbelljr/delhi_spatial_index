@@ -34,6 +34,12 @@ def reproject_gdf(gdf, epsg_code):
 
     return reprojected_gdf
 
+def print_invalid_rows(gdf):
+    """Print rows with invalid geometries"""
+    for i, row in gdf.iterrows():
+        if not row['geometry'].is_valid:
+            print('not valid index', i, '\n', row)
+
 def gdf_has_duplicate_rows(gdf):
     """Returns True if gdf GeoDataFrame has duplicate rows
 
