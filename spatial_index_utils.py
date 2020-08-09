@@ -64,7 +64,9 @@ def gdf_has_duplicate_rows(gdf):
 def check_shapefile(gdf, gdf_name, geom_type):
     """Prints information on validity of shapefile
 
-    Checks if shapefile has duplicate rows,
+    Checks if shapefile has duplicate rows, rows with invalid
+    geometries, rows with None in geometry field and whether
+    all geometries are of geom_type.
 
     Args:
         gdf: GeoDataFrame with geometry column named
