@@ -61,19 +61,53 @@ def gdf_has_duplicate_rows(gdf):
     # Return True if there are any duplicate rows
     return number_duplicate_rows > 0
 
-def check_shapefile(gdf, gdf_name, geom_type):
+def gdf_within_delhi(gdf, delhi_bounds_filepath):
+    """Return True if gdf is in Delhi
+
+    Args:
+        gdf: GeoDataFrame
+        delhi_bounds_filepath: file path for shapefile
+            with Delhi's bounding box
+
+    Returns:
+        True if geometries are within bounds of Delhi
+    """
+
+    delhi_bounds = gpd.read_file(delhi_bounds_filepath)
+
+    # reproject gdf to same CRS as delhi_bounds
+    gdf = gdf.to_crs(delhi_bounds.crs)
+
+    gdf_bounds = box(gdf.total_bounds[0], gdf.total_bounds[1],
+                     gdf.total_bounds[2], gdf.total_bounds[3])
+
+    # Shapely predicate 'contains' shows if bounding
+    # box of shapefile is contained with Delhi's
+    # bounding box
+    delhi_contains_gdf  = delhi_bounds.contains(gdf_bounds)
+
+    # Extract first element of Series
+    # There is only one element since gdf_bounds
+    # is a single geometry
+    return delhi_contains_gdf[0]
+
+def check_shapefile(gdf, gdf_name, geom_type, delhi_bounds_filepath):
     """Prints information on validity of shapefile
 
     Checks if shapefile has duplicate rows, rows with invalid
-    geometries, rows with None in geometry field and whether
-    all geometries are of geom_type.
+    geometries, rows with None in geometry field, whether
+    all geometries are of geom_type, and whether shapefile's extent
+    is fully contained within Delhi.
 
     Args:
         gdf: GeoDataFrame with geometry column named
             as 'geometry'
+        gdf_name: name of gdf (e.g., colonies, schools)
         geom_type: string, representing one of 3
             Shapely objects. Possible values are
             Point, Line, and Polygon
+        delhi_bounds_filepath: file path for shapefile
+            with Delhi's bounding box
 
     Returns:
         n/a. Just prints statements
@@ -103,6 +137,12 @@ def check_shapefile(gdf, gdf_name, geom_type):
     rows_with_none_geom = gdf[gdf['geometry'] == None]
     print('Rows with None value in geometry column are below')
     print(rows_with_none_geom)
+    print(separator)
+
+    # Check that shapefile lies within Delhi
+    in_delhi = gdf_within_delhi(gdf, delhi_bounds_filepath)
+    print('{} shapefile is contained within Delhi: {}'.format(gdf_name,
+                                                        in_delhi))
     print(separator)
 
     print('Done with shapefile evaluation')
