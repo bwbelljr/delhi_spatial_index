@@ -190,6 +190,9 @@ def check_geometries(gdf, geom_type):
     # Check if each type is of geom_type
     geom_is_geom_type = [geom_type in geom for geom in geom_type_list]
 
+    # Remove 'geom_type' column
+    gdf = gdf.drop(columns=['geom_type'])
+
     # If at least one geometry is not of geom_type, return False
     # Otherwise, return True
     if False in geom_is_geom_type:
