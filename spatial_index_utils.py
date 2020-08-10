@@ -567,7 +567,7 @@ def calc_service_length(small_gdf, poly_geom_colname, line_geom_colname):
         line_geom_colname: name of geometry column for (poly)line services-
 
     Returns:
-        Length (meters) as a float.
+        Length (kilometers) as a float.
     """
 
     total_length = 0
@@ -576,7 +576,7 @@ def calc_service_length(small_gdf, poly_geom_colname, line_geom_colname):
         polygon = row[poly_geom_colname]
         line = row[line_geom_colname]
         intersection = polygon.intersection(line)
-        length = intersection.length
+        length = intersection.length/1000
         total_length += length
 
     return total_length
@@ -633,6 +633,54 @@ def add_service_length_column(polygon_gdf, line_gdf, length_colname,
         polygon_gdf.loc[name_index, length_colname] = total_road_length
 
     return polygon_gdf
+
+def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
+    nbr_dist_colname):
+    """ Create service index for services with (poly)lines
+
+    Args:
+        polygon_gdf: GeoDataFrame with polygon geometries
+        line_gdf: GeoDataFrame with line geometries
+        service_name: name of public service
+        epsg_code: EPSG code for point_gdf reprojection
+        nbr_dist_colname: name of column that will have neighbor id's and
+            distances.
+
+    Returns:
+        GeoDataFrame with column '{service_name}_idx' added
+        with values between 0 and 1 (inclusive).
+    """
+
+    # Define column names to be used
+    count_colname = "{}_count".format(service_name)
+    pcen_mobile_colname = "{}_pcen".format(service_name)
+    service_idx_colname = "{}_idx".format(service_name)
+
+    # Make copy of polygon_gdf
+    gdf_copy = polygon_gdf.copy()
+
+    # Reproject point to EPSG 3857
+    line_gdf = reproject_gdf(line_gdf, epsg_code)
+
+    # Add service length for each polygon
+    gdf_copy = add_service_length_column(polygon_gdf=gdf_copy,
+                                            line_gdf=line_gdf,
+                                            length_colname= count_colname)
+
+    # Calculate and add PCEN_Mobile column
+    gdf_copy = calc_pcen_mobile(gdf_copy, count_colname=count_colname,
+                                pcen_mobile_colname=pcen_mobile_colname,
+                                nbr_dist_colname=nbr_dist_colname)
+
+    # Calculate and add service index column
+    gdf_copy = calc_service_index(gdf_copy,
+                                    pcen_mobile_colname=pcen_mobile_colname,
+                                    service_idx_colname=service_idx_colname)
+
+    # Drop additional columns
+    gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
+
+    return gdf_copy
 
 
 def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
