@@ -308,20 +308,24 @@ def plot_polygons_and_points(polygon1=None, polygon2=None, points=None):
 
     plt.tight_layout()
 
-def add_polygon_neighbors_column_refugee(polygon_gdf,
-    neighbor_colname = "polygon_neighbors", neighbor_id_col='OBJECTID'):
-    """In polygon GeoDataframe, add column with neighboring polygons indices
+def add_polygon_neighbors_column_bbox(polygon_gdf,
+    neighbor_colname = "polygon_neighbors", neighbor_id_col='USO_AREA_U',
+    barrier_colname='barrier'):
+    """Add column with neighboring polygons indices based on bbox
 
     Finds all the neighboring polygons in a polygon GeoDataFrame based on
     whether polygons intersect bounding box of selected Polygon and adds a new
     column with a list of indices of these neighboring polygons.
 
     Args:
-        polygon_gdf: geopandas GeoDataFrame with Polygon geometry
+        polygon_gdf: geopandas GeoDataFrame with Polygon geometry. Assumes that
+            GeoDataFrame has column 'USO_FINAL' with USO settlement types.
         neighbor_colname: name of new column that will have the list of indices
             of neighboring polygons. By default, set to 'polygon_neighbors'
         neighbor_id_col: name of the column used as the identifier (or unique
-            key) for neighboring polygons. By default, set to 'OBJECTID'
+            key) for neighboring polygons. By default, set to 'USO_AREA_U'
+        barrier_colname: name of column that indicates if polygon intersects
+            a barrier
 
     Returns:
         polygon_with_neighbors_gdf: geopandas GeoDataFrame having an additional
@@ -359,12 +363,18 @@ def add_polygon_neighbors_column_refugee(polygon_gdf,
 
             # Check if polygon bounding box intersects polygon from other row
             if poly_bbox.intersects(row2['geometry']):
+                # Append index of neighbors to the respective rows only if
+                # they do not have a barrier or are not in NDMC/DCB area
 
-                # Append index of neighbors to the 2 rows
-                polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
-                    append(row2[neighbor_id_col])
-                polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
-                    append(row[neighbor_id_col])
+                if not row2[barrier_colname] and row2['USO_FINAL'] != 'NDMC' \
+                and row2['USO_FINAL'] != 'DCB':
+                    polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
+                        append(row2[neighbor_id_col])
+
+               if not row[barrier_colname] and row['USO_FINAL'] != 'NDMC' and \
+               row['USO_FINAL'] != 'DCB':
+                    polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
+                        append(row[neighbor_id_col])
 
     return polygon_with_neighbors_gdf
 
@@ -372,7 +382,7 @@ def add_polygon_neighbors_column(polygon_gdf,
                                  neighbor_colname = "polygon_neighbors",
                                  neighbor_id_col='USO_AREA_U',
                                  barrier_colname='barrier'):
-    """In polygon GeoDataframe, add column with indices of neighboring polygons
+    """Add column with indices of neighboring polygons based on intersection
 
     Finds all the neighboring polygons in a polygon GeoDataFrame by identifying
     which polygons intersect, overlap, cross, or touch the selected polygon. The
@@ -380,7 +390,8 @@ def add_polygon_neighbors_column(polygon_gdf,
     polygons.
 
     Args:
-        polygon_gdf: geopandas GeoDataFrame with Polygon geometry
+        polygon_gdf: geopandas GeoDataFrame with Polygon geometry. Assumes that
+            GeoDataFrame has column 'USO_FINAL' with USO settlement types.
         neighbor_colname: name of new column that will have the list of indices
             of neighboring polygons. By default, set to 'polygon_neighbors'
         neighbor_id_col: name of the column used as the identifier (or unique
@@ -423,11 +434,15 @@ def add_polygon_neighbors_column(polygon_gdf,
                poly.overlaps(row2['geometry']) or \
                poly.crosses(row2['geometry']):
 
-               # Append index of neighbors to the 2 rows
-               if not row2['barrier']:
+               # Append index of neighbors to the respective rows only if
+               # they do not have a barrier or are not in NDMC/DCB area
+               if not row2[barrier_colname] and row2['USO_FINAL'] != 'NDMC' and\
+               row2['USO_FINAL'] != 'DCB':
                    polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
                                             append(row2[neighbor_id_col])
-               if not row['barrier']:
+
+               if not row[barrier_colname] and row['USO_FINAL'] != 'NDMC' and \
+               row['USO_FINAL'] != 'DCB':
                    polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
                                             append(row[neighbor_id_col])
 
@@ -557,7 +572,7 @@ def calc_service_length(small_gdf, poly_geom_colname, line_geom_colname):
         small_gdf: GeoDataFrame, which is a derived from a groupby
             object based on 'USO_AREA_U'
         poly_geom_colname: name of geometry column for colonies
-        line_geom_colname: name of geometry column for (poly)line services
+        line_geom_colname: name of geometry column for (poly)line services-
 
     Returns:
         Length (meters) as a float.
