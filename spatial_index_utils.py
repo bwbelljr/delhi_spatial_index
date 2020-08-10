@@ -309,7 +309,7 @@ def plot_polygons_and_points(polygon1=None, polygon2=None, points=None):
     plt.tight_layout()
 
 def add_polygon_neighbors_column_bbox(polygon_gdf,
-    neighbor_colname = "polygon_neighbors", neighbor_id_col='USO_AREA_U',
+    neighbor_colname = 'polygon_neighbors', neighbor_id_col='USO_AREA_U',
     barrier_colname='barrier'):
     """Add column with neighboring polygons indices based on bbox
 
@@ -339,8 +339,7 @@ def add_polygon_neighbors_column_bbox(polygon_gdf,
 
     # Create new column with column name as neighbor_colname
     # Each value in the new column is set to an empty list
-    polygon_with_neighbors_gdf[neighbor_colname] = np.empty((len(polygon_gdf),
-                                                    0)).tolist()
+    polygon_with_neighbors_gdf[neighbor_colname] = np.empty((len(polygon_gdf), 0)).tolist()
 
     # Iterate over rows of polygon_gdf GeoDataFrame
     for idx, row in polygon_gdf.iterrows():
@@ -353,28 +352,21 @@ def add_polygon_neighbors_column_bbox(polygon_gdf,
         poly_bounds = row['geometry'].bounds
 
         # Create bounding box (Shapely Polygon) from bounds
-        poly_bbox = box(poly_bounds[0], poly_bounds[1], poly_bounds[2],
-                        poly_bounds[3])
+        poly_bbox = box(poly_bounds[0], poly_bounds[1], poly_bounds[2], poly_bounds[3])
 
         # Iterate over rows again starting at idx+1 index
         # https://stackoverflow.com/questions/38596056/how-to-change-the-starting-index-of-iterrows
-        for idx2, row2 in islice(polygon_with_neighbors_gdf.iterrows(), idx+1,
-            None):
 
-            # Check if polygon bounding box intersects polygon from other row
+        # Check if polygon bounding box intersects polygon from other row
+        # Append index of neighbors to the respective rows only if
+        # they do not have a barrier or are not in NDMC/DCB area
+        for idx2, row2 in islice(polygon_with_neighbors_gdf.iterrows(), idx+1, None):
             if poly_bbox.intersects(row2['geometry']):
-                # Append index of neighbors to the respective rows only if
-                # they do not have a barrier or are not in NDMC/DCB area
+                if not row2['barrier'] and row2['USO_FINAL'] != 'NDMC' and row2['USO_FINAL'] != 'DCB':
+                    polygon_with_neighbors_gdf.loc[idx, neighbor_colname].append(row2[neighbor_id_col])
 
-                if not row2[barrier_colname] and row2['USO_FINAL'] != 'NDMC' \
-                and row2['USO_FINAL'] != 'DCB':
-                    polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
-                        append(row2[neighbor_id_col])
-
-               if not row[barrier_colname] and row['USO_FINAL'] != 'NDMC' and \
-               row['USO_FINAL'] != 'DCB':
-                    polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
-                        append(row[neighbor_id_col])
+                if not row['barrier'] and row['USO_FINAL'] != 'NDMC' and row['USO_FINAL'] != 'DCB':
+                    polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].append(row[neighbor_id_col])
 
     return polygon_with_neighbors_gdf
 
