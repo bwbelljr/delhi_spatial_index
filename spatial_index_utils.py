@@ -773,7 +773,8 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
 
     return gdf_copy
 
-def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code):
+def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
+    nbr_dist_colname):
     """Create service index
 
     Args:
@@ -781,6 +782,9 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code):
         point_gdf: GeoDataFrame with point geometries
         service_name: name of public service
         epsg_code: EPSG code for point_gdf reprojection
+        nbr_dist_colname: name of column that will have neighbor id's and
+            distances.
+
 
     Returns:
         GeoDataFrame with column '{service_name}_idx' added
@@ -805,7 +809,8 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code):
 
     # Calculate and add PCEN_Mobile column
     gdf_copy = calc_pcen_mobile(gdf_copy, count_colname=count_colname,
-                                pcen_mobile_colname=pcen_mobile_colname)
+                                pcen_mobile_colname=pcen_mobile_colname,
+                                nbr_dist_colname=nbr_dist_colname)
 
     # Calculate and add service index column
     gdf_copy = calc_service_index(gdf_copy,
@@ -816,3 +821,22 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code):
     gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
 
     return gdf_copy
+
+def calc_point_services(polygon_gdf, point_services, epsg_code,
+    nbr_dist_colname):
+    """Calculates all point services"""
+
+    separator = '--------------------------------------------------------'
+
+    for point_service in point_services:
+        polygon_gdf = create_service_index(polygon_gdf=polygon_gdf,
+                                        point_gdf=point_services[point_service],
+                                        service_name=point_service,
+                                        epsg_code=epsg_code,
+                                        nbr_dist_colname=nbr_dist_colname)
+        print('{} service index is completed'.format(point_service))
+        print(separator)
+
+    print('all point services completed')
+
+    return polygon_gdf
