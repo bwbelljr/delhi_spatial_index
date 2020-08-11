@@ -888,3 +888,23 @@ def calc_point_services(polygon_gdf, point_services, epsg_code,
     print('all point services completed')
 
     return polygon_gdf
+
+def calc_all_services(polygon_gdf, point_services, line_services, epsg_code,
+    nbr_dist_colname):
+    """Calculate all public services indices (point and line)"""
+
+    # Get all point services
+    polygon_gdf = calc_point_services(polygon_gdf, point_services, epsg_code,
+                                    nbr_dist_colname)
+
+
+    for line_service in line_services:
+        polygon_gdf = create_service_length_index(polygon_gdf,
+                                                  line_services[line_service],
+                                                  line_service,
+                                                  epsg_code,
+                                                  nbr_dist_colname)
+
+        print('{} service is completed'.format(line_service))
+
+    return polygon_gdf
