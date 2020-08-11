@@ -678,7 +678,7 @@ def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
                                     service_idx_colname=service_idx_colname)
 
     # Drop additional columns
-    gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
+    # gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
 
     return gdf_copy
 
@@ -866,7 +866,7 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
                                     service_idx_colname=service_idx_colname)
 
     # Drop additional columns
-    gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
+    # gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
 
     return gdf_copy
 
