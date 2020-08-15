@@ -817,6 +817,57 @@ def create_service_length_index_wards(polygon_gdf, line_gdf, service_name,
 
     return gdf_copy
 
+
+def create_service_length_index_buffer(polygon_gdf, line_gdf, service_name,
+    epsg_code):
+    """ Create service index for services with (poly)lines with buffer
+
+    Args:
+        polygon_gdf: GeoDataFrame with polygon geometries
+        line_gdf: GeoDataFrame with line geometries
+        service_name: name of public service
+        epsg_code: EPSG code for point_gdf reprojection
+
+    Returns:
+        GeoDataFrame with column '{service_name}_idx' added
+        with values between 0 and 1 (inclusive).
+    """
+
+    # Define column names to be used
+    count_colname = "{}_count".format(service_name)
+    pcen_mobile_colname = "{}_pcen".format(service_name)
+    service_idx_colname = "{}_idx".format(service_name)
+
+    # Make copy of polygon_gdf
+    gdf_copy = polygon_gdf.copy()
+
+    # Reproject point to EPSG 3857
+    line_gdf = reproject_gdf(line_gdf, epsg_code)
+
+    # Add service length for each polygon
+    gdf_copy = add_service_length_column(polygon_gdf=gdf_copy,
+                                            line_gdf=line_gdf,
+                                            length_colname= count_colname,
+                                            id_colname="USO_AREA_U")
+
+    # Calculate and add PCEN_Mobile column
+    gdf_copy = calc_pcen_mobile_no_neighbors(polygon_gdf=gdf_copy,
+                                            count_colname=count_colname,
+                                        pcen_mobile_colname=pcen_mobile_colname,
+                                        pop_colname='population',
+                                        id_col='USO_AREA_U')
+
+    # Calculate and add service index column
+    gdf_copy = calc_service_index(gdf_copy,
+                                    pcen_mobile_colname=pcen_mobile_colname,
+                                    service_idx_colname=service_idx_colname)
+
+    # Drop additional columns
+    # gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
+
+    return gdf_copy
+
+
 def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
                     centroid_colname='centroid',
                     neighbor_colname = "polygon_neighbors",
@@ -1095,6 +1146,57 @@ def create_service_index_wards(polygon_gdf, point_gdf, service_name,
 
     return gdf_copy
 
+
+def create_service_index_buffer(polygon_gdf, point_gdf, service_name,
+    epsg_code):
+    """Create service index for colonies with buffer (no neigbors)
+
+    Args:
+        polygon_gdf: GeoDataFrame with polygon geometries
+        point_gdf: GeoDataFrame with point geometries
+        service_name: name of public service
+        epsg_code: EPSG code for point_gdf reprojection
+
+    Returns:
+        GeoDataFrame with column '{service_name}_idx' added
+        with values between 0 and 1 (inclusive).
+    """
+
+    # Define column names to be used
+    count_colname = "{}_count".format(service_name)
+    pcen_mobile_colname = "{}_pcen".format(service_name)
+    service_idx_colname = "{}_idx".format(service_name)
+
+    # Make copy of polygon_gdf
+    gdf_copy = polygon_gdf.copy()
+
+    # Reproject point
+    point_gdf = reproject_gdf(point_gdf, epsg_code)
+
+    # Add number of service points for each polygon
+    gdf_copy = add_point_count_column(polygon_gdf=gdf_copy,
+                                      point_gdf=point_gdf,
+                                      count_colname=count_colname,
+                                      join_col='USO_AREA_U')
+
+    # Calculate and add PCEN_Mobile column
+    gdf_copy = calc_pcen_mobile_no_neighbors(polygon_gdf=gdf_copy,
+                                            count_colname=count_colname,
+                                        pcen_mobile_colname=pcen_mobile_colname,
+                                        pop_colname='population',
+                                        id_col='USO_AREA_U')
+
+    # Calculate and add service index column
+    gdf_copy = calc_service_index(gdf_copy,
+                                    pcen_mobile_colname=pcen_mobile_colname,
+                                    service_idx_colname=service_idx_colname)
+
+    # Drop additional columns
+    # gdf_copy = gdf_copy.drop(columns=[pcen_mobile_colname, count_colname])
+
+    return gdf_copy
+
+
 def calc_point_services_wards(polygon_gdf, point_services, epsg_code):
     """Calculates all point services in Wards"""
 
@@ -1102,6 +1204,23 @@ def calc_point_services_wards(polygon_gdf, point_services, epsg_code):
 
     for point_service in point_services:
         polygon_gdf = create_service_index_wards(polygon_gdf=polygon_gdf,
+                                        point_gdf=point_services[point_service],
+                                        service_name=point_service,
+                                        epsg_code=epsg_code)
+        print('{} service index is completed'.format(point_service))
+        print(separator)
+
+    print('all point services completed')
+
+    return polygon_gdf
+
+def calc_point_services_buffer(polygon_gdf, point_services, epsg_code):
+    """Calculates all point services in colonies with buffer"""
+
+    separator = '--------------------------------------------------------'
+
+    for point_service in point_services:
+        polygon_gdf = create_service_index_buffer(polygon_gdf=polygon_gdf,
                                         point_gdf=point_services[point_service],
                                         service_name=point_service,
                                         epsg_code=epsg_code)
@@ -1162,6 +1281,25 @@ def calc_all_services_wards(polygon_gdf, point_services, line_services,
 
     for line_service in line_services:
         polygon_gdf = create_service_length_index_wards(polygon_gdf,
+                                                  line_services[line_service],
+                                                  line_service,
+                                                  epsg_code)
+
+        print('{} service is completed'.format(line_service))
+
+    return polygon_gdf
+
+def calc_all_services_buffer(polygon_gdf, point_services, line_services,
+    epsg_code):
+    """Calculate all public services indices (point and line) for buffer"""
+
+    # Get all point services
+    polygon_gdf = calc_point_services_buffer(polygon_gdf, point_services,
+                            epsg_code)
+
+
+    for line_service in line_services:
+        polygon_gdf = create_service_length_index_buffer(polygon_gdf,
                                                   line_services[line_service],
                                                   line_service,
                                                   epsg_code)
