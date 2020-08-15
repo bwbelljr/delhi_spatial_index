@@ -457,6 +457,48 @@ def remove_ids_with_barrier(id_list, polygon_gdf, id_colname, barrier_colname):
 
     return new_list
 
+def add_polygon_neighbors_column_fast(polygon_gdf, id_colname, neighbor_colname, barrier_colname):
+    """Add intersecting polygon neighbors based on spatial join"""
+
+    # Spatial left join
+    joined_gdf = gpd.sjoin(polygon_gdf, polygon_gdf, how='left')
+
+    id_colname_left = id_colname + '_left'
+    id_colname_right = id_colname + '_right'
+
+    # Groupby id_colname
+    joined_grouped = joined_gdf.groupby(id_colname_left)
+
+    # Make copy of polygon_gdf
+    # and create new column for neighbors list
+    nbrs_touch_gdf = polygon_gdf.copy()
+
+    # Create new column with column name as neighbor_colname
+    # Each value in the new column is set to an empty list
+    nbrs_touch_gdf[neighbor_colname] = np.empty((len(nbrs_touch_gdf), 0)).tolist()
+
+    for group in joined_grouped.groups:
+
+        # Create list of id numbers that intersect with group
+        group_list = list(joined_grouped.get_group(group)[id_colname_right])
+
+        # Because a polygon intersects itself, remove it from the list
+        group_list.remove(group)
+
+        # Get index number of group
+        group_idx = get_row_index(nbrs_touch_gdf, id_colname, group)
+
+        # Remove ID's where there is a barrier
+        group_list = remove_ids_with_barrier(id_list = group_list,
+                                polygon_gdf = nbrs_touch_gdf,
+                                id_colname = id_colname,
+                                barrier_colname = barrier_colname)
+
+        # Insert modified list into nbrs_touch_gdf
+        nbrs_touch_gdf.loc[group_idx, neighbor_colname].extend(group_list)
+
+    return nbrs_touch_gdf
+
 def create_neighbors_gdf(polygon_gdf, idx=0,
                          neighbor_colname = "polygon_neighbors",
                          neighbor_id_col='USO_AREA_U'):
