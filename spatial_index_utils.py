@@ -457,11 +457,13 @@ def remove_ids_with_barrier(id_list, polygon_gdf, id_colname, barrier_colname):
 
     return new_list
 
-def add_polygon_neighbors_column_fast(polygon_gdf, id_colname, neighbor_colname, barrier_colname):
-    """Add intersecting polygon neighbors based on spatial join"""
+def add_polygon_neighbors_column_fast(polygon_gdf, right_gdf, id_colname,
+    neighbor_colname, barrier_colname):
+    """Add polygon neighbors based on spatial join"""
 
     # Spatial left join
-    joined_gdf = gpd.sjoin(polygon_gdf, polygon_gdf, how='left')
+    # right_gdf can be polygons or bounding boxes
+    joined_gdf = gpd.sjoin(polygon_gdf, right_gdf, how='left')
 
     id_colname_left = id_colname + '_left'
     id_colname_right = id_colname + '_right'
