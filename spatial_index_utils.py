@@ -444,6 +444,19 @@ def add_polygon_neighbors_column(polygon_gdf,
 
     return polygon_with_neighbors_gdf
 
+def remove_ids_with_barrier(id_list, polygon_gdf, id_colname, barrier_colname):
+    """Remove all unique ids where there is a barrier"""
+
+    new_list = id_list[:]
+
+    for id_num in id_list:
+        id_num_idx = get_row_index(polygon_gdf, id_colname, id_num)
+        barrier_exists = polygon_gdf.loc[id_num_idx, barrier_colname]
+        if barrier_exists:
+            new_list.remove(id_num)
+
+    return new_list
+
 def create_neighbors_gdf(polygon_gdf, idx=0,
                          neighbor_colname = "polygon_neighbors",
                          neighbor_id_col='USO_AREA_U'):
