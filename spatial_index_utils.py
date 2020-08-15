@@ -501,6 +501,31 @@ def add_polygon_neighbors_column_fast(polygon_gdf, right_gdf, id_colname,
 
     return nbrs_touch_gdf
 
+def create_bbox_gdf(polygon_gdf):
+    """Create GeoDataFrame with bounding box as geometry"""
+
+    # Concatenate polygon_gdf with bounding box columns
+    gdf_bbox = gpd.GeoDataFrame(pd.concat([polygon_gdf, polygon_gdf.bounds], axis=1))
+
+    # Initialize bounding box column
+    gdf_bbox['bbox'] = None
+
+    # Create bounding box for all geometries
+    for idx, row in gdf_bbox.iterrows():
+        row_bbox = box(row['minx'], row['miny'], row['maxx'], row['maxy'])
+        gdf_bbox.loc[idx, 'bbox'] = row_bbox
+
+    # Remove geometry and bounds columns
+    gdf_bbox = gdf_bbox.drop(columns=['geometry', 'minx', 'miny', 'maxx', 'maxy'])
+
+    # Rename bbox as geometry field
+    gdf_bbox = gdf_bbox.rename(columns={'bbox':'geometry'})
+
+    # Set CRS to that of polygon_gdf
+    gdf_bbox.crs = polygon_gdf.crs
+
+    return gdf_bbox
+
 def create_neighbors_gdf(polygon_gdf, idx=0,
                          neighbor_colname = "polygon_neighbors",
                          neighbor_id_col='USO_AREA_U'):
