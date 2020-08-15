@@ -797,6 +797,48 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
 
     return gdf_copy
 
+def calc_pcen_mobile_no_neighbors(polygon_gdf, count_colname,
+                     pcen_mobile_colname,
+                     pop_colname='population',
+                     id_col='USO_AREA_U'):
+    """ Calculates and adds column for PCEN_mobile (no neighbors)
+
+    Calculates number of service points within a
+    polygon divided by the population size.
+
+    Args:
+        polygon_gdf: GeoDataFrame with polygon geometries
+        count_colname: name of column with count of points in
+            polygon
+        pcen_mobile_colname: name of column with pcen_mobile number
+        pop_colname: column name for population
+        id_col: column name for ID. Defaults to 'USO_AREA_U'
+
+    Returns:
+        GeoDataFrame with pcen_mobile column added.
+    """
+
+    # Make copy of polygon_gdf
+    gdf_copy = polygon_gdf.copy()
+
+    # Create new column for pcen_mobile
+    gdf_copy[pcen_mobile_colname] = 0
+
+    # iterate through GeoDataFrame
+    for idx, row in gdf_copy.iterrows():
+
+        # polygon's population
+        poly_pop = row[pop_colname]
+
+        # initialize effective service count with polygon's count
+        poly_count = row[count_colname]
+
+        # Divide service count by population size
+        # and add to the pcen_mobile column
+        gdf_copy.loc[idx, pcen_mobile_colname] = poly_count/poly_pop
+
+    return gdf_copy
+
 def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
     """Calculates service index [0, 1] based on PCEN_MOBILE
 
