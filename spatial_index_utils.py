@@ -10,6 +10,10 @@ from shapely.geometry import box, Polygon
 from shapely.ops import cascaded_union
 from pyproj import CRS
 
+def get_row_index(polygon_gdf, id_colname, id_num):
+    """Get row index of GeoDataFrame given a unique id number"""
+    return polygon_gdf[polygon_gdf[id_colname] == id_num].index.values[0]
+
 def reproject_gdf(gdf, epsg_code):
     """Reprojects GeoDataFrame to CRS with EPSG code
 
