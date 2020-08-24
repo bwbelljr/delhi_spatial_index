@@ -721,7 +721,7 @@ def add_service_length_column(polygon_gdf, line_gdf, length_colname,
     return polygon_gdf
 
 def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
-    nbr_dist_colname):
+    nbr_dist_colname, calc_pop_density):
     """ Create service index for services with (poly)lines
 
     Args:
@@ -731,6 +731,8 @@ def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
         epsg_code: EPSG code for point_gdf reprojection
         nbr_dist_colname: name of column that will have neighbor id's and
             distances.
+        calc_pop_density: If True, divide by population/area. Else divide
+            by population.
 
     Returns:
         GeoDataFrame with column '{service_name}_idx' added
@@ -756,6 +758,7 @@ def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
     # Calculate and add PCEN_Mobile column
     gdf_copy = calc_pcen_mobile(gdf_copy, count_colname=count_colname,
                                 pcen_mobile_colname=pcen_mobile_colname,
+                                calc_pop_density=calc_pop_density,
                                 nbr_dist_colname=nbr_dist_colname)
 
     # Calculate and add service index column
@@ -769,7 +772,7 @@ def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
     return gdf_copy
 
 def create_service_length_index_wards(polygon_gdf, line_gdf, service_name,
-    epsg_code):
+    epsg_code, calc_pop_density):
     """ Create service index for services with (poly)lines
 
     Args:
@@ -777,6 +780,8 @@ def create_service_length_index_wards(polygon_gdf, line_gdf, service_name,
         line_gdf: GeoDataFrame with line geometries
         service_name: name of public service
         epsg_code: EPSG code for point_gdf reprojection
+        calc_pop_density: If True, divide by population/area. Else divide
+            by population.
 
     Returns:
         GeoDataFrame with column '{service_name}_idx' added
@@ -804,6 +809,7 @@ def create_service_length_index_wards(polygon_gdf, line_gdf, service_name,
     gdf_copy = calc_pcen_mobile_no_neighbors(polygon_gdf=gdf_copy,
                                             count_colname=count_colname,
                                         pcen_mobile_colname=pcen_mobile_colname,
+                                        calc_pop_density=calc_pop_density,
                                         pop_colname='Total Population',
                                         id_col='WARD_NO')
 
@@ -925,13 +931,15 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
 
 def calc_pcen_mobile(polygon_gdf, count_colname,
                      pcen_mobile_colname,
+                     calc_pop_density,
                      nbr_dist_colname='nbr_dist',
                      pop_colname='population',
+                     area_colname='area_km2',
                      id_col='USO_AREA_U'):
     """ Calculates and adds column for PCEN_mobile
 
     Calculates effective number of service points within a
-    polygon divided by the population size. This effective number
+    polygon divided by the population size or density. This effective number
     not only counts service points within the polygon but also
     service points in neighboring polygons, inversely weighted
     by distance between centroid of selected polygon and centroids
@@ -941,10 +949,14 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
         polygon_gdf: GeoDataFrame with polygon geometries
         count_colname: name of column with count of points in
             polygon
+        calc_pop_density: If True, divide effective service points by Population
+            density (population/area). Otherwise (if False), divide effective
+            number by Population size.
         pcen_mobile_colname: name of column with pcen_mobile number
         nbr_dist_colname: name of column that will have neighbor id's and
             distances. By default, set to 'nbr_dist'
-        pop_colname: column name for population
+        pop_colname: column name for population, default 'population'
+        area_colname: column name for area, default 'area_km2'
         id_col: column name for ID. Defaults to 'USO_AREA_U'
 
     Returns:
@@ -960,8 +972,12 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
     # iterate through GeoDataFrame
     for idx, row in gdf_copy.iterrows():
 
-        # polygon's population
-        poly_pop = row[pop_colname]
+        # denominator for PCEN equation is either population or
+        # population density (population/area)
+        if calc_pop_density:
+            denom = row[pop_colname]/row[area_colname]
+        else:
+            denom = row[pop_colname]
 
         # initialize effective service count with polygon's count
         poly_count = row[count_colname]
@@ -978,25 +994,28 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
 
         # Divide effective service count by population size
         # and add to the pcen_mobile column
-        gdf_copy.loc[idx, pcen_mobile_colname] = poly_count/poly_pop
+        gdf_copy.loc[idx, pcen_mobile_colname] = poly_count/denom
 
     return gdf_copy
 
 def calc_pcen_mobile_no_neighbors(polygon_gdf, count_colname,
-                     pcen_mobile_colname,
-                     pop_colname='population',
+                     pcen_mobile_colname, calc_pop_density,
+                     pop_colname='population', area_colname='area_km2',
                      id_col='USO_AREA_U'):
     """ Calculates and adds column for PCEN_mobile (no neighbors)
 
     Calculates number of service points within a
-    polygon divided by the population size.
+    polygon divided by the population size or density.
 
     Args:
         polygon_gdf: GeoDataFrame with polygon geometries
         count_colname: name of column with count of points in
             polygon
         pcen_mobile_colname: name of column with pcen_mobile number
-        pop_colname: column name for population
+        calc_pop_density: If True, calculate population density, else
+            population.
+        pop_colname: column name for population; defaults to 'population'
+        area_colname: column name for area; defaults to 'area_km2'
         id_col: column name for ID. Defaults to 'USO_AREA_U'
 
     Returns:
@@ -1012,15 +1031,18 @@ def calc_pcen_mobile_no_neighbors(polygon_gdf, count_colname,
     # iterate through GeoDataFrame
     for idx, row in gdf_copy.iterrows():
 
-        # polygon's population
-        poly_pop = row[pop_colname]
+        # polygon's population (density)
+        if calc_pop_density:
+            denom = row[pop_colname]/row[area_colname]
+        else:
+            denom = row[pop_colname]
 
         # initialize effective service count with polygon's count
         poly_count = row[count_colname]
 
         # Divide service count by population size
         # and add to the pcen_mobile column
-        gdf_copy.loc[idx, pcen_mobile_colname] = poly_count/poly_pop
+        gdf_copy.loc[idx, pcen_mobile_colname] = poly_count/denom
 
     return gdf_copy
 
@@ -1049,7 +1071,7 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
     return gdf_copy
 
 def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
-    nbr_dist_colname):
+    calc_pop_density, nbr_dist_colname):
     """Create service index
 
     Args:
@@ -1057,6 +1079,8 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
         point_gdf: GeoDataFrame with point geometries
         service_name: name of public service
         epsg_code: EPSG code for point_gdf reprojection
+        calc_pop_density: If True, divide service count by pop density.
+            Otherwise, divide by population
         nbr_dist_colname: name of column that will have neighbor id's and
             distances.
 
@@ -1085,6 +1109,7 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
     # Calculate and add PCEN_Mobile column
     gdf_copy = calc_pcen_mobile(gdf_copy, count_colname=count_colname,
                                 pcen_mobile_colname=pcen_mobile_colname,
+                                calc_pop_density = calc_pop_density,
                                 nbr_dist_colname=nbr_dist_colname)
 
     # Calculate and add service index column
@@ -1098,13 +1123,15 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
     return gdf_copy
 
 def create_service_index_wards(polygon_gdf, point_gdf, service_name,
-    epsg_code):
+    calc_pop_density, epsg_code):
     """Create service index for Wards (no neigbors)
 
     Args:
         polygon_gdf: GeoDataFrame with polygon geometries
         point_gdf: GeoDataFrame with point geometries
         service_name: name of public service
+        calc_pop_density: If True, divide service count by pop density.
+            Otherwise, divide by population
         epsg_code: EPSG code for point_gdf reprojection
 
     Returns:
@@ -1133,6 +1160,7 @@ def create_service_index_wards(polygon_gdf, point_gdf, service_name,
     gdf_copy = calc_pcen_mobile_no_neighbors(polygon_gdf=gdf_copy,
                                             count_colname=count_colname,
                                         pcen_mobile_colname=pcen_mobile_colname,
+                                        calc_pop_density = calc_pop_density,
                                         pop_colname='Total Population',
                                         id_col='WARD_NO')
 
@@ -1148,13 +1176,15 @@ def create_service_index_wards(polygon_gdf, point_gdf, service_name,
 
 
 def create_service_index_buffer(polygon_gdf, point_gdf, service_name,
-    epsg_code):
+    calc_pop_density, epsg_code):
     """Create service index for colonies with buffer (no neigbors)
 
     Args:
         polygon_gdf: GeoDataFrame with polygon geometries
         point_gdf: GeoDataFrame with point geometries
         service_name: name of public service
+        calc_pop_density: If True, divide service count by pop density.
+            Otherwise, divide by population
         epsg_code: EPSG code for point_gdf reprojection
 
     Returns:
@@ -1183,6 +1213,7 @@ def create_service_index_buffer(polygon_gdf, point_gdf, service_name,
     gdf_copy = calc_pcen_mobile_no_neighbors(polygon_gdf=gdf_copy,
                                             count_colname=count_colname,
                                         pcen_mobile_colname=pcen_mobile_colname,
+                                        calc_pop_density = calc_pop_density,
                                         pop_colname='population',
                                         id_col='USO_AREA_U')
 
@@ -1197,7 +1228,8 @@ def create_service_index_buffer(polygon_gdf, point_gdf, service_name,
     return gdf_copy
 
 
-def calc_point_services_wards(polygon_gdf, point_services, epsg_code):
+def calc_point_services_wards(polygon_gdf, point_services, calc_pop_density,
+    epsg_code):
     """Calculates all point services in Wards"""
 
     separator = '--------------------------------------------------------'
@@ -1206,6 +1238,7 @@ def calc_point_services_wards(polygon_gdf, point_services, epsg_code):
         polygon_gdf = create_service_index_wards(polygon_gdf=polygon_gdf,
                                         point_gdf=point_services[point_service],
                                         service_name=point_service,
+                                        calc_pop_density=calc_pop_density,
                                         epsg_code=epsg_code)
         print('{} service index is completed'.format(point_service))
         print(separator)
@@ -1214,7 +1247,8 @@ def calc_point_services_wards(polygon_gdf, point_services, epsg_code):
 
     return polygon_gdf
 
-def calc_point_services_buffer(polygon_gdf, point_services, epsg_code):
+def calc_point_services_buffer(polygon_gdf, point_services, calc_pop_density,
+    epsg_code):
     """Calculates all point services in colonies with buffer"""
 
     separator = '--------------------------------------------------------'
@@ -1223,6 +1257,7 @@ def calc_point_services_buffer(polygon_gdf, point_services, epsg_code):
         polygon_gdf = create_service_index_buffer(polygon_gdf=polygon_gdf,
                                         point_gdf=point_services[point_service],
                                         service_name=point_service,
+                                        calc_pop_density=calc_pop_density,
                                         epsg_code=epsg_code)
         print('{} service index is completed'.format(point_service))
         print(separator)
@@ -1232,7 +1267,7 @@ def calc_point_services_buffer(polygon_gdf, point_services, epsg_code):
     return polygon_gdf
 
 def calc_point_services(polygon_gdf, point_services, epsg_code,
-    nbr_dist_colname):
+    calc_pop_density, nbr_dist_colname):
     """Calculates all point services"""
 
     separator = '--------------------------------------------------------'
@@ -1242,6 +1277,7 @@ def calc_point_services(polygon_gdf, point_services, epsg_code,
                                         point_gdf=point_services[point_service],
                                         service_name=point_service,
                                         epsg_code=epsg_code,
+                                        calc_pop_density = calc_pop_density,
                                         nbr_dist_colname=nbr_dist_colname)
         print('{} service index is completed'.format(point_service))
         print(separator)
@@ -1251,12 +1287,12 @@ def calc_point_services(polygon_gdf, point_services, epsg_code,
     return polygon_gdf
 
 def calc_all_services(polygon_gdf, point_services, line_services, epsg_code,
-    nbr_dist_colname):
+    calc_pop_density, nbr_dist_colname):
     """Calculate all public services indices (point and line)"""
 
     # Get all point services
     polygon_gdf = calc_point_services(polygon_gdf, point_services, epsg_code,
-                                    nbr_dist_colname)
+                    calc_pop_density, nbr_dist_colname)
 
 
     for line_service in line_services:
@@ -1264,45 +1300,48 @@ def calc_all_services(polygon_gdf, point_services, line_services, epsg_code,
                                                   line_services[line_service],
                                                   line_service,
                                                   epsg_code,
-                                                  nbr_dist_colname)
+                                                  nbr_dist_colname,
+                                                  calc_pop_density)
 
         print('{} service is completed'.format(line_service))
 
     return polygon_gdf
 
 def calc_all_services_wards(polygon_gdf, point_services, line_services,
-    epsg_code):
+    epsg_code, calc_pop_density):
     """Calculate all public services indices (point and line) for Wards"""
 
     # Get all point services
     polygon_gdf = calc_point_services_wards(polygon_gdf, point_services,
-                            epsg_code)
+                    calc_pop_density, epsg_code)
 
 
     for line_service in line_services:
         polygon_gdf = create_service_length_index_wards(polygon_gdf,
                                                   line_services[line_service],
                                                   line_service,
-                                                  epsg_code)
+                                                  epsg_code,
+                                                  calc_pop_density)
 
         print('{} service is completed'.format(line_service))
 
     return polygon_gdf
 
 def calc_all_services_buffer(polygon_gdf, point_services, line_services,
-    epsg_code):
+    calc_pop_density, epsg_code):
     """Calculate all public services indices (point and line) for buffer"""
 
     # Get all point services
     polygon_gdf = calc_point_services_buffer(polygon_gdf, point_services,
-                            epsg_code)
+                    calc_pop_density, epsg_code)
 
 
     for line_service in line_services:
         polygon_gdf = create_service_length_index_buffer(polygon_gdf,
                                                   line_services[line_service],
                                                   line_service,
-                                                  epsg_code)
+                                                  epsg_code,
+                                                  calc_pop_density)
 
         print('{} service is completed'.format(line_service))
 
