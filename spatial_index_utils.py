@@ -825,7 +825,7 @@ def create_service_length_index_wards(polygon_gdf, line_gdf, service_name,
 
 
 def create_service_length_index_buffer(polygon_gdf, line_gdf, service_name,
-    epsg_code):
+    calc_pop_density, epsg_code):
     """ Create service index for services with (poly)lines with buffer
 
     Args:
@@ -860,6 +860,7 @@ def create_service_length_index_buffer(polygon_gdf, line_gdf, service_name,
     gdf_copy = calc_pcen_mobile_no_neighbors(polygon_gdf=gdf_copy,
                                             count_colname=count_colname,
                                         pcen_mobile_colname=pcen_mobile_colname,
+                                        calc_pop_density=calc_pop_density,
                                         pop_colname='population',
                                         id_col='USO_AREA_U')
 
@@ -1337,11 +1338,11 @@ def calc_all_services_buffer(polygon_gdf, point_services, line_services,
 
 
     for line_service in line_services:
-        polygon_gdf = create_service_length_index_buffer(polygon_gdf,
-                                                  line_services[line_service],
-                                                  line_service,
-                                                  epsg_code,
-                                                  calc_pop_density)
+        polygon_gdf = create_service_length_index_buffer(polygon_gdf = polygon_gdf,
+                                                  line_gdf = line_services[line_service],
+                                                  service_name = line_service,
+                                                  calc_pop_density = calc_pop_density,
+                                                  epsg_code = epsg_code)
 
         print('{} service is completed'.format(line_service))
 
