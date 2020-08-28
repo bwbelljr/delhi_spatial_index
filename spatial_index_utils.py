@@ -11,6 +11,118 @@ from shapely.ops import cascaded_union
 from pyproj import CRS
 from tqdm import tqdm
 
+def create_nbrs_and_dist_columns(colonies):
+    """Create two neighbors' columns in GeoDataFrame
+
+    This function computes and adds the two columns that
+    have information on bounding box neighbors of each
+    polygon: `nbrs_bbox` and `nbrs_dist_bbox`.
+
+    Args:
+        colonies: GeoDataFrame with all information needed
+            to calculate neighbors columns
+
+    Returns:
+        GeoDataFrame with two new columns: `nbrs_bbox` and `nbrs_dist_bbox`
+    """
+
+    # Create GeoDataFrame with Bounding Box of each Polygon
+    colonies_bbox = create_bbox_gdf(colonies)
+
+    print('Calculate bounding box neighbors column: `nbrs_bbox`')
+
+    # Calculate bounding box neighbors column: `nbrs_bbox`
+    colonies_bbox_nbrs = add_polygon_neighbors_column_fast(polygon_gdf=colonies,
+                                                right_gdf=colonies_bbox,
+                                                id_colname='USO_AREA_U',
+                                                neighbor_colname='nbrs_bbox',
+                                                barrier_colname='barrier')
+
+    print('Calculate dist from polygons to their neighbors: `nbrs_dist_bbox`')
+
+    # Calculate distances from polygons to their neighbors: `nbrs_dist_bbox`
+    colonies_bbox_nbrs = calc_nbr_dist(polygon_gdf=colonies_bbox_nbrs,
+                                  nbr_dist_colname='nbrs_dist_bbox',
+                                  centroid_colname='centroid',
+                                  neighbor_colname='nbrs_bbox',
+                                  neighbor_id_col='USO_AREA_U')
+
+    return colonies_bbox_nbrs
+
+def create_exclude_column(colonies_gdf, uso_types_to_drop, area_cutoff_km2):
+    """Create exclude column that is True for polygons with certain conditions
+
+    This function adds a binary column `exclude_from_psi` to GeoDataFrame.
+    It is True if the area of the polygon < area_cutoff_km2 or the
+    'USO_FINAL' column is one of the `uso_area_types`.
+
+    Args:
+        colonies_gdf: Colonies shapefile as GeoDataFrame
+        uso_types_to_drop: List of string names of USO_FINAL
+            to exclude.
+        area_cutoff_km2: threshold below which colonies qualify
+            for exclusion.
+
+    Returns:
+        GeoDataFrame with column `exclude_from_psi`
+    """
+
+    exclude_colname = 'exclude_from_psi'
+
+    # Initialize new column
+    colonies_gdf[exclude_colname] = False
+
+    # Indicate settlement categories with exclusion criteria
+    for uso_type in uso_types_to_drop:
+
+        # Setting exclude=True for USO_FINAL=uso_type
+        # We iterate over all indices matching this criteria
+        for idx in colonies_gdf[colonies_gdf['USO_FINAL'] == uso_type].index:
+            colonies_gdf.loc[idx, exclude_colname] = True
+
+    # Indicate polygon to be excluded based on area cutoff
+    # We iterate over all indices matching this criteria
+    for idx in colonies_gdf[colonies_gdf['area_km2'] < .0001].index:
+        colonies_gdf.loc[idx, exclude_colname] = True
+
+    return colonies_gdf
+
+def generate_colonies_with_exclusions(colonies_pkl_file, columns_to_drop,
+    uso_types_to_drop, area_cutoff_km2):
+    """Generate colonies shapefile with neighbors' and exclude_from_psi columns
+
+    Args:
+        colonies_pkl_file (str): Colonies shapefile pre-processed (e.g., area,
+            population, distance to ndmc, barrier, neighbors, etc.) in Pickle
+            format.
+        columns_to_drop (list): Specifies columns to drop from previously
+            processed colonies file.
+        uso_types_to_drop (list): List of string names of USO_FINAL
+            to exclude.
+        area_cutoff_km2 (float): Area cutoff for colonies
+
+    Returns:
+        Colonies shapefile (GeoDataFrame object) that has removed
+        `columns_to_drop`, all colonies with area <= area_cutoff_km2, and
+        bounding box neighbors' columns.
+    """
+    # open colonies Pickle file
+    with open(colonies_pkl_file, 'rb') as f:
+        colonies = pickle.load(f)
+
+    # Remove `columns_to_drop`
+    colonies = colonies.drop(columns=columns_to_drop)
+
+    # Add exclude column
+    colonies = create_exclude_column(colonies_gdf = colonies,
+                                     uso_types_to_drop = uso_types_to_drop,
+                                     area_cutoff_km2 = area_cutoff_km2)
+
+    # Add two neighbors' columns
+    colonies_bbox_nbrs = create_nbrs_and_dist_columns(colonies)
+
+    return colonies_bbox_nbrs
+
 def get_row_index(polygon_gdf, id_colname, id_num):
     """Get row index of GeoDataFrame given a unique id number"""
     return polygon_gdf[polygon_gdf[id_colname] == id_num].index.values[0]
@@ -910,24 +1022,27 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
     gdf_copy[nbr_dist_colname] = np.empty((len(gdf_copy), 0)).tolist()
 
     # Iterate over rows in GeoDataFrame
-    for idx, row in tqdm(gdf_copy.iterrows()):
+    with tqdm(total = len(gdf_copy)) as pbar:
+        for idx, row in gdf_copy.iterrows():
 
-        # Extract row centroid and list of neighbors
-        row_centroid = row[centroid_colname] # Shapely Point object
-        neighbor_ids = row[neighbor_colname]
+            # Extract row centroid and list of neighbors
+            row_centroid = row[centroid_colname] # Shapely Point object
+            neighbor_ids = row[neighbor_colname]
 
-        for neighbor_id in neighbor_ids:
-            neighbor_row = gdf_copy[gdf_copy[neighbor_id_col] == neighbor_id]
-            # Since neighbor_row['centroid'] is Series, we need
-            # .array[0] to extract the Shapely Point object
-            neighbor_centroid = neighbor_row[centroid_colname].array[0]
-            neighbor_distance = row_centroid.distance(neighbor_centroid)
+            for neighbor_id in neighbor_ids:
+                neighbor_row = gdf_copy[gdf_copy[neighbor_id_col] == neighbor_id]
+                # Since neighbor_row['centroid'] is Series, we need
+                # .array[0] to extract the Shapely Point object
+                neighbor_centroid = neighbor_row[centroid_colname].array[0]
+                neighbor_distance = row_centroid.distance(neighbor_centroid)
 
-            # Convert neighbor_distance unit to kilometers
-            neighbor_distance = neighbor_distance/1000
+                # Convert neighbor_distance unit to kilometers
+                neighbor_distance = neighbor_distance/1000
 
-            gdf_copy.loc[idx, nbr_dist_colname].append((neighbor_id, \
-                                                neighbor_distance))
+                gdf_copy.loc[idx, nbr_dist_colname].append((neighbor_id, \
+                                                    neighbor_distance))
+
+            pbar.update(1)
 
     return gdf_copy
 
