@@ -9,6 +9,7 @@ import geopandas as gpd
 from shapely.geometry import box, Polygon
 from shapely.ops import cascaded_union
 from pyproj import CRS
+from tqdm import tqdm
 
 def get_row_index(polygon_gdf, id_colname, id_num):
     """Get row index of GeoDataFrame given a unique id number"""
@@ -479,7 +480,7 @@ def add_polygon_neighbors_column_fast(polygon_gdf, right_gdf, id_colname,
     # Each value in the new column is set to an empty list
     nbrs_touch_gdf[neighbor_colname] = np.empty((len(nbrs_touch_gdf), 0)).tolist()
 
-    for group in joined_grouped.groups:
+    for group in tqdm(joined_grouped.groups):
 
         # Create list of id numbers that intersect with group
         group_list = list(joined_grouped.get_group(group)[id_colname_right])
@@ -909,7 +910,7 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
     gdf_copy[nbr_dist_colname] = np.empty((len(gdf_copy), 0)).tolist()
 
     # Iterate over rows in GeoDataFrame
-    for idx, row in gdf_copy.iterrows():
+    for idx, row in tqdm(gdf_copy.iterrows()):
 
         # Extract row centroid and list of neighbors
         row_centroid = row[centroid_colname] # Shapely Point object
