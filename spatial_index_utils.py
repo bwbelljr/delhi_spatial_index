@@ -832,7 +832,7 @@ def add_service_length_column(polygon_gdf, line_gdf, length_colname,
     return polygon_gdf
 
 def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
-    nbr_dist_colname, calc_pop_density):
+    nbr_dist_colname, pcen_denom):
     """ Create service index for services with (poly)lines
 
     Args:
@@ -842,8 +842,7 @@ def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
         epsg_code: EPSG code for point_gdf reprojection
         nbr_dist_colname: name of column that will have neighbor id's and
             distances.
-        calc_pop_density: If True, divide by population/area. Else divide
-            by population.
+        pcen_denom: String with values "pop", "popdensity", or "one"
 
     Returns:
         GeoDataFrame with column '{service_name}_idx' added
@@ -869,7 +868,7 @@ def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
     # Calculate and add PCEN_Mobile column
     gdf_copy = calc_pcen_mobile(gdf_copy, count_colname=count_colname,
                                 pcen_mobile_colname=pcen_mobile_colname,
-                                calc_pop_density=calc_pop_density,
+                                pcen_denom=pcen_denom,
                                 nbr_dist_colname=nbr_dist_colname)
 
     # Calculate and add service index column
@@ -1046,7 +1045,7 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
 
 def calc_pcen_mobile(polygon_gdf, count_colname,
                      pcen_mobile_colname,
-                     calc_pop_density,
+                     pcen_denom,
                      nbr_dist_colname='nbr_dist',
                      pop_colname='population',
                      area_colname='area_km2',
@@ -1054,19 +1053,19 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
     """ Calculates and adds column for PCEN_mobile
 
     Calculates effective number of service points within a
-    polygon divided by the population size or density. This effective number
+    polygon divided by population size, density, or 1. This effective number
     not only counts service points within the polygon but also
     service points in neighboring polygons, inversely weighted
     by distance between centroid of selected polygon and centroids
-    of its neighbors.
+    of its neighbors. Note that polygons to be excluded get pcen_mobile = -1.
 
     Args:
         polygon_gdf: GeoDataFrame with polygon geometries
         count_colname: name of column with count of points in
             polygon
-        calc_pop_density: If True, divide effective service points by Population
-            density (population/area). Otherwise (if False), divide effective
-            number by Population size.
+        pcen_denom: If "pop", denominator is Population. If "popdensity",
+            denominator is Population density (population/area). If "one",
+            denominator=1.
         pcen_mobile_colname: name of column with pcen_mobile number
         nbr_dist_colname: name of column that will have neighbor id's and
             distances. By default, set to 'nbr_dist'
@@ -1082,17 +1081,24 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
     gdf_copy = polygon_gdf.copy()
 
     # Create new column for pcen_mobile
-    gdf_copy[pcen_mobile_colname] = 0
+    # Note that all excluded polygons will default to this value
+    gdf_copy[pcen_mobile_colname] = -1
 
     # iterate through GeoDataFrame
     for idx, row in gdf_copy.iterrows():
 
+        # For all to be excluded, skip to next row
+        if row['exclude_from_psi']:
+            continue
+
         # denominator for PCEN equation is either population or
-        # population density (population/area)
-        if calc_pop_density:
+        # population density (population/area) or 1
+        if pcen_denom == 'popdensity':
             denom = row[pop_colname]/row[area_colname]
-        else:
+        elif pcen_denom == 'pop':
             denom = row[pop_colname]
+        elif pcen_denom == "one":
+            denom = 1
 
         # initialize effective service count with polygon's count
         poly_count = row[count_colname]
@@ -1176,17 +1182,27 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
     gdf_copy = polygon_gdf.copy()
 
     # Calculate min and max of PCEN_mobile
-    pcen_min = gdf_copy[pcen_mobile_colname].min()
+    # get first value greater than -1, which is the smallest value
+    pcen_min = sorted(gdf_copy[pcen_mobile_colname].unique())[1]
     pcen_max = gdf_copy[pcen_mobile_colname].max()
 
+    # initialize service index column with -1, default value for
+    # excluded polygons
+    gdf_copy[service_idx_colname] = -1
+
     # Create new service index column based on min-max method
-    gdf_copy[service_idx_colname] = gdf_copy[pcen_mobile_colname] - pcen_min
-    gdf_copy[service_idx_colname] /= pcen_max-pcen_min
+    for idx, row in gdf_copy.iterrows():
+        # Exclude polygons
+        if row['exclude_from_psi']:
+            continue
+
+        result = (row[pcen_mobile_colname] - pcen_min)/(pcen_max-pcen_min)
+        gdf_copy.loc[idx, service_idx_colname] = result
 
     return gdf_copy
 
 def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
-    calc_pop_density, nbr_dist_colname):
+    pcen_denom, nbr_dist_colname):
     """Create service index
 
     Args:
@@ -1194,8 +1210,7 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
         point_gdf: GeoDataFrame with point geometries
         service_name: name of public service
         epsg_code: EPSG code for point_gdf reprojection
-        calc_pop_density: If True, divide service count by pop density.
-            Otherwise, divide by population
+        pcen_denom: String with values of "pop", "popdensity", or "one"
         nbr_dist_colname: name of column that will have neighbor id's and
             distances.
 
@@ -1224,7 +1239,7 @@ def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
     # Calculate and add PCEN_Mobile column
     gdf_copy = calc_pcen_mobile(gdf_copy, count_colname=count_colname,
                                 pcen_mobile_colname=pcen_mobile_colname,
-                                calc_pop_density = calc_pop_density,
+                                pcen_denom = pcen_denom,
                                 nbr_dist_colname=nbr_dist_colname)
 
     # Calculate and add service index column
@@ -1382,7 +1397,7 @@ def calc_point_services_buffer(polygon_gdf, point_services, calc_pop_density,
     return polygon_gdf
 
 def calc_point_services(polygon_gdf, point_services, epsg_code,
-    calc_pop_density, nbr_dist_colname):
+    pcen_denom, nbr_dist_colname):
     """Calculates all point services"""
 
     separator = '--------------------------------------------------------'
@@ -1392,7 +1407,7 @@ def calc_point_services(polygon_gdf, point_services, epsg_code,
                                         point_gdf=point_services[point_service],
                                         service_name=point_service,
                                         epsg_code=epsg_code,
-                                        calc_pop_density = calc_pop_density,
+                                        pcen_denom = pcen_denom,
                                         nbr_dist_colname=nbr_dist_colname)
         print('{} service index is completed'.format(point_service))
         print(separator)
@@ -1401,13 +1416,28 @@ def calc_point_services(polygon_gdf, point_services, epsg_code,
 
     return polygon_gdf
 
+def create_overall_psi(colonies_gdf):
+    """Create Overall PSI across all indices (unnormalized and normalized [0,1])"""
+
+    # Create list of all index columns
+    idx_columns = [column for column in colonies_gdf.columns if column.endswith('_idx')]
+
+    # Calculate simple average of all index columns and put in `unnorm_psi` column
+    colonies_gdf['unnorm_psi'] = colonies_gdf[idx_columns].mean(axis=1)
+
+    # Calculate normalized index [0,1] only for rows that are to be
+    # included in the calculation
+    colonies_gdf = calc_service_index(colonies_gdf, 'unnorm_psi', 'norm_psi')
+
+    return colonies_gdf
+
 def calc_all_services(polygon_gdf, point_services, line_services, epsg_code,
-    calc_pop_density, nbr_dist_colname):
+    pcen_denom, nbr_dist_colname):
     """Calculate all public services indices (point and line)"""
 
     # Get all point services
     polygon_gdf = calc_point_services(polygon_gdf, point_services, epsg_code,
-                    calc_pop_density, nbr_dist_colname)
+                    pcen_denom, nbr_dist_colname)
 
 
     for line_service in line_services:
@@ -1416,9 +1446,13 @@ def calc_all_services(polygon_gdf, point_services, line_services, epsg_code,
                                                   line_service,
                                                   epsg_code,
                                                   nbr_dist_colname,
-                                                  calc_pop_density)
+                                                  pcen_denom)
 
         print('{} service is completed'.format(line_service))
+
+    polygon_gdf = polygon_gdf.rename(columns={'road_count':'road_length'})
+
+    polygon_gdf = create_overall_psi(polygon_gdf)
 
     return polygon_gdf
 
