@@ -476,13 +476,13 @@ def add_polygon_neighbors_column_bbox(polygon_gdf,
 
         # Check if polygon bounding box intersects polygon from other row
         # Append index of neighbors to the respective rows only if
-        # they do not have a barrier or are not in NDMC/DCB area
+        # they do not have a barrier
         for idx2, row2 in islice(polygon_with_neighbors_gdf.iterrows(), idx+1, None):
             if poly_bbox.intersects(row2['geometry']):
-                if not row2['barrier'] and row2['USO_FINAL'] != 'NDMC' and row2['USO_FINAL'] != 'DCB':
+                if not row2['barrier']:
                     polygon_with_neighbors_gdf.loc[idx, neighbor_colname].append(row2[neighbor_id_col])
 
-                if not row['barrier'] and row['USO_FINAL'] != 'NDMC' and row['USO_FINAL'] != 'DCB':
+                if not row['barrier']:
                     polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].append(row[neighbor_id_col])
 
     return polygon_with_neighbors_gdf
@@ -544,14 +544,12 @@ def add_polygon_neighbors_column(polygon_gdf,
                poly.crosses(row2['geometry']):
 
                # Append index of neighbors to the respective rows only if
-               # they do not have a barrier or are not in NDMC/DCB area
-               if not row2[barrier_colname] and row2['USO_FINAL'] != 'NDMC' and\
-               row2['USO_FINAL'] != 'DCB':
+               # they do not have a barrier
+               if not row2[barrier_colname]:
                    polygon_with_neighbors_gdf.loc[idx, neighbor_colname].\
                                             append(row2[neighbor_id_col])
 
-               if not row[barrier_colname] and row['USO_FINAL'] != 'NDMC' and \
-               row['USO_FINAL'] != 'DCB':
+               if not row[barrier_colname]:
                    polygon_with_neighbors_gdf.loc[idx2, neighbor_colname].\
                                             append(row[neighbor_id_col])
 
