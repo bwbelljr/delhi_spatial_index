@@ -1088,8 +1088,8 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
     for idx, row in gdf_copy.iterrows():
 
         # For all to be excluded, skip to next row
-        if row['exclude_from_psi']:
-            continue
+        #if row['exclude_from_psi']:
+        #    continue
 
         # denominator for PCEN equation is either population or
         # population density (population/area) or 1
@@ -1107,6 +1107,7 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
         for nbr_id, nbr_dist in row[nbr_dist_colname]:
 
             # Extract service count of neighbor
+
             nbr_count = gdf_copy[gdf_copy[id_col]==nbr_id][count_colname].array[0]
 
             # Add this service count (discounted by distance)
@@ -1193,8 +1194,8 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
     # Create new service index column based on min-max method
     for idx, row in gdf_copy.iterrows():
         # Exclude polygons
-        if row['exclude_from_psi']:
-            continue
+        #if row['exclude_from_psi']:
+        #    continue
 
         result = (row[pcen_mobile_colname] - pcen_min)/(pcen_max-pcen_min)
         gdf_copy.loc[idx, service_idx_colname] = result
