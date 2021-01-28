@@ -1106,13 +1106,18 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
         # Iterate through each neighbor of the polygon
         for nbr_id, nbr_dist in row[nbr_dist_colname]:
 
-            # Extract service count of neighbor
+            try: #try-except to skip missing (RV) colonies
+                # Extract service count of neighbor
 
-            nbr_count = gdf_copy[gdf_copy[id_col]==nbr_id][count_colname].array[0]
+                nbr_count = gdf_copy[gdf_copy[id_col]==nbr_id][count_colname].array[0]
 
-            # Add this service count (discounted by distance)
-            # to effective count of services for polygon
-            poly_count += nbr_count * (1/(1+nbr_dist))
+                # Add this service count (discounted by distance)
+                # to effective count of services for polygon
+                poly_count += nbr_count * (1/(1+nbr_dist))
+
+            except:
+                pass
+
 
         # Divide effective service count by population size
         # and add to the pcen_mobile column
