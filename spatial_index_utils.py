@@ -1189,7 +1189,8 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
 
     # Calculate min and max of PCEN_mobile
     # get first value greater than -1, which is the smallest value
-    pcen_min = sorted(gdf_copy[pcen_mobile_colname].unique())[1]
+    #pcen_min = sorted(gdf_copy[pcen_mobile_colname].unique())[1]
+    pcen_min = gdf_copy[pcen_mobile_colname].min()
     pcen_max = gdf_copy[pcen_mobile_colname].max()
 
     # initialize service index column with -1, default value for
