@@ -266,7 +266,7 @@ def check_shapefile(gdf, gdf_name, geom_type, delhi_bounds_filepath):
 
 
 def remove_duplicate_geom(gdf, geom_colname='geometry'):
-    """Removes rows with duplicates geometries
+    """Removes rows with duplicate geometries
 
     Checks if any rows have duplicate geometries and removes
     them. This is based on Shapely's `object.equals(other)` method
@@ -292,7 +292,11 @@ def remove_duplicate_geom(gdf, geom_colname='geometry'):
     # Assumes that every row is not a duplicate
     gdf['not_duplicate'] = True
 
-    for idx, row in gdf.iterrows():
+    for idx, row in tqdm(gdf.iterrows()):
+
+        if idx % 100 == 0:
+            print(f"{idx}/{old_size}")
+
         row_geom = row[geom_colname]
 
         # Iterate over rows again starting at idx+1 index
