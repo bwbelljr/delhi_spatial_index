@@ -2,3 +2,5 @@
 Barrier_Clip/*
 .claude/settings.local.json
 *.data/*
+.venv/
+__pycache__/
