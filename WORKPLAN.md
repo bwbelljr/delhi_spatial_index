@@ -55,23 +55,23 @@ paths". Everything downstream depends on this.*
 existing PSI outputs. **DONE (17 Aug 2026, PR #5): fresh run reproduced the
 July 2025 baseline with zero numeric deviation.**
 
-## Phase 2 — The Oracle: ground-truth test harness (Bob) — P1
+## Phase 2 — The Oracle: ground-truth test harness (Bob) — P1 (DONE)
 
 *Top code priority. Do this BEFORE trusting any recalculation, because the
 index is the paper's core contribution.*
 
-- [ ] Build a toy "mythical city": 2–3 settlement types, a handful of services
+- [x] Build a toy "mythical city": 2–3 settlement types, a handful of services
       and boundaries, small enough that the PSI can be computed by hand
-- [ ] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
+- [x] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
       Claude generates the fixture, humans confirm the arithmetic)
-- [ ] Encode as a pytest suite: oracle fixtures + expected PSI values as a
+- [x] Encode as a pytest suite: oracle fixtures + expected PSI values as a
       permanent regression check on `spatial_index_utils.py`
-- [ ] Use the oracle as the fix-loop target for any bug found in Phase 3, and
+- [x] Use the oracle as the fix-loop target for any bug found in Phase 3, and
       as the safe sandbox for index-formula experiments in Phase 6
-- [ ] Stretch: reproduce the South African source paper's published numbers
+- [x] Stretch: reproduce the South African source paper's published numbers
       (the index formulation was adapted from Patrick's paper) as a second
       validation case; consider releasing the harness with the package
-- [ ] Decision-support variant: compute the mythical city's PSI under both
+- [x] Decision-support variant: compute the mythical city's PSI under both
       exclusion semantics — (a) dropped settlement types still contribute
       services as neighbors vs. (b) dropped types fully removed before
       neighbor computation — and show the side-by-side delta to Raj to ground
@@ -79,6 +79,17 @@ index is the paper's core contribution.*
 
 **Definition of done:** `pytest` passes with hand-verified expected values;
 any future code change that alters the index fails the suite.
+**DONE (17 Aug 2026, PR #6): 65 tests green; production == independent
+reference == hand anchors at 1e-12; mutation testing confirms the suite
+catches a broken index. Hand ratification of
+`docs/oracle/derivation-worksheet.md` remains PENDING by design (Bob's
+~15-min calculator pass) — do it before Phase 4's recalculation.**
+
+**Findings for Phase 3/4 (see `docs/oracle/exclusion-semantics-memo.md`):**
+six documented manuscript-vs-code divergences, including two that need
+Raj: exclusion semantics (a) is unimplementable in current code (silent
+`except: pass`), and ~450 service points are double-counted via 4,050
+overlapping colony polygons.
 
 ## Phase 3 — Refactor & bug audit (Bob) — P2, gated on Phase 2
 
