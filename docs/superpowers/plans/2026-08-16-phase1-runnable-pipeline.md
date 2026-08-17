@@ -12,11 +12,22 @@
 
 ## Global Constraints
 
-- **No behavior changes** to pipeline logic; `spatial_index_utils.py` is not modified in this phase.
+- **No behavior changes** to pipeline logic. `spatial_index_utils.py` is not
+  refactored in this phase; the sole sanctioned exception (per the spec's
+  Known Risks) is a **minimal, semantically-neutral API-compat edit** (e.g. a
+  renamed geopandas/shapely call) required to make the pipeline run on the
+  modernized dependencies — any such edit must be logged in CHANGELOG.md and
+  the PR description. Anything touching methodology (index equations,
+  neighbor semantics, exclusions) remains a hard halt-and-ask.
 - **Baseline is read-only**: nothing may open the July 2025 outputs (`<data-dir>/colonies_bbox_nbrs2025.joblib`, `<data-dir>/psi_2020_results/*12Sep2021*`) for writing. New outputs go to `--out-dir`.
 - **Path resolution order** everywhere: `--data-dir` flag → `DELHI_DATA_DIR` env var → `~/delhi_data`.
 - **No absolute paths in code**: after this phase `grep -rn "/home/" *.py scripts/ tests/` returns nothing.
-- **Dependencies**: latest stable via uv floors (no upper caps); `jupyterlab` removed; exactly one declaration file (`pyproject.toml` + `uv.lock`).
+- **Dependencies**: latest stable via uv floors, with ONE documented cap:
+  `pandas>=2.3,<3` — uncapped floors resolve to pandas 3.0 (major release:
+  Copy-on-Write always on, removed APIs), too large a behavior jump to take
+  without the Phase 2 oracle watching; the cap is recorded in CHANGELOG.md
+  and revisited in Phase 2. `jupyterlab` removed; exactly one declaration
+  file (`pyproject.toml` + `uv.lock`).
 - **Known oddities preserved** (spec non-goals): dedup steps keep their `if not os.path.exists(...)` skip-guards; bbox adjacency unchanged; RV-only exclusion unchanged.
 - **Verification tolerance**: `numpy.allclose(rtol=1e-9, atol=1e-12)` starting point; deviations investigated, never silently loosened.
 - Commit messages end with:
@@ -75,7 +86,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "geopandas>=1.1",
-    "pandas>=2.3",
+    "pandas>=2.3,<3",
     "shapely>=2.1",
     "matplotlib>=3.10",
     "pyproj>=3.7",
@@ -92,7 +103,9 @@ dev = [
 Note: **no `[build-system]` table** — that is uv's convention for a
 non-package project (dependencies are installed, the project itself is not).
 Do not add `[tool.poetry]` or any poetry remnants. `jupyterlab` is
-intentionally gone.
+intentionally gone. The `pandas<3` cap is deliberate (major-version jump
+deferred to Phase 2 when the oracle can validate it) — do not "fix" it to a
+bare floor.
 
 - [ ] **Step 3: Create the environment and lockfile**
 
@@ -107,7 +120,7 @@ Expected: version numbers print, no ImportError. (`spatial_index_utils` imports 
 - [ ] **Step 5: Delete legacy dependency files**
 
 Run: `git rm requirements.txt environment.yml poetry.lock Dockerfile install_conda_environment.sh`
-Expected: five files staged for deletion. Check `.gitignore` contains `.venv/` (add it if missing).
+Expected: five files staged for deletion. Check `.gitignore` contains `.venv/` and `__pycache__/` (add if missing).
 
 - [ ] **Step 6: Commit**
 
@@ -263,11 +276,17 @@ from scripts.verify_against_baseline import (
 
 
 def _nbr_frame(nbrs_b=("A", "C")):
+    # nbrs_dist_bbox mirrors the real schema from calc_nbr_dist:
+    # a list of (neighbor_id, distance) tuples, NOT a parallel float list.
+    dists = {"A": 1.5, "C": 2.5}
     return pd.DataFrame(
         {
             "USO_AREA_U": ["A", "B"],
             "nbrs_bbox": [["B"], list(nbrs_b)],
-            "nbrs_dist_bbox": [[1.5], [1.5, 2.5][: len(nbrs_b)]],
+            "nbrs_dist_bbox": [
+                [("B", 1.5)],
+                [(n, dists[n]) for n in nbrs_b],
+            ],
         }
     )
 
@@ -312,6 +331,15 @@ def test_tiny_float_noise_tolerated():
     issues, _ = compare_numeric_frames(
         _psi_frame(psi=0.5 + 1e-14), _psi_frame(), "USO_AREA_U", 1e-9, 1e-12
     )
+    assert issues == []
+
+
+def test_incidental_columns_ignored():
+    # The to_csv row index ("Unnamed: 0") and notebook-era "index" column
+    # reflect row order, not results — differences there must not FAIL.
+    base = _psi_frame().assign(**{"Unnamed: 0": [0, 1], "index": [0, 1]})
+    new = _psi_frame().assign(**{"Unnamed: 0": [5, 9], "index": [7, 3]})
+    issues, _ = compare_numeric_frames(new, base, "USO_AREA_U", 1e-9, 1e-12)
     assert issues == []
 ```
 
@@ -374,8 +402,11 @@ def compare_neighbor_frames(new_df, base_df):
                 f"(new={sorted(set(new_nbrs))}, baseline={sorted(set(base_nbrs))})"
             )
             continue
-        new_dist = dict(zip(new_nbrs, new_idx.at[uso_id, "nbrs_dist_bbox"]))
-        base_dist = dict(zip(base_nbrs, base_idx.at[uso_id, "nbrs_dist_bbox"]))
+        # nbrs_dist_bbox is a list of (neighbor_id, distance) tuples
+        # (see calc_nbr_dist in spatial_index_utils.py) — build the lookup
+        # directly from the tuples, never by zipping against nbrs_bbox.
+        new_dist = dict(new_idx.at[uso_id, "nbrs_dist_bbox"])
+        base_dist = dict(base_idx.at[uso_id, "nbrs_dist_bbox"])
         for nbr in base_dist:
             if not np.isclose(new_dist[nbr], base_dist[nbr], rtol=RTOL, atol=ATOL):
                 issues.append(
@@ -402,10 +433,16 @@ def compare_numeric_frames(new_df, base_df, id_col, rtol, atol):
         issues.append(
             f"only {len(merged)} of {len(base_df)} baseline rows matched on {id_col}"
         )
+    # Exclude incidental/positional columns: the pandas row index written by
+    # to_csv (read back as "Unnamed: 0") and the notebook-era "index" column
+    # reflect row order, not computed quantities.
+    incidental = {"index", "level_0", ""}
     numeric_cols = [
         c
         for c in base_df.columns
         if c != id_col
+        and c not in incidental
+        and not str(c).startswith("Unnamed")
         and c in new_df.columns
         and pd.api.types.is_numeric_dtype(base_df[c])
         and pd.api.types.is_numeric_dtype(new_df[c])
@@ -510,7 +547,9 @@ git commit -m "feat: baseline verifier comparing fresh runs to July 2025 outputs
 - Produces: `<out-dir>/colonies_bbox_nbrs_aug2026.joblib` — consumed by Task 5's `--neighbors-file` and Task 3's verifier.
 
 This is a **mechanical translation** of the notebook: identical call sequence
-and arguments; cell echoes (`.head()`, `len()`, `.crs`) become prints. The
+and arguments. Information-bearing cell echoes (`len()`, `.crs`, checks)
+become prints; bare `.head()` display cells (no-ops outside a notebook) are
+dropped. The
 dedup cache dirs (`canal.data` etc.) keep their existing-path skip-guards and
 stay pointed at the data dir (they exist there, so nothing is written —
 baseline safety holds); only the always-written neighbors joblib goes to
@@ -749,7 +788,8 @@ git commit -m "feat: preprocess.py replaces pre-processing notebook (mechanical 
 - Consumes: `resolve_data_dir`, `resolve_out_dir` from `scripts.common`; `calc_all_services`, `check_shapefile` from `spatial_index_utils` (unmodified); the neighbors joblib via `--neighbors-file` (default `<data-dir>/colonies_bbox_nbrs2025.joblib` — today's behavior; the verification run passes Task 4's fresh output instead).
 - Produces: in `<out-dir>/psi_2020_results/`: `delhi_psi_bbox_popsize2020_norv_aug2026.{csv,joblib,shp}` and `delhi_psi_bbox_popdensity2020_norv_aug2026.{csv,joblib,shp}`; `<out-dir>/missing_colonies.csv`. The two CSVs are consumed by Task 3's verifier.
 
-Mechanical translation, same rules as Task 4. The notebook saved the CSVs and
+Mechanical translation, same rules as Task 4 (info-bearing echoes → prints,
+bare `.head()` displays dropped). The notebook saved the CSVs and
 joblibs twice (once mid-flow, once at the end); the port keeps the same final
 write set — each file written once at the position of the notebook's *final*
 save, which produces byte-identical results with less redundancy. This is a
@@ -800,8 +840,10 @@ def main():
     # WGS 84 / Delhi
     epsg_code = 7760
 
-    colonies_bbox_file = args.neighbors_file or os.path.join(
-        data_dir, "colonies_bbox_nbrs2025.joblib"
+    colonies_bbox_file = (
+        str(Path(args.neighbors_file).expanduser())
+        if args.neighbors_file
+        else os.path.join(data_dir, "colonies_bbox_nbrs2025.joblib")
     )
 
     popfile_2020 = os.path.join(data_dir, "pop_colony_wp_2020_jjc_adjusted.csv")
@@ -1073,8 +1115,9 @@ git commit -m "feat: compute_psi.py replaces PSI notebook (mechanical port)"
 
 - [ ] **Step 1: Update README**
 
-Replace the `## Repository layout` and `# Setup Notebook` sections of
-`README.md` with:
+In the `## Description` paragraph, change "the scripts and Jupyter notebooks
+can be used" to "the scripts can be used". Then replace the
+`## Repository layout` and `# Setup Notebook` sections of `README.md` with:
 
 ```markdown
 ## Repository layout
@@ -1124,7 +1167,9 @@ And a `### Changed` / `### Removed` block:
 ```markdown
 ### Changed
 - Dependency management consolidated to uv + `pyproject.toml` (all packages
-  at latest stable; Python 3.13)
+  at latest stable; Python 3.13). One documented exception: `pandas>=2.3,<3`
+  — the pandas 3.0 major-version jump is deferred until the Phase 2 oracle
+  can validate it
 - Output filenames now dated `aug2026` (previously mislabeled `12Sep2021`)
 
 ### Removed
