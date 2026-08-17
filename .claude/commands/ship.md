@@ -49,6 +49,9 @@ approval) always precedes it.
 - Conventions: uv + `pyproject.toml`, pytest. (A fuller conventions doc /
   CLAUDE.md is planned with the Phase 3 refactor — until then, match the
   style of the file you are editing.)
+- **Changelog**: every /ship run updates `CHANGELOG.md` (`[Unreleased]`
+  section, Keep a Changelog style) as part of the PR; autonomous-run
+  deviations from plan are recorded there and in the PR description.
 
 **Model roles** (assign per phase; parallelize independent work)
 | Role | Models |

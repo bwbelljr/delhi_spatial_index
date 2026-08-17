@@ -1,9 +1,24 @@
 # Phase 1: Runnable Pipeline — Design Spec
 
 Date: 2026-08-16
-Status: awaiting approval
+Status: **approved by owner (2026-08-16)** — /ship pipeline authorized
 Branch: `phase1-runnable-pipeline` (off `origin/main`)
 Parent plan: `WORKPLAN.md` Phase 1
+
+## Decision log (autonomous-run authorizations, per /ship)
+
+- **Autonomy scope**: fix forward, commit, push, and **merge the PR** — all
+  authorized without mid-run check-ins.
+- **Plan-vs-reviewer conflicts**: a CONFIRMED Critical finding governs over
+  the implementation plan; every deviation recorded in CHANGELOG.md and the
+  PR description. Non-critical conflicts follow the plan and are surfaced
+  afterward.
+- **Failure policy**: fix and retry to done. The spec's stop-and-ask red
+  lines still apply: no methodology changes (index equations, exclusion
+  semantics, oracle-relevant behavior) and no writes to baseline data —
+  those halt the run for the owner.
+- **Changelog**: CHANGELOG.md added to the repo; this run updates its
+  `[Unreleased]` section as part of the PR.
 
 ## Purpose
 
