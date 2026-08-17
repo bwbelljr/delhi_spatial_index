@@ -144,3 +144,61 @@ def test_production_collapse_gap5(expected, denom):
         for sid in post.index:
             assert post.loc[sid, col] == pytest.approx(
                 pre.loc[sid, col], abs=1e-12), (denom, sid, col)
+
+
+def test_gap6_border_point_is_double_counted_by_production():
+    """Rule-set gap #6 (found by code-review round 2 mutation testing).
+
+    Production's add_point_count_column uses gpd.sjoin's default
+    `intersects` predicate, so a service point lying exactly on a shared
+    settlement border is counted for BOTH neighbors. The manuscript's
+    per-settlement counts imply strict containment (the reference impl
+    uses `within`, counting it for neither). Real Delhi data has
+    digitized points on shared colony borders, so this is a live
+    double-counting risk — recorded here, routed to the memo, and left
+    for the Phase 3 bug audit to adjudicate with Raj.
+    """
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    import spatial_index_utils
+    from tests.reference_impl import _service_amounts
+
+    city = load_settlements()
+    # (1_001_000, 1_001_500) lies exactly on the A|B shared edge
+    border_point = gpd.GeoDataFrame(
+        {"service": ["clinic"]},
+        geometry=[Point(1_001_000, 1_001_500)], crs=city.crs)
+
+    counted = spatial_index_utils.add_point_count_column(
+        polygon_gdf=city.copy(), point_gdf=border_point,
+        count_colname="probe_count")
+    counts = counted.set_index("USO_AREA_U")["probe_count"]
+    assert counts["A"] == 1 and counts["B"] == 1, "production double-counts"
+
+    ref = _service_amounts(city, {"clinic": border_point,
+                                  "road": load_services()["road"]})
+    assert ref["clinic"]["A"] == 0 and ref["clinic"]["B"] == 0, \
+        "reference impl (manuscript-literal `within`) counts it for neither"
+
+
+def test_reprojection_is_load_bearing():
+    """Feed a service layer in a different CRS and require the same answers.
+
+    Code review round 2: every fixture is already EPSG:7760, so
+    reproject_gdf could be replaced by the identity function with a green
+    suite — yet every real service layer depends on it.
+    """
+    services = load_services()
+    services_wgs84 = dict(services)
+    services_wgs84["clinic"] = services["clinic"].to_crs(epsg=4326)
+    assert services_wgs84["clinic"].crs.to_epsg() == 4326
+
+    baseline = run_production_chain(
+        load_settlements(), load_barriers(), services, "pop")
+    reprojected = run_production_chain(
+        load_settlements(), load_barriers(), services_wgs84, "pop")
+    for sid in baseline["USO_AREA_U"]:
+        got = reprojected[reprojected["USO_AREA_U"] == sid]["clinic_pcen"].iloc[0]
+        exp = baseline[baseline["USO_AREA_U"] == sid]["clinic_pcen"].iloc[0]
+        assert got == pytest.approx(exp, abs=1e-12), sid

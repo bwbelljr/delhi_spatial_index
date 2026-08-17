@@ -69,7 +69,14 @@ settlement type can change results through *renormalization alone*.
    barrier-crossed settlement is deleted from everyone else's neighbor
    lists but keeps its own (in Oraculum: A counts E's services; E does not
    count A's). The manuscript describes severing the crossing only.
-3. Also documented for completeness (full details in the spec): roads are
+3. **Service points on shared borders are double-counted.** Production
+   counts a point service with a boundary-inclusive spatial join, so a
+   clinic digitized exactly on the border between two colonies is counted
+   for BOTH — the manuscript's per-settlement counts imply strict
+   containment. This is worth checking against the real Delhi layers,
+   where boundary-lying points are plausible
+   (`tests/test_oracle.py::test_gap6_border_point_is_double_counted_by_production`).
+4. Also documented for completeness (full details in the spec): roads are
    neighbor-decayed in code though Eq. 4 has no neighbor term; `norm_psi`
    is a second normalization absent from Eq. 1; the popdensity denominator
    has no manuscript equation.

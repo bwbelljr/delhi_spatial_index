@@ -98,3 +98,19 @@ def test_production_bbox_adjacency_on_exhibit(exhibit):
     got = {row["USO_AREA_U"]: set(row["nbrs_bbox"])
            for _, row in result.iterrows()}
     assert got == {"P": set(), "Q": {"P"}, "R": {"S"}, "S": {"R"}}
+
+
+def test_production_bbox_geometry_is_exact_envelope(exhibit):
+    """Pin the bbox GEOMETRY, not just its adjacency consequences.
+
+    Code review round 2: bboxes could be dilated by ~99 m with a green
+    suite, because both fixtures sit on a coarse grid. On real data,
+    polygon pairs sit metres apart, so an accidental buffer would rewrite
+    neighbor lists city-wide while the oracle stayed green.
+    """
+    import spatial_index_utils
+
+    gdf = exhibit.copy()
+    bbox_gdf = spatial_index_utils.create_bbox_gdf(gdf)
+    for original, produced in zip(gdf.geometry, bbox_gdf["geometry"]):
+        assert produced.equals(original.envelope)

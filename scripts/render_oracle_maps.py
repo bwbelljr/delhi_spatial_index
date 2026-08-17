@@ -72,6 +72,7 @@ TYPE_COLORS = {
 CANAL_COLOR = "#eb6834"    # orange slot -- unused by any settlement type
 ROAD_COLOR = INK_SECONDARY
 ARROW_COLOR = INK_MUTED
+IDEAL_ONLY_COLOR = "#7a5195"  # ideal-rule links the code rule drops
 ARROW_HIGHLIGHT = "#e34948"  # red slot, reused deliberately to call out A->E
 MARKER_FACE = INK_PRIMARY
 MARKER_EDGE = SURFACE
@@ -160,7 +161,7 @@ def _draw_barriers(ax, barriers):
 
 
 def _draw_directed_edges(ax, city, nbrs, ghost=frozenset(), highlight=None,
-                         force_dashed=False):
+                         force_dashed=False, force_rad=None, color=None):
     """Draw directed neighbor arrows. Mutual pairs get two curved arcs
     (bowed apart) so both directions stay visible; one-way pairs get a
     single straight arrow, which itself signals the asymmetry."""
@@ -184,7 +185,10 @@ def _draw_directed_edges(ax, city, nbrs, ghost=frozenset(), highlight=None,
                 seen_mutual.add(key)
             else:
                 rad = 0.0
-            color = ARROW_HIGHLIGHT if is_highlight else ARROW_COLOR
+            if force_rad is not None:
+                rad = force_rad
+            edge_color = color or (ARROW_HIGHLIGHT if is_highlight
+                                   else ARROW_COLOR)
             lw = 1.7 if is_highlight else 0.9
             alpha = 0.95 if is_highlight else 0.6
             ax.annotate(
@@ -192,7 +196,7 @@ def _draw_directed_edges(ax, city, nbrs, ghost=frozenset(), highlight=None,
                 arrowprops=dict(
                     arrowstyle="-|>", lw=lw, mutation_scale=13,
                     linestyle="--" if dashed else "-",
-                    color=color, alpha=alpha, shrinkA=20, shrinkB=20,
+                    color=edge_color, alpha=alpha, shrinkA=20, shrinkB=20,
                     connectionstyle=f"arc3,rad={rad}"),
                 zorder=6 if not is_highlight else 9)
 
@@ -233,8 +237,8 @@ def _legend_handles(*, services=True, canal=True, road=True, nbrs=True):
                                 label="neighbor, code rule (directed)"))
         handles.append(Line2D([0], [0], color=ARROW_HIGHLIGHT, lw=1.9,
                                 label="A→E exists; E→A does not"))
-        handles.append(Line2D([0], [0], color=ARROW_COLOR, lw=1.0,
-                                linestyle="--", alpha=0.5,
+        handles.append(Line2D([0], [0], color=IDEAL_ONLY_COLOR, lw=1.2,
+                                linestyle="--",
                                 label="ideal-only link (code rule drops it)"))
     return handles
 
@@ -249,7 +253,8 @@ def render_city():
     # manuscript's border+pair-severing rule, dropped by the code rule)
     # render dashed, so the reader sees exactly what the code discards.
     _draw_directed_edges(ax, city, _ideal_only_edges(city, barriers),
-                         force_dashed=True)
+                         force_dashed=True, force_rad=0.34,
+                         color=IDEAL_ONLY_COLOR)
     _draw_directed_edges(ax, city, nbrs, highlight=("A", "E"))
     _draw_barriers(ax, barriers)
     _draw_services(ax, services)

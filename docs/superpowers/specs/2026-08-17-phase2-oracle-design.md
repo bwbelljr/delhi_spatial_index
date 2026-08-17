@@ -42,7 +42,7 @@ production code == independent reference implementation == human calculator.
 
 The ultracode review of this spec, running the production code against the
 draft geometry, established that the code deviates from the manuscript in
-FOUR distinct places. The oracle therefore computes everything under two
+five distinct places; code-review round 2's mutation testing found a sixth. The oracle therefore computes everything under two
 named rule-sets, and every artifact (expected values, worksheet, memo)
 labels which one it is using:
 
@@ -53,6 +53,8 @@ labels which one it is using:
 | 3 | Roads | Eq. 4 literally: own length / population, min-maxed, NO neighbor term | `create_service_length_index` applies Eq. 3-style neighbor decay to road lengths |
 | 4 | PSI | Eq. 1: PSI = mean of service indices (the code's `unnorm_psi`) | adds a second min-max pass producing `norm_psi`, absent from Eq. 1 |
 | 5 | Exclusion semantics | dropped settlements may still contribute services as neighbors (semantics a is realizable) | a bare `except: pass` in `calc_pcen_mobile` silently drops contributions from any neighbor id absent from the frame — so semantics (a) **degenerates to (b)**: `code`/`excl_contributing` equals `code`/`excl_removed` cell-for-cell (pinned against production by `tests/test_oracle.py::test_production_collapse_gap5`; e.g. B clinic_pcen 0.0075 under both, vs ideal 0.0175). This is the concrete answer to "what does the current no-RV pipeline actually do" for the memo — and the silent exception swallowing itself is flagged for the Phase 3 bug audit |
+
+| 6 | Service-point membership | manuscript's per-settlement counts imply strict containment (`within`) | production's `add_point_count_column` uses `gpd.sjoin`'s default `intersects`, so a point lying exactly on a shared border is **counted for BOTH** neighbors (verified: a clinic at (1001000,1001500) on the A|B edge gives A=1 AND B=1, while the reference impl counts it for neither). Real Delhi data has digitized points on shared colony borders — a live double-counting risk. Pinned by `tests/test_oracle.py::test_gap6_border_point_is_double_counted_by_production`; found by code-review round 2 mutation testing |
 
 Additionally the **popdensity denominator has no manuscript equation** — it
 is a code-only extension of Eq. 3 (Population_i → Population_i / Area_i).
