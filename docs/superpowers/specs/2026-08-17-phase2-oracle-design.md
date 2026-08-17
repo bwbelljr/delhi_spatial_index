@@ -34,10 +34,11 @@ labels which one it is using:
 
 | # | Aspect | `ideal` rule-set (manuscript-literal) | `code` rule-set (empirically pinned) |
 |---|--------|---------------------------------------|--------------------------------------|
-| 1 | Adjacency | polygons sharing a border (edge) | bbox-overlap via sjoin `intersects` (agrees with ideal in the main city by construction; diverges in the exhibit) |
+| 1 | Adjacency | polygons sharing a border (edge); symmetric | **directed**: nbrs(i) = { j : geom_i intersects bbox_j } via sjoin `intersects` — asymmetric for non-rectangular shapes (verified: exhibit's P gets no neighbors while Q gets one). Directed and symmetric readings coincide for all-rectangle universes, so the main city is unaffected |
 | 2 | Barrier | severs only the crossing pair (A–D), both directions | **global and asymmetric**: `remove_ids_with_barrier` deletes every barrier-flagged settlement from OTHER settlements' neighbor lists, while flagged settlements keep their own lists (verified against `barrier_intersection` + `add_polygon_neighbors_column_fast`) |
 | 3 | Roads | Eq. 4 literally: own length / population, min-maxed, NO neighbor term | `create_service_length_index` applies Eq. 3-style neighbor decay to road lengths |
 | 4 | PSI | Eq. 1: PSI = mean of service indices (the code's `unnorm_psi`) | adds a second min-max pass producing `norm_psi`, absent from Eq. 1 |
+| 5 | Exclusion semantics | dropped settlements may still contribute services as neighbors (semantics a is realizable) | a bare `except: pass` in `calc_pcen_mobile` silently drops contributions from any neighbor id absent from the frame — so semantics (a) **degenerates to (b)**: `code`/`excl_contributing` equals `code`/`excl_removed` cell-for-cell (pinned by `test_excl_contributing_collapses_to_removed`; e.g. B clinic_pcen 0.0075 under both, vs ideal 0.0175). This is the concrete answer to "what does the current no-RV pipeline actually do" for the memo — and the silent exception swallowing itself is flagged for the Phase 3 bug audit |
 
 Additionally the **popdensity denominator has no manuscript equation** — it
 is a code-only extension of Eq. 3 (Population_i → Population_i / Area_i).
@@ -76,7 +77,7 @@ bottom row is offset 500 m so no settlement pair touches only at a corner.
 | C  | JJC | [2000,3000]×[1000,2000] | (2500,1500) | 400 | 1.0 | none |
 | RV | Rural Village (removable) | [1100,1900]×[2000,3000] | (1500,2500) | **100** | 0.8 | 2 clinics |
 | D  | Planned | [−500,500]×[0,1000] | (0,500) | 100 | 1.0 | 1 school |
-| E  | Regularized-Unauthorized | [500,2500]×[0,1000] | (1500,500) | 300 | **2.0** | 1 clinic, road segment |
+| E  | Regularized-Unauthorized | [500,2500]×[0,1000] | (1500,500) | 300 | **2.0** | 1 clinic, **1 school**, road segment |
 | IND| Industrial (removable) | [2500,3500]×[0,1000] | (3000,500) | 10 | 1.0 | none |
 
 (RV population is 100, not 50 — deliberate: with RV at pop 100, IND —
@@ -85,10 +86,15 @@ denominators, purely via E's decayed clinic over IND's tiny population
 (1 × 1/2.5 = 0.4 → 0.4/10 = 0.04, vs RV's 2.5/100 = 0.025 popsize and
 2.5/125 = 0.02 popdensity). Removing IND therefore moves a min–max anchor
 with ZERO numerator change anywhere — a pure renormalization delta — while
-RV removal produces a neighbor-contribution delta. The invariants script asserts
-argmin/argmax uniqueness for every service under both denominators in every
-scenario, so future fixture edits cannot reintroduce a tie or an inert
-settlement.)
+RV removal produces a neighbor-contribution delta. The invariants script
+asserts: (i) max > min for every service in every config — the only property
+Eq. 2 needs; (ii) argmin/argmax uniqueness for CLINICS AND SCHOOLS under
+both denominators in every scenario. Roads under literal Eq. 4 are
+structurally exempt from (ii): with no neighbor term, every road-less
+settlement is pinned at exactly 0, so the tied minimum is recorded as
+expected ground truth in expected_values.csv rather than asserted away —
+review-computed ideal road PCENs: A=0.0075, E=0.0025, all others exactly 0;
+the code rule's decayed roads do have unique anchors.)
 
 **Barrier**: canal linestring y=1000, x∈[25,475] — a strict interior
 sub-segment of the A–D shared edge ([0,500] at y=1000). It must NOT reach
@@ -151,10 +157,12 @@ memo material for Raj — it is the barrier-semantics gap made concrete.
   elsewhere (it crosses y=1000 at (750,1000), which lies on the A–E shared
   edge east of the canal's end at x=475 — it does not touch the canal;
   invariants assert these lengths and the non-intersection).
-- Schools exist in A and D only; all other settlements have zero school
-  PCEN own-terms but nonzero decayed terms where adjacent — the min-max
-  anchors for schools are still unique (invariants-checked), avoiding
-  degenerate Eq. 2 denominators.
+- Schools in A, D, and E: E's school breaks the otherwise-exact A/D
+  symmetry (A receives E's school at decay 1/(1+√2) ≈ 0.4142, D at
+  1/2.5 = 0.4), giving unique school argmin/argmax in all 16 configs
+  (review-computed: ideal/baseline/pop A=0.014142, B=0.005, C=0.001036,
+  RV=0, D=0.014, E=0.006047, IND=0.04). Without E's school, A and D tie
+  at the max in every config — round-2 review's headline catch.
 
 ### Scenarios (exclusion semantics)
 
@@ -183,9 +191,15 @@ review proved a two-settlement universe forces them to zero):
   bbox adjacency invents the link; border-sharing denies it.
 - R–S: touch at exactly the point (5000,1000) → `intersects` says
   neighbors; "shares a border" (edge) says no.
-- The exhibit records, under each adjacency rule: every settlement's
-  neighbor list, clinic PCEN, and (secondarily) service index — asserting
-  the documented differences exist exactly as recorded.
+- The exhibit records, under each adjacency rule, every settlement's
+  DIRECTED neighbor list, clinic PCEN, and (secondarily) service index —
+  asserting the documented differences exist exactly as recorded. The
+  code rule's directedness shows here concretely (review-verified with
+  production functions): P gets NO neighbors while Q gets [P] (Q's geometry
+  intersects P's bbox, not vice versa) — so P's PCEN delta vs the border
+  rule is zero while Q's is +0.005147186; the R–S point touch is symmetric
+  under `intersects`, giving S a delta of +0.016568542 vs the border rule.
+  Figure 3 draws the P–Q phantom link as a single arrow Q → P.
 
 ## Components (build order is normative — see Build Order)
 
@@ -223,7 +237,9 @@ scenarios, and the exhibit.
   `test_barrier_rule_is_global_and_directed`,
   `test_popdensity_differs_from_popsize`, `test_minmax_anchors_unique`,
   `test_road_decay_divergence` (pins that code roads ≠ Eq. 4 by the
-  recorded amount), `test_second_normalization_divergence`.
+  recorded amount), `test_second_normalization_divergence`,
+  `test_excl_contributing_collapses_to_removed` (pins that the code's bare
+  `except: pass` makes semantics (a) degenerate to (b)).
 - `tests/test_oracle_e2e.py` — temp data dir + real CLIs. **Manifest
   (complete, from reading the scripts):** colonies shapefile in
   `uso_update_sep2021/` layout (fields `USO_AREA_U`, `USO_FINAL`,
@@ -234,8 +250,14 @@ scenarios, and the exhibit.
   `delhi_bounds_buffer/delhi_bounds_buffer.shp` (polygon containing all of
   Oraculum); `Public Services/{Banking,Health,Major Road,Police,Ration,
   School,Transport}/…` shapefiles with the real dataset's filenames —
-  Health carries the clinics, School the schools, Major Road the road;
-  the other four empty-but-valid; `pop_colony_wp_2020_jjc_adjusted.csv`
+  Health carries the clinics, School the schools, Major Road the road.
+  The other four services are NOT empty (review finding: an all-empty
+  service yields PCEN 0 everywhere → NaN index → Eq. 1's denominator
+  silently shrinks): each gets exactly one pinned point in a settlement
+  that survives every e2e scenario — Banking→A, Police→B, Ration→D,
+  Transport→E — treated as ordinary point services by the reference impl,
+  with their metrics in expected_values.csv (machine-checked, outside the
+  hand-ratified anchor subset); `pop_colony_wp_2020_jjc_adjusted.csv`
   with exact lowercase columns `uso_area_u,population`; `--neighbors-file`
   wired from the preprocess output to compute_psi, outputs to a temp
   out-dir. **Scope note:** the CLI path hardcodes RV-only exclusion, so the
@@ -260,7 +282,9 @@ link, R–S corner touch, annotated PCEN deltas.
 Banner: `STATUS: RATIFICATION PENDING …`. **Hand-verified anchor subset
 (the ~15-minute calculator pass, per review):** the `ideal`/`baseline`/
 `pop` config for all seven settlements end-to-end, plus one worked
-exclusion delta (B under excl_removed) and one worked road Eq. 4 value.
+exclusion delta (B under excl_removed), one worked road Eq. 4 value, and —
+because it is the memo's centerpiece — the `excl_ind_removed` clinic
+renormalization delta for settlement A under BOTH denominators.
 All other configs are machine-cross-checked by the (independently reviewed)
 reference implementation; the worksheet says so explicitly. Radicals kept
 exact until final decimals.
@@ -277,8 +301,10 @@ Asserts from fixtures: all main-city geometries are rectangles
 only a point); pair distances match the geometric table; canal ⊂ A–D edge,
 touches exactly {A, D}, never at only a point; road lengths 0.75 km in each
 of A and E and zero elsewhere; road does not intersect the canal;
-argmin/argmax of every service PCEN unique under both denominators in every
-scenario. Runs in the test suite.
+max > min for every service PCEN in every config; argmin/argmax unique for
+clinics and schools under both denominators in every scenario (roads under
+literal Eq. 4 exempt — their tied zero minimum is recorded expected ground
+truth). Runs in the test suite.
 
 ## Build order (normative — review finding G18)
 
