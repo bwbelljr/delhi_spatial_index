@@ -168,3 +168,33 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
         lo, hi = p.min(), p.max()
         df["norm_psi"] = 0.0 if hi == lo else (p - lo) / (hi - lo)
     return df
+
+
+def emit_expected_values(out_path):
+    from tests.oraculum_fixtures import (
+        load_settlements, load_barriers, load_services,
+    )
+    city, barriers, services = (
+        load_settlements(), load_barriers(), load_services())
+    records = []
+    for rule, kwargs in RULESETS.items():
+        for scenario in SCENARIOS:
+            for denom in ("pop", "popdensity"):
+                df = compute_city(city, services, barriers, scenario=scenario,
+                                  denom=denom, **kwargs)
+                for sid, row in df.iterrows():
+                    for metric, value in row.items():
+                        records.append((rule, scenario, denom, sid,
+                                        metric, value))
+    out = pd.DataFrame(records, columns=["rule", "scenario", "denom",
+                                         "settlement", "metric", "value"])
+    out.to_csv(out_path, index=False, float_format="%.17g")
+    return out
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    target = (Path(__file__).resolve().parent / "fixtures" / "oraculum"
+              / "expected_values.csv")
+    emit_expected_values(target)
+    print(f"wrote {target}")
