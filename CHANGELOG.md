@@ -7,6 +7,21 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+### Added
+- Mythical-city oracle ("Oraculum"): hand-verifiable fixtures, an
+  independent Eq. 1–4 reference implementation, and pytest suites
+  establishing production == reference == hand-arithmetic agreement
+  (`tests/fixtures/oraculum/`, `tests/reference_impl.py`,
+  `tests/test_oracle*.py`, `tests/test_fixture_invariants.py`,
+  `tests/test_divergence_exhibit.py`)
+- Oracle maps, derivation worksheet (ratification pending), and the
+  exclusion-semantics memo for Raj (`docs/oracle/`)
+- Empirically pinned manuscript-vs-code divergences: directed bbox
+  adjacency, global asymmetric barrier rule, neighbor-decayed roads,
+  code-only `norm_psi` and popdensity denominator, and exclusion
+  semantics (a) degenerating to (b) via silent exception swallowing
+  (flagged for Phase 3 bug audit)
+
 ## [2026-08-17] Phase 1 — runnable pipeline on modern dependencies
 
 Verification: fresh run reproduced the July 2025 baseline outputs with zero
