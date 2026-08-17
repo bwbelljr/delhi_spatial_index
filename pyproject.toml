@@ -1,32 +1,23 @@
 [project]
 name = "delhi-spatial-index"
-version = "0.1.0"
-description = "Delhi PSI calculations"
+version = "0.2.0"
+description = "Delhi Public Services Index (PSI) pipeline"
 authors = [
-    {name = "Bob Bell",email = "bwbelljr@gmail.com"}
+    { name = "Bob Bell", email = "bwbelljr@gmail.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.13,<4.0"
+requires-python = ">=3.13"
 dependencies = [
-    "geopandas (>=1.1.1,<2.0.0)",
-    "pandas (>=2.3.0,<3.0.0)",
-    "shapely (>=2.1.1,<3.0.0)",
-    "matplotlib (>=3.10.3,<4.0.0)",
-    "pyproj (>=3.7.1,<4.0.0)",
-    "tqdm (>=4.67.1,<5.0.0)",
-    "jupyterlab (>=4.4.4,<5.0.0)",
-    "joblib (>=1.5.1,<2.0.0)"
+    "geopandas>=1.1",
+    "pandas>=2.3,<3",
+    "shapely>=2.1",
+    "matplotlib>=3.10",
+    "pyproj>=3.7",
+    "tqdm>=4.67",
+    "joblib>=1.5",
 ]
 
-[tool.poetry]
-package-mode = false
-
-[tool.poetry.group.dev.dependencies]
-pudb = "^2025.1"
-pytest = "^8.4.1"
-pytest-pudb = "^0.7.0"
-nbdime = "^4.0.2"
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+]
