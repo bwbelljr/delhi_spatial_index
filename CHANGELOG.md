@@ -7,6 +7,12 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+## [2026-08-17] Phase 1 — runnable pipeline on modern dependencies
+
+Verification: fresh run reproduced the July 2025 baseline outputs with zero
+numeric deviation (all columns, both PSI variants, all neighbor sets and
+distances).
+
 ### Added
 - Repo-scoped `/ship` build-and-ship pipeline command
   (`.claude/commands/ship.md`)
