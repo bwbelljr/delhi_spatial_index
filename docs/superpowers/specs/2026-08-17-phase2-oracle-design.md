@@ -172,6 +172,7 @@ memo material for Raj — it is the barrier-semantics gap made concrete.
 | `excl_contributing` | RV and IND get no index rows, but still contribute services as neighbors (semantics a) |
 | `excl_removed` | RV and IND fully removed before neighbor computation (semantics b) |
 | `excl_ind_removed` | IND alone fully removed — isolates the renormalization effect from RV's contribution effect |
+| `excl_rv_only` | RV rows dropped AFTER neighbor computation, IND retained — the exact configuration `scripts/compute_psi.py` actually produces (its only filter is `USO_FINAL != "RV"`). This — not `baseline`, not `excl_removed` — is what `test_oracle_e2e.py` asserts against. Its PCENs coincide with `excl_removed` on shared settlements (IND is serviceless), but every min-max-derived `_idx`/`psi` column differs materially because IND is a max anchor — the e2e test must not be wired to `excl_removed` rows |
 
 ### Divergence exhibit (separate fixture, `divergence/`)
 
@@ -211,7 +212,8 @@ human-readable.
 
 **`expected_values.csv` schema (long format, pinned now):** columns
 `rule` ∈ {ideal, code}, `scenario` ∈ {baseline, excl_contributing,
-excl_removed, excl_ind_removed}, `denom` ∈ {pop, popdensity}, `settlement`,
+excl_removed, excl_ind_removed, excl_rv_only}, `denom` ∈ {pop, popdensity},
+`settlement`,
 `metric` (e.g. clinic_count, clinic_pcen, clinic_idx, school_pcen, …,
 road_length_km, road_pcen, road_idx, psi_eq1, norm_psi), `value`.
 Example row: `ideal,baseline,pop,B,clinic_pcen,0.0175`.
@@ -224,8 +226,12 @@ MANUSCRIPT'S EQUATIONS; must not import, call, or textually mirror
 `spatial_index_utils.py` (review-enforced). Parameterized by: adjacency
 rule (border | bbox | intersects), barrier rule (pair-severed | global
 directed), roads formula (eq4 | decayed), exclusion scenario, denominator,
-and second normalization on/off — so it can compute BOTH rule-sets, all
-scenarios, and the exhibit.
+second normalization on/off, and `absent_neighbor_contribution` ∈
+{contributes | swallowed} — bound to `contributes` under `rule=ideal` and
+`swallowed` under `rule=code`; this seventh knob is the only axis on which
+the two rule-sets differ for a shared scenario name, and it is what
+`test_excl_contributing_collapses_to_removed` pins — so it can compute BOTH
+rule-sets, all scenarios, and the exhibit.
 
 ### 3. Test suites
 - `tests/test_reference_impl.py` — reference impl == expected_values.csv.
@@ -282,9 +288,13 @@ link, R–S corner touch, annotated PCEN deltas.
 Banner: `STATUS: RATIFICATION PENDING …`. **Hand-verified anchor subset
 (the ~15-minute calculator pass, per review):** the `ideal`/`baseline`/
 `pop` config for all seven settlements end-to-end, plus one worked
-exclusion delta (B under excl_removed), one worked road Eq. 4 value, and —
-because it is the memo's centerpiece — the `excl_ind_removed` clinic
-renormalization delta for settlement A under BOTH denominators.
+exclusion delta (B under excl_removed), one worked road Eq. 4 value, the
+`excl_ind_removed` clinic renormalization delta for settlement A (noting it
+is denominator-INVARIANT by construction, since A, C, and IND all have area
+1.0 km² — itself a worksheet observation worth stating), and — so the
+calculator pass genuinely covers the popdensity extension — E's clinic PCEN
+under both denominators (2.328427/300 = 0.00776142 popsize vs
+2.328427/150 = 0.01552285 popdensity).
 All other configs are machine-cross-checked by the (independently reviewed)
 reference implementation; the worksheet says so explicitly. Radicals kept
 exact until final decimals.
@@ -301,10 +311,13 @@ Asserts from fixtures: all main-city geometries are rectangles
 only a point); pair distances match the geometric table; canal ⊂ A–D edge,
 touches exactly {A, D}, never at only a point; road lengths 0.75 km in each
 of A and E and zero elsewhere; road does not intersect the canal;
-max > min for every service PCEN in every config; argmin/argmax unique for
-clinics and schools under both denominators in every scenario (roads under
-literal Eq. 4 exempt — their tied zero minimum is recorded expected ground
-truth). Runs in the test suite.
+max > min for every service PCEN in every config; argmin/argmax uniqueness
+asserted ONLY for clinics and schools (positive list) under both
+denominators in every scenario. All other services have tied anchors by
+construction — road/bank/ration tied zero argmins, police tied argmax
+between A and B — and those ties are themselves recorded expected ground
+truth in expected_values.csv, so a fixture edit cannot silently change
+them. Runs in the test suite.
 
 ## Build order (normative — review finding G18)
 
