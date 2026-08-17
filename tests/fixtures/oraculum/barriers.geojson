@@ -1,0 +1,25 @@
+{
+ "crs_note": "coordinates are EPSG:7760 meters; loaders apply set_crs(7760)",
+ "features": [
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      1000025,
+      1001000
+     ],
+     [
+      1000475,
+      1001000
+     ]
+    ],
+    "type": "LineString"
+   },
+   "properties": {
+    "name": "canal"
+   },
+   "type": "Feature"
+  }
+ ],
+ "type": "FeatureCollection"
+}
