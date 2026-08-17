@@ -35,7 +35,7 @@ A:[B,E] B:[A,C,RV,E] C:[B,E,IND] RV:[B] D:[E] E:[A,B,C,D,IND] IND:[C,E]
 
 Eq. 2 anchors: min = C (0.00228553), max = IND (0.04) — both unique.
 Example index: A_idx = (0.02914214 − 0.00228553)/(0.04 − 0.00228553)
-= 0.02685661/0.03771447 = **0.71210747**.
+= 0.02685661/0.03771447 = **0.71210346** (CSV: 0.7121034578830464 — computed from unrounded PCENs; the displayed 8-digit inputs give 0.71210360, so check to ~6 decimals).
 
 ## Schools (A 1, D 1, E 1) — Eq. 3, popsize
 
@@ -79,7 +79,7 @@ truth). E = 1·½/300 = 0.00166667; D = 0; IND = 0.
 2. **Renormalization delta (A clinic_idx, ideal, excl_ind_removed, pop):**
    PCENs unchanged (IND serviceless); max moves from IND (0.04) to A
    (0.02914214); min still C. A_idx = (0.02914214−0.00228553)/
-   (0.02914214−0.00228553) = **1.0** exactly (was 0.71210747) — anchor
+   (0.02914214−0.00228553) = **1.0** exactly (was 0.71210346) — anchor
    movement with zero numerator change. This delta is denominator-INVARIANT
    because A, C, IND all have area 1.0 km².
 3. **Popdensity coverage (E clinic, ideal, baseline):**
