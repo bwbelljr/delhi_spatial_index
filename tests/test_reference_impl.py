@@ -208,3 +208,15 @@ def test_invariants_guard_csv_wide():
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     from check_oraculum_invariants import check
     assert check() == []
+
+
+def test_expected_values_csv_is_regenerable(tmp_path):
+    """The committed CSV must be exactly what reference_impl produces.
+
+    Without this, a red build could be 'fixed' by hand-editing the CSV,
+    silently turning the oracle into a record of production behavior
+    instead of the equations (code review round 1, Critical).
+    """
+    regen = tmp_path / "regen.csv"
+    emit_expected_values(regen)
+    assert regen.read_text() == CSV.read_text()

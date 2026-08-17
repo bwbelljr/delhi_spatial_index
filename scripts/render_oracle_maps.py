@@ -159,7 +159,8 @@ def _draw_barriers(ax, barriers):
                  solid_capstyle="butt", zorder=5)
 
 
-def _draw_directed_edges(ax, city, nbrs, ghost=frozenset(), highlight=None):
+def _draw_directed_edges(ax, city, nbrs, ghost=frozenset(), highlight=None,
+                         force_dashed=False):
     """Draw directed neighbor arrows. Mutual pairs get two curved arcs
     (bowed apart) so both directions stay visible; one-way pairs get a
     single straight arrow, which itself signals the asymmetry."""
@@ -172,7 +173,7 @@ def _draw_directed_edges(ax, city, nbrs, ghost=frozenset(), highlight=None):
             if j not in cent.index:
                 continue
             mutual = i in nbrs.get(j, set())
-            dashed = i in ghost or j in ghost
+            dashed = force_dashed or i in ghost or j in ghost
             is_highlight = highlight == (i, j)
             if mutual:
                 pair = frozenset((i, j))
@@ -200,6 +201,16 @@ def _code_nbrs(city, barriers):
     return apply_barrier(adjacency(city, "bbox"), city, barriers, "global")
 
 
+def _ideal_nbrs(city, barriers):
+    return apply_barrier(adjacency(city, "border"), city, barriers, "pair")
+
+
+def _ideal_only_edges(city, barriers):
+    """Links the manuscript's ideal rule has but the code rule drops."""
+    ideal, code = _ideal_nbrs(city, barriers), _code_nbrs(city, barriers)
+    return {i: ideal[i] - code.get(i, set()) for i in ideal}
+
+
 def _legend_handles(*, services=True, canal=True, road=True, nbrs=True):
     handles = [mpatches.Patch(facecolor=c, edgecolor=INK_PRIMARY, alpha=0.55,
                                 linewidth=0.8, label=t)
@@ -222,6 +233,9 @@ def _legend_handles(*, services=True, canal=True, road=True, nbrs=True):
                                 label="neighbor, code rule (directed)"))
         handles.append(Line2D([0], [0], color=ARROW_HIGHLIGHT, lw=1.9,
                                 label="A→E exists; E→A does not"))
+        handles.append(Line2D([0], [0], color=ARROW_COLOR, lw=1.0,
+                                linestyle="--", alpha=0.5,
+                                label="ideal-only link (code rule drops it)"))
     return handles
 
 
@@ -231,6 +245,11 @@ def render_city():
 
     fig, ax = plt.subplots(figsize=(11.5, 8), dpi=150)
     _draw_settlements(ax, city)
+    # Spec figure-1 contract: ideal-only links (present under the
+    # manuscript's border+pair-severing rule, dropped by the code rule)
+    # render dashed, so the reader sees exactly what the code discards.
+    _draw_directed_edges(ax, city, _ideal_only_edges(city, barriers),
+                         force_dashed=True)
     _draw_directed_edges(ax, city, nbrs, highlight=("A", "E"))
     _draw_barriers(ax, barriers)
     _draw_services(ax, services)

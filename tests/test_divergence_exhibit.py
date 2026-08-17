@@ -74,3 +74,27 @@ def test_pinned_pcen_deltas(exhibit):
     d_km = math.hypot(1500 - 2500 / 3, 1500 - 2500 / 3) / 1000
     assert 1 / (1 + d_km) / 100 == pytest.approx(bbox["Q"] - border["Q"],
                                                  abs=1e-9)
+
+
+def test_production_bbox_adjacency_on_exhibit(exhibit):
+    """Pin rule-set gap #1 against PRODUCTION, not just the reference impl.
+
+    The main city is all-rectangles (bbox == geometry), so it cannot tell
+    bbox adjacency apart from polygon-intersects; the exhibit can. Code
+    review round 1 proved a bbox->geometry mutation in create_bbox_gdf
+    survived the entire suite without this test.
+    """
+    import geopandas as gpd
+
+    import spatial_index_utils
+
+    gdf = exhibit.copy()
+    gdf["barrier"] = False
+    bbox_gdf = spatial_index_utils.create_bbox_gdf(gdf)
+    bbox_gdf = gpd.GeoDataFrame(bbox_gdf, crs=gdf.crs)
+    result = spatial_index_utils.add_polygon_neighbors_column_fast(
+        polygon_gdf=gdf, right_gdf=bbox_gdf, id_colname="USO_AREA_U",
+        neighbor_colname="nbrs_bbox", barrier_colname="barrier")
+    got = {row["USO_AREA_U"]: set(row["nbrs_bbox"])
+           for _, row in result.iterrows()}
+    assert got == {"P": set(), "Q": {"P"}, "R": {"S"}, "S": {"R"}}

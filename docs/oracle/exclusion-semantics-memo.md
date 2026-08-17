@@ -19,7 +19,13 @@ adjacent settlements' accessibility (semantics **a**), or vanish entirely
 | semantics (a) — RV/IND excluded but contributing | 0.0175 | index rows dropped; services still lend |
 | semantics (b) — RV/IND fully removed | 0.0125 | RV's clinics vanish from B's numerator |
 
-## Full per-settlement delta tables (both denominators)
+## Full per-settlement delta tables (**rule = code**, i.e. what the pipeline does today; both denominators)
+
+Switching from the manuscript's ideal semantics to production behavior for the
+same scenarios. Note B's baseline clinic PCEN reads 0.0125 here versus 0.0175
+in the ideal-rule table above: the code's global barrier rule strips A from
+B's neighbor list, so B loses A's two clinics. Cells are NaN where a scenario
+drops that settlement.
 
 ### denom = pop
 
@@ -57,7 +63,7 @@ settlement type can change results through *renormalization alone*.
    from any neighbor missing from the frame — so excluded-but-contributing
    degenerates, cell-for-cell, to fully-removed. The current no-RV pipeline
    therefore implements semantics (b) de facto
-   (`test_excl_contributing_collapses_to_removed`). The silent exception
+   (`tests/test_oracle.py::test_production_collapse_gap5` — the production-facing pin; the schema-level companion `tests/test_reference_impl.py::test_code_excl_contributing_collapses_to_removed` is true by construction). The silent exception
    swallowing is flagged for the Phase 3 bug audit.
 2. **The barrier rule is global and asymmetric**, not pair-severing: a
    barrier-crossed settlement is deleted from everyone else's neighbor

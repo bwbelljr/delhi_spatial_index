@@ -52,7 +52,7 @@ labels which one it is using:
 | 2 | Barrier | severs only the crossing pair (A–D), both directions | **global and asymmetric**: `remove_ids_with_barrier` deletes every barrier-flagged settlement from OTHER settlements' neighbor lists, while flagged settlements keep their own lists (verified against `barrier_intersection` + `add_polygon_neighbors_column_fast`) |
 | 3 | Roads | Eq. 4 literally: own length / population, min-maxed, NO neighbor term | `create_service_length_index` applies Eq. 3-style neighbor decay to road lengths |
 | 4 | PSI | Eq. 1: PSI = mean of service indices (the code's `unnorm_psi`) | adds a second min-max pass producing `norm_psi`, absent from Eq. 1 |
-| 5 | Exclusion semantics | dropped settlements may still contribute services as neighbors (semantics a is realizable) | a bare `except: pass` in `calc_pcen_mobile` silently drops contributions from any neighbor id absent from the frame — so semantics (a) **degenerates to (b)**: `code`/`excl_contributing` equals `code`/`excl_removed` cell-for-cell (pinned by `test_excl_contributing_collapses_to_removed`; e.g. B clinic_pcen 0.0075 under both, vs ideal 0.0175). This is the concrete answer to "what does the current no-RV pipeline actually do" for the memo — and the silent exception swallowing itself is flagged for the Phase 3 bug audit |
+| 5 | Exclusion semantics | dropped settlements may still contribute services as neighbors (semantics a is realizable) | a bare `except: pass` in `calc_pcen_mobile` silently drops contributions from any neighbor id absent from the frame — so semantics (a) **degenerates to (b)**: `code`/`excl_contributing` equals `code`/`excl_removed` cell-for-cell (pinned against production by `tests/test_oracle.py::test_production_collapse_gap5`; e.g. B clinic_pcen 0.0075 under both, vs ideal 0.0175). This is the concrete answer to "what does the current no-RV pipeline actually do" for the memo — and the silent exception swallowing itself is flagged for the Phase 3 bug audit |
 
 Additionally the **popdensity denominator has no manuscript equation** — it
 is a code-only extension of Eq. 3 (Population_i → Population_i / Area_i).
@@ -249,7 +249,9 @@ second normalization on/off, and `absent_neighbor_contribution` ∈
 {contributes | swallowed} — bound to `contributes` under `rule=ideal` and
 `swallowed` under `rule=code`; this seventh knob is the only axis on which
 the two rule-sets differ for a shared scenario name, and it is what
-`test_excl_contributing_collapses_to_removed` pins — so it can compute BOTH
+`test_reference_impl.py::test_code_excl_contributing_collapses_to_removed`
+pins at the schema level (the production pin is
+`test_oracle.py::test_production_collapse_gap5`) — so it can compute BOTH
 rule-sets, all scenarios, and the exhibit.
 
 ### 3. Test suites
@@ -263,7 +265,7 @@ rule-sets, all scenarios, and the exhibit.
   `test_popdensity_differs_from_popsize`, `test_minmax_anchors_unique`,
   `test_road_decay_divergence` (pins that code roads ≠ Eq. 4 by the
   recorded amount), `test_second_normalization_divergence`,
-  `test_excl_contributing_collapses_to_removed` (pins that the code's bare
+  `test_production_collapse_gap5` (pins that the code's bare
   `except: pass` makes semantics (a) degenerate to (b)).
 - `tests/test_oracle_e2e.py` — temp data dir + real CLIs. **Manifest
   (complete, from reading the scripts):** colonies shapefile in
