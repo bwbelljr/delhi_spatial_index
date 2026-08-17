@@ -69,12 +69,19 @@ settlement type can change results through *renormalization alone*.
    barrier-crossed settlement is deleted from everyone else's neighbor
    lists but keeps its own (in Oraculum: A counts E's services; E does not
    count A's). The manuscript describes severing the crossing only.
-3. **Service points on shared borders are double-counted.** Production
-   counts a point service with a boundary-inclusive spatial join, so a
-   clinic digitized exactly on the border between two colonies is counted
-   for BOTH — the manuscript's per-settlement counts imply strict
-   containment. This is worth checking against the real Delhi layers,
-   where boundary-lying points are plausible
+3. **Service points can be counted twice — but not for the reason we first
+   thought.** Production counts point services with a boundary-inclusive
+   spatial join, so a service digitized exactly on a colony border would
+   count for BOTH colonies (the paper says only "within an administrative
+   unit" and is silent on the boundary case). Measured against the current
+   Delhi layers, this is **latent**: no service point sits exactly on a
+   boundary (closest approach ~1 mm). However, the check surfaced a real
+   one: the colony layer contains **4,050 overlapping polygon pairs**,
+   which place about **450 service points inside two or more colonies**
+   (bank 232, ration 104, school 53, transport 41, health 18, police 2).
+   Those are genuinely double-counted today, and a containment rule would
+   not fix them — it needs a decision about how overlapping colonies
+   should share (or split) a service
    (`tests/test_oracle.py::test_gap6_border_point_is_double_counted_by_production`).
 4. Also documented for completeness (full details in the spec): roads are
    neighbor-decayed in code though Eq. 4 has no neighbor term; `norm_psi`
@@ -89,3 +96,7 @@ settlement type can change results through *renormalization alone*.
   today) — the IND exhibit isolates exactly this effect.
 - Whether the barrier asymmetry and the roads/norm_psi deviations should be
   fixed to match the manuscript, or ratified and written into the methods.
+- How overlapping colony polygons should share a service point (4,050
+  overlapping pairs currently double-count ~450 points), and what boundary
+  convention to adopt for points lying exactly on a shared edge — the paper
+  is silent on both.

@@ -152,11 +152,16 @@ def test_gap6_border_point_is_double_counted_by_production():
     Production's add_point_count_column uses gpd.sjoin's default
     `intersects` predicate, so a service point lying exactly on a shared
     settlement border is counted for BOTH neighbors. The manuscript's
-    per-settlement counts imply strict containment (the reference impl
-    uses `within`, counting it for neither). Real Delhi data has
-    digitized points on shared colony borders, so this is a live
-    double-counting risk — recorded here, routed to the memo, and left
-    for the Phase 3 bug audit to adjudicate with Raj.
+    per-settlement counts say only "within an administrative unit" and are
+    silent on the boundary case; the reference impl resolves that as strict
+    containment, counting it for neither.
+
+    Measured against the real Delhi layers (Aug 2026), this gap is LATENT:
+    zero service points lie exactly on a colony boundary in any of the six
+    point layers (closest approach 1.3 mm). The real double-counting today
+    comes from a different mechanism — 4,050 overlapping colony polygon
+    pairs put ~450 service points inside two or more colonies, which
+    `within` would not fix. Both are routed to the Phase 3 bug audit.
     """
     import geopandas as gpd
     from shapely.geometry import Point
