@@ -1,7 +1,21 @@
 # Phase 2: The Mythical-City Oracle — Design Spec
 
-Date: 2026-08-17 (rev 2 — post ultracode review, 18 gating findings applied)
-Status: awaiting owner approval
+Date: 2026-08-17 (rev 4 — three ultracode review rounds, 29 findings applied)
+Status: **approved by owner (2026-08-17)** — /ship authorized
+
+## Decision log (autonomous-run authorizations, per /ship — same terms as Phase 1)
+
+- **Autonomy scope**: fix forward, commit, push, and merge the PR — all
+  authorized without mid-run check-ins.
+- **Plan-vs-reviewer conflicts**: a CONFIRMED Critical finding governs over
+  the implementation plan; deviations recorded in CHANGELOG.md and the PR.
+- **Failure policy**: fix and retry to done. Red lines that halt for the
+  owner: methodology changes (index equations, exclusion semantics,
+  oracle expected values beyond what this spec derives) and writes to
+  baseline data (~/delhi_data outside temp/scratch paths). Per the spec's
+  own rule: if empirical pinning contradicts the directed neighbor table,
+  STOP and update the spec before proceeding.
+- **Smoke**: `uv run pytest`.
 Branch: `phase2-oracle` (off `origin/main`)
 Parent plan: `WORKPLAN.md` Phase 2
 
