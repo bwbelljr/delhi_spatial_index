@@ -106,10 +106,38 @@ overlapping colony polygons.
 - [ ] Modular & extensible structure: distance thresholds, decay weights,
       service sets, and category mappings injectable as parameters (feeds the
       Phase 6 sweeps)
-- [ ] Bug audit prioritizing anything that affects the index itself;
-      specifically investigate:
-      - the polygon/settlement adjacency logic (bbox overlap vs. touch)
-      - dead code: function(s) defined but never called
+- [ ] Bug audit — the Phase 2 oracle turned this from a vague mandate into a
+      prioritized, evidence-backed list (all six divergences are documented in
+      `docs/oracle/exclusion-semantics-memo.md` and pinned by tests):
+      1. **bbox adjacency — now known to be the DOMINANT regime, not an edge
+         case.** Measured on the real layer: ZERO of 4,357 colonies are
+         rectangles, and a colony's bounding box is typically ~2× its polygon
+         area (median ratio 1.95, p90 3.6, max 28,766). So bbox-adjacency
+         invents neighbors citywide, constantly. Plausibly the largest
+         paper-vs-code gap; needs Raj (methodology).
+      2. **~450 service points double-counted** across 4,050 overlapping
+         colony polygon pairs (bank 232, ration 104, school 53, transport 41,
+         health 18, police 2). A containment rule does NOT fix this — it needs
+         a decision on how overlapping colonies share a point. Needs Raj.
+      3. **Silent `except: pass` in `calc_pcen_mobile`** — swallows missing
+         neighbors, making exclusion semantics (a) unimplementable
+         (WORKPLAN Open Decision A is half-answered by this).
+      4. Barrier rule is global + asymmetric vs. the manuscript's pair
+         severing; roads carry neighbor decay Eq. 4 does not have; `norm_psi`
+         is a second normalization absent from Eq. 1; popdensity has no
+         manuscript equation. Each: fix to match the paper, or ratify and
+         write into the methods (with Raj).
+      5. Dead code: function(s) defined but never called.
+- [ ] Add a second "messy city" fixture tier (verified against
+      `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
+      hand-ratifiable ground truth for the math, deliberately small). Must
+      cover the real-data pathologies Oraculum omits by construction:
+      irregular non-rectangular polygons (so bbox ≠ geometry, the real
+      regime), a MultiPolygon (556 of 4,357 real settlements are multi-part),
+      an overlapping polygon pair, an isolated settlement (360 real ones have
+      zero neighbors), a settlement with no population row (15 real ones),
+      and an area-extreme sliver (real areas span 2.3e-9 → 29 km²). This tier
+      is what would PROVE any fix to items 1 and 2 above.
 - [ ] Retire the notebooks entirely (decided): their logic becomes package
       pipeline stages with logged validation; figures render to files via a
       figures command
