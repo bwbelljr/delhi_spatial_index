@@ -557,9 +557,9 @@ Written from the equations in "Making the City Unequal" (pp. 14-16):
   Eq. 4: RoadsIndex_i from LengthPavedRoads_i / Population_i, min-maxed,
          with NO neighbor term.
 
-INDEPENDENCE RULE: this module must never import, call, or mirror
-spatial_index_utils.py. It exists so production code can be checked against
-the equations, not against itself.
+INDEPENDENCE RULE: this module must never import, call, or mirror the
+production spatial-index library module. It exists so production code can
+be checked against the equations, not against itself.
 
 Knobs (spec 'two rule-sets'): adjacency_rule, barrier_rule, roads_formula,
 scenario, denom, second_norm, absent_neighbor_contribution. RULESETS binds
@@ -1749,7 +1749,7 @@ oracle-contract mismatch.
 
 Create `docs/oracle/exclusion-semantics-memo.md`:
 
-```markdown
+````markdown
 # Memo to Raj: Exclusion semantics, and what the code actually does
 
 *(Machine-verified against the Oraculum oracle; no recommendation is made —
@@ -1826,7 +1826,7 @@ settlement type can change results through *renormalization alone*.
   today) — the IND exhibit isolates exactly this effect.
 - Whether the barrier asymmetry and the roads/norm_psi deviations should be
   fixed to match the manuscript, or ratified and written into the methods.
-```
+````
 
 - [ ] **Step 3: Update CHANGELOG `[Unreleased]`**
 
