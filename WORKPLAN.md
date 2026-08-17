@@ -37,10 +37,15 @@ paths". Everything downstream depends on this.*
       pipeline runs on any machine pointed at a copy of the dataset
       (replicability matters: the repo will be released, and some journals
       require the data too)
-- [ ] Modernize dependencies: current geopandas/shapely/pyproj (breaking API
-      changes since 2021, e.g. removed `cascaded_union`); consolidate to
-      uv + `pyproject.toml` (decided — see Decisions section), removing the
-      conda/poetry/Docker files; resolves the deferred Dependabot backlog
+- [ ] Modernize dependencies: **all packages to latest stable versions**
+      (geopandas/shapely/pyproj have breaking API changes since 2021, e.g.
+      removed `cascaded_union`; expect more of the same across the stack);
+      consolidate to uv + `pyproject.toml` (decided — see Decisions section),
+      removing the conda/poetry/Docker files; resolves the deferred
+      Dependabot backlog. Safety net for upgrades: the Phase 1 verification
+      that outputs still match the July 2025 run acts as the interim
+      regression check until the oracle (Phase 2) takes over that job
+      permanently.
 - [ ] Fix small runtime hazards: create output dirs (`os.makedirs`), rename
       stale `12Sep2021` output filenames to dated 2025+ names
 - [ ] Verify: both notebooks run top-to-bottom on this machine against
