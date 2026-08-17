@@ -11,6 +11,25 @@ section accumulates changes on in-flight branches.
 - Repo-scoped `/ship` build-and-ship pipeline command
   (`.claude/commands/ship.md`)
 - Phase 1 design spec (`docs/superpowers/specs/2026-08-16-phase1-runnable-pipeline-design.md`)
+- `scripts/preprocess.py`, `scripts/compute_psi.py` — pipeline as plain
+  scripts with configurable `--data-dir`/`--out-dir` (flag > `DELHI_DATA_DIR`
+  env var > `~/delhi_data`)
+- `scripts/verify_against_baseline.py` — proves a fresh run matches the
+  July 2025 baseline outputs
+- pytest suite for path resolution and baseline comparison
+
+### Changed
+- Dependency management consolidated to uv + `pyproject.toml` (all packages
+  at latest stable; Python 3.13). One documented exception: `pandas>=2.3,<3`
+  — the pandas 3.0 major-version jump is deferred until the Phase 2 oracle
+  can validate it
+- Output filenames now dated `aug2026` (previously mislabeled `12Sep2021`)
+
+### Removed
+- Both Jupyter notebooks (logic now in `scripts/`; history preserved in git
+  and `archive/master-2021/`)
+- `requirements.txt`, `environment.yml`, `poetry.lock`, `Dockerfile`,
+  `install_conda_environment.sh`
 
 ## [2026-08-16] Repository restructure (pre-phase)
 
