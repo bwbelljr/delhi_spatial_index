@@ -1,0 +1,258 @@
+{
+ "crs_note": "coordinates are EPSG:7760 meters; loaders apply set_crs(7760)",
+ "features": [
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1000000,
+       1001000
+      ],
+      [
+       1001000,
+       1001000
+      ],
+      [
+       1001000,
+       1002000
+      ],
+      [
+       1000000,
+       1002000
+      ],
+      [
+       1000000,
+       1001000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "A",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.0,
+    "population": 100
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1001000,
+       1001000
+      ],
+      [
+       1002000,
+       1001000
+      ],
+      [
+       1002000,
+       1002000
+      ],
+      [
+       1001000,
+       1002000
+      ],
+      [
+       1001000,
+       1001000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "B",
+    "USO_FINAL": "UC",
+    "area_km2": 1.0,
+    "population": 200
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1002000,
+       1001000
+      ],
+      [
+       1003000,
+       1001000
+      ],
+      [
+       1003000,
+       1002000
+      ],
+      [
+       1002000,
+       1002000
+      ],
+      [
+       1002000,
+       1001000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "C",
+    "USO_FINAL": "JJC",
+    "area_km2": 1.0,
+    "population": 400
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1001100,
+       1002000
+      ],
+      [
+       1001900,
+       1002000
+      ],
+      [
+       1001900,
+       1003000
+      ],
+      [
+       1001100,
+       1003000
+      ],
+      [
+       1001100,
+       1002000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "RV",
+    "USO_FINAL": "RV",
+    "area_km2": 0.8,
+    "population": 100
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       999500,
+       1000000
+      ],
+      [
+       1000500,
+       1000000
+      ],
+      [
+       1000500,
+       1001000
+      ],
+      [
+       999500,
+       1001000
+      ],
+      [
+       999500,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "D",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.0,
+    "population": 100
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1000500,
+       1000000
+      ],
+      [
+       1002500,
+       1000000
+      ],
+      [
+       1002500,
+       1001000
+      ],
+      [
+       1000500,
+       1001000
+      ],
+      [
+       1000500,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "E",
+    "USO_FINAL": "RUAC",
+    "area_km2": 2.0,
+    "population": 300
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1002500,
+       1000000
+      ],
+      [
+       1003500,
+       1000000
+      ],
+      [
+       1003500,
+       1001000
+      ],
+      [
+       1002500,
+       1001000
+      ],
+      [
+       1002500,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "IND",
+    "USO_FINAL": "IND",
+    "area_km2": 1.0,
+    "population": 10
+   },
+   "type": "Feature"
+  }
+ ],
+ "type": "FeatureCollection"
+}

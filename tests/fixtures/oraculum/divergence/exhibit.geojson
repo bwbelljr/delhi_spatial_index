@@ -1,0 +1,154 @@
+{
+ "crs_note": "coordinates are EPSG:7760 meters; loaders apply set_crs(7760)",
+ "features": [
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1000000,
+       1000000
+      ],
+      [
+       1002000,
+       1000000
+      ],
+      [
+       1002000,
+       1001000
+      ],
+      [
+       1001000,
+       1001000
+      ],
+      [
+       1001000,
+       1002000
+      ],
+      [
+       1000000,
+       1002000
+      ],
+      [
+       1000000,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "clinics": 1,
+    "id": "P",
+    "population": 100
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1001200,
+       1001200
+      ],
+      [
+       1001800,
+       1001200
+      ],
+      [
+       1001800,
+       1001800
+      ],
+      [
+       1001200,
+       1001800
+      ],
+      [
+       1001200,
+       1001200
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "clinics": 1,
+    "id": "Q",
+    "population": 100
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1004000,
+       1000000
+      ],
+      [
+       1005000,
+       1000000
+      ],
+      [
+       1005000,
+       1001000
+      ],
+      [
+       1004000,
+       1001000
+      ],
+      [
+       1004000,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "clinics": 2,
+    "id": "R",
+    "population": 100
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1005000,
+       1001000
+      ],
+      [
+       1006000,
+       1001000
+      ],
+      [
+       1006000,
+       1002000
+      ],
+      [
+       1005000,
+       1002000
+      ],
+      [
+       1005000,
+       1001000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "clinics": 0,
+    "id": "S",
+    "population": 50
+   },
+   "type": "Feature"
+  }
+ ],
+ "type": "FeatureCollection"
+}
