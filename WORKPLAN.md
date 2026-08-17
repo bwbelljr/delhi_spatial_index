@@ -38,9 +38,9 @@ paths". Everything downstream depends on this.*
       (replicability matters: the repo will be released, and some journals
       require the data too)
 - [ ] Modernize dependencies: current geopandas/shapely/pyproj (breaking API
-      changes since 2021, e.g. removed `cascaded_union`); consolidate
-      `requirements.txt` / `environment.yml` / `pyproject.toml` into one source
-      of truth; resolves the deferred Dependabot backlog
+      changes since 2021, e.g. removed `cascaded_union`); consolidate to
+      uv + `pyproject.toml` (decided — see Decisions section), removing the
+      conda/poetry/Docker files; resolves the deferred Dependabot backlog
 - [ ] Fix small runtime hazards: create output dirs (`os.makedirs`), rename
       stale `12Sep2021` output filenames to dated 2025+ names
 - [ ] Verify: both notebooks run top-to-bottom on this machine against
@@ -65,6 +65,11 @@ index is the paper's core contribution.*
 - [ ] Stretch: reproduce the South African source paper's published numbers
       (the index formulation was adapted from Patrick's paper) as a second
       validation case; consider releasing the harness with the package
+- [ ] Decision-support variant: compute the mythical city's PSI under both
+      exclusion semantics — (a) dropped settlement types still contribute
+      services as neighbors vs. (b) dropped types fully removed before
+      neighbor computation — and show the side-by-side delta to Raj to ground
+      the open decision below (more informative than asking in the abstract)
 
 **Definition of done:** `pytest` passes with hand-verified expected values;
 any future code change that alters the index fails the suite.
@@ -88,8 +93,9 @@ any future code change that alters the index fails the suite.
       specifically investigate:
       - the polygon/settlement adjacency logic (bbox overlap vs. touch)
       - dead code: function(s) defined but never called
-- [ ] Convert notebooks to thin drivers over the library (or scripts), so runs
-      are scriptable and testable
+- [ ] Retire the notebooks entirely (decided): their logic becomes package
+      pipeline stages with logged validation; figures render to files via a
+      figures command
 
 **Definition of done:** oracle suite still passes; one code path per concept;
 settlement categories, services, and distance parameters are config, not code.
@@ -177,6 +183,63 @@ demonstrated stable (or divergences surfaced and discussed).
       Claude at it) first thing, so find issues before they do
 - [ ] Optional: release the oracle/test harness and fixtures with the package
 - [ ] Ship to HAS (and post to SSRN per Patrick's suggestion)
+
+## Decisions made (16 Aug 2026 meta-planning session)
+
+- **Oracle contract — the manuscript is truth.** The mythical city's expected
+  values are hand-computed from the paper's equations (Eq. 1–4). Code must
+  reproduce them before it is trusted on Delhi. On mismatch, default is to
+  fix the code; a deliberate deviation (e.g. bbox-adjacency) may instead be
+  ratified with Raj, in which case the methods text and the hand-derived
+  values are updated to match. End invariant: manuscript, hand calculation,
+  and code all agree — no silent deviations.
+- **Mythical city ships as test fixtures**: tiny GeoJSON inputs + a
+  hand-derived expected-values table checked into the repo; pytest asserts
+  the pipeline reproduces them. Fixtures should cover the tricky edges
+  (barrier between adjacent settlements, zero-service settlement,
+  second-order neighbor that must not count).
+- **End-state architecture — Option B**: installable package (`delhi_psi/`
+  with io / neighbors / index / config modules), config-file-driven runs via
+  a CLI (`delhi-psi run config.yaml`), robustness sweeps = loops over
+  configs.
+- **No notebooks.** Both current notebooks are linear drivers with no real
+  visual content; they become pipeline stages with logged validation (their
+  eyeball checks become assertions — e.g. the negative-PSI check becomes a
+  hard guard). Figures are generated to files by a figures command. The two
+  plotting helpers in utils survive as ordinary library functions.
+- **Tooling — uv + `pyproject.toml`** as the single source of dependency
+  truth. Remove `requirements.txt`, `environment.yml`, `poetry.lock`,
+  `Dockerfile`, `install_conda_environment.sh` (Docker served a colleague's
+  one-off need that no longer exists). Add GitHub Actions CI running the
+  test suite on every push once it exists.
+- **Scope/timeline**: full email scope ("thorough"); no hard calendar
+  deadline — sequencing and correctness over speed.
+
+## Open decisions (need Raj / group)
+
+**A. Exclusion semantics.** "Drop rural villages and industrial areas" hides
+three sub-decisions that change the numbers; Bob to put these to Raj,
+informed by the mythical-city side-by-side demo (Phase 2):
+
+1. **Neighbor treatment of dropped types** — do excluded settlements still
+   contribute services to adjacent urban settlements' PCEN (Eq. 3), or are
+   they removed entirely before neighbor computation? (The current "no RV"
+   run removes them entirely — inherited, not chosen.)
+2. **Min–max renormalization** — shrinking the settlement universe changes
+   the min/max in Eq. 2, shifting every service index slightly; needs a
+   sentence in the methods text.
+3. **Descriptive tables** — dropped types also vanish from population-share
+   and count tables; confirm the paper's descriptive claims are restated
+   accordingly.
+
+**B. Data-release posture** (Raj/group decision — not Bob's call alone).
+Options, in ascending openness: code-only (repo + fixtures, runnable but
+Delhi numbers not reproducible by outsiders); code + derived outputs
+(publish the per-settlement PSI as CSV/GeoPackage — the paper's headline
+dataset — without raw inputs); full archive (inputs + outputs on
+Zenodo/OSF with DOI — requires a redistribution-rights check on the
+DUSIB/DDA/MCD-derived data; WorldPop is CC-BY). Planning floor is
+code + fixtures; anything more awaits the group.
 
 ## Out of repo scope (paper-side, tracked for completeness)
 
