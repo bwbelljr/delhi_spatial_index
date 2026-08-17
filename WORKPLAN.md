@@ -27,17 +27,17 @@ locally at `~/delhi_data` and is two-way synced hourly with the shared drive
 - [x] GitHub API access (`gh`) for automation
 - [x] Claude account logistics resolved (Raj's gifted Max plan, redeemed 12 Aug)
 
-## Phase 1 — Make the pipeline runnable end-to-end (Bob) — P1
+## Phase 1 — Make the pipeline runnable end-to-end (Bob) — P1 (DONE)
 
 *"Get the repo running / modernize dependencies", "remove hardcoded machine
 paths". Everything downstream depends on this.*
 
-- [ ] Remove hardcoded `data_dir = /home/bwbelljr/delhi_data/` — make the data
+- [x] Remove hardcoded `data_dir = /home/bwbelljr/delhi_data/` — make the data
       directory configurable (env var `DELHI_DATA_DIR` or config file), so the
       pipeline runs on any machine pointed at a copy of the dataset
       (replicability matters: the repo will be released, and some journals
       require the data too)
-- [ ] Modernize dependencies: **all packages to latest stable versions**
+- [x] Modernize dependencies: **all packages to latest stable versions**
       (geopandas/shapely/pyproj have breaking API changes since 2021, e.g.
       removed `cascaded_union`; expect more of the same across the stack);
       consolidate to uv + `pyproject.toml` (decided — see Decisions section),
@@ -46,13 +46,14 @@ paths". Everything downstream depends on this.*
       that outputs still match the July 2025 run acts as the interim
       regression check until the oracle (Phase 2) takes over that job
       permanently.
-- [ ] Fix small runtime hazards: create output dirs (`os.makedirs`), rename
+- [x] Fix small runtime hazards: create output dirs (`os.makedirs`), rename
       stale `12Sep2021` output filenames to dated 2025+ names
-- [ ] Verify: both notebooks run top-to-bottom on this machine against
+- [x] Verify: both notebooks run top-to-bottom on this machine against
       `~/delhi_data`, outputs match the July 2025 run
 
 **Definition of done:** a fresh clone + the shared-drive data reproduces the
-existing PSI outputs.
+existing PSI outputs. **DONE (17 Aug 2026, PR #5): fresh run reproduced the
+July 2025 baseline with zero numeric deviation.**
 
 ## Phase 2 — The Oracle: ground-truth test harness (Bob) — P1
 
