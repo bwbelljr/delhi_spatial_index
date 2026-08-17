@@ -341,6 +341,14 @@ def test_incidental_columns_ignored():
     new = _psi_frame().assign(**{"Unnamed: 0": [5, 9], "index": [7, 3]})
     issues, _ = compare_numeric_frames(new, base, "USO_AREA_U", 1e-9, 1e-12)
     assert issues == []
+
+
+def test_missing_column_reported():
+    # A baseline column absent from the new run must FAIL loudly, never be
+    # silently skipped (guards against dependency-driven column drops).
+    new = _psi_frame().drop(columns=["norm_psi"])
+    issues, _ = compare_numeric_frames(new, _psi_frame(), "USO_AREA_U", 1e-9, 1e-12)
+    assert any("norm_psi" in i and "missing" in i for i in issues)
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -437,15 +445,24 @@ def compare_numeric_frames(new_df, base_df, id_col, rtol, atol):
     # to_csv (read back as "Unnamed: 0") and the notebook-era "index" column
     # reflect row order, not computed quantities.
     incidental = {"index", "level_0", ""}
-    numeric_cols = [
+    expected_cols = [
         c
         for c in base_df.columns
         if c != id_col
         and c not in incidental
         and not str(c).startswith("Unnamed")
-        and c in new_df.columns
         and pd.api.types.is_numeric_dtype(base_df[c])
-        and pd.api.types.is_numeric_dtype(new_df[c])
+    ]
+    # A baseline column absent from the new run is itself a deviation —
+    # never silently skip it (a dependency-driven rename/drop would
+    # otherwise produce a bogus PASS).
+    missing = [c for c in expected_cols if c not in new_df.columns]
+    if missing:
+        issues.append(f"columns missing from new run: {missing}")
+    numeric_cols = [
+        c
+        for c in expected_cols
+        if c in new_df.columns and pd.api.types.is_numeric_dtype(new_df[c])
     ]
     for col in numeric_cols:
         base_vals = merged[f"{col}_base"].to_numpy(dtype=float)
@@ -525,7 +542,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `uv run pytest tests/test_verify.py -v`
-Expected: 7 passed.
+Expected: 8 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -786,7 +803,7 @@ git commit -m "feat: preprocess.py replaces pre-processing notebook (mechanical 
 
 **Interfaces:**
 - Consumes: `resolve_data_dir`, `resolve_out_dir` from `scripts.common`; `calc_all_services`, `check_shapefile` from `spatial_index_utils` (unmodified); the neighbors joblib via `--neighbors-file` (default `<data-dir>/colonies_bbox_nbrs2025.joblib` — today's behavior; the verification run passes Task 4's fresh output instead).
-- Produces: in `<out-dir>/psi_2020_results/`: `delhi_psi_bbox_popsize2020_norv_aug2026.{csv,joblib,shp}` and `delhi_psi_bbox_popdensity2020_norv_aug2026.{csv,joblib,shp}`; `<out-dir>/missing_colonies.csv`. The two CSVs are consumed by Task 3's verifier.
+- Produces: in `<out-dir>/psi_2020_results/`: `delhi_psi_bbox_popsize2020_norv_aug2026.{csv,joblib,shp}` and `delhi_psi_bbox_popdensity2020_norv_aug2026.{csv,joblib,shp}`; `<out-dir>/missing_colonies_aug2026.csv`. The two CSVs are consumed by Task 3's verifier.
 
 Mechanical translation, same rules as Task 4 (info-bearing echoes → prints,
 bare `.head()` displays dropped). The notebook saved the CSVs and
@@ -859,7 +876,9 @@ def main():
     school_fp = os.path.join(services_dir, "School", "schools7760.shp")
     transport_fp = os.path.join(services_dir, "Transport", "Transport.shp")
 
-    missing_colonies_csv_path = os.path.join(out_dir, "missing_colonies.csv")
+    # Dated like every other output so a default --out-dir run can never
+    # collide with the baseline's missing_colonies.csv
+    missing_colonies_csv_path = os.path.join(out_dir, "missing_colonies_aug2026.csv")
 
     delhi_bounds_filepath = os.path.join(
         data_dir, "delhi_bounds_buffer", "delhi_bounds_buffer.shp"
