@@ -1,6 +1,6 @@
 # Phase 2: The Mythical-City Oracle — Design Spec
 
-Date: 2026-08-17
+Date: 2026-08-17 (rev 2 — post ultracode review, 18 gating findings applied)
 Status: awaiting owner approval
 Branch: `phase2-oracle` (off `origin/main`)
 Parent plan: `WORKPLAN.md` Phase 2
@@ -24,228 +24,305 @@ and code agree — no silent deviations.
 **Three-way agreement architecture (Approach C, approved):**
 production code == independent reference implementation == human calculator.
 
+## The two rule-sets (central concept)
+
+The ultracode review of this spec, running the production code against the
+draft geometry, established that the code deviates from the manuscript in
+FOUR distinct places. The oracle therefore computes everything under two
+named rule-sets, and every artifact (expected values, worksheet, memo)
+labels which one it is using:
+
+| # | Aspect | `ideal` rule-set (manuscript-literal) | `code` rule-set (empirically pinned) |
+|---|--------|---------------------------------------|--------------------------------------|
+| 1 | Adjacency | polygons sharing a border (edge) | bbox-overlap via sjoin `intersects` (agrees with ideal in the main city by construction; diverges in the exhibit) |
+| 2 | Barrier | severs only the crossing pair (A–D), both directions | **global and asymmetric**: `remove_ids_with_barrier` deletes every barrier-flagged settlement from OTHER settlements' neighbor lists, while flagged settlements keep their own lists (verified against `barrier_intersection` + `add_polygon_neighbors_column_fast`) |
+| 3 | Roads | Eq. 4 literally: own length / population, min-maxed, NO neighbor term | `create_service_length_index` applies Eq. 3-style neighbor decay to road lengths |
+| 4 | PSI | Eq. 1: PSI = mean of service indices (the code's `unnorm_psi`) | adds a second min-max pass producing `norm_psi`, absent from Eq. 1 |
+
+Additionally the **popdensity denominator has no manuscript equation** — it
+is a code-only extension of Eq. 3 (Population_i → Population_i / Area_i).
+The worksheet labels its popdensity arithmetic "derived by analogy to Eq. 3,
+ratified as a code extension", never implying manuscript authority.
+
+**Primary oracle-ideal** = `ideal` rule-set, popsize denominator, Eq. 1 PSI.
+The `code` rule-set columns are pinned as regression values, and every
+ideal-vs-code gap is a documented finding routed to the memo/owner — none is
+silently reconciled. An implementation task determines which column
+(`unnorm_psi` or `norm_psi`) the paper's Figures actually report, since that
+defines what "reproducing the paper's numbers" means.
+
 ## Decisions already made (brainstorm, owner-approved)
 
-1. **Test surface**: both — library-first (functions on fixture
-   GeoDataFrames) plus one end-to-end CLI run of the real scripts.
-2. **Adjacency divergence**: main city uses geometries where bbox and
-   border-sharing provably agree (green suite vs. current code); a separate
-   "divergence exhibit" documents where the two rules disagree and by how
-   much, feeding the Phase 3 decision with Raj. Exhibit tests assert the
-   documented divergence itself (they pass; no xfail).
-3. **Ratification**: ship-then-ratify. The derivation worksheet carries a
-   RATIFICATION PENDING banner until Bob (and ideally Raj) verify by hand;
-   a one-line commit flips it.
-4. **Scope**: exclusion-semantics decision-support memo for Raj is IN;
-   South African (Johannesburg) reproduction is OUT (future stretch).
-5. **Visuals are load-bearing**: maps must make the oracle interpretable,
-   including the "missing settlements" (exclusion) variants.
+1. **Test surface**: both — library-first plus one end-to-end CLI run.
+2. **Adjacency divergence**: main city geometry makes bbox == border-sharing
+   provably identical (green suite); a divergence exhibit documents the
+   disagreement cases; exhibit tests assert the documented divergence itself.
+3. **Ratification**: ship-then-ratify, with a designated hand-verified
+   anchor subset (see Worksheet section) so ratification is completable.
+4. **Scope**: exclusion-semantics memo IN; Johannesburg reproduction OUT.
+5. **Visuals are load-bearing**, including for missing-settlement variants.
 
 ## The city: Oraculum
 
-Seven axis-aligned rectangular settlements in EPSG:7760 (meters). All
-coordinates are offsets from base O = (1,000,000, 1,000,000); the table
-gives offsets in meters. Rectangles only, in the main city — for a
-rectangle, bbox ≡ geometry, so bbox-overlap and polygon-intersection
-adjacency provably coincide. The bottom row is offset 500 m so **no pair of
-settlements touches only at a corner point** (every touching pair shares an
-edge segment).
+Seven axis-aligned rectangles, EPSG:7760 (meters), coordinates as offsets
+from base O = (1,000,000, 1,000,000). Rectangles only → bbox ≡ geometry →
+adjacency rules 1-ideal and 1-code provably coincide in the main city. The
+bottom row is offset 500 m so no settlement pair touches only at a corner.
 
-| id | type (USO_FINAL-style) | rectangle x×y (m) | centroid | pop | area km² | services |
+| id | type | rectangle x×y (m) | centroid | pop | area km² | services |
 |----|------|-------------------|----------|-----|----------|----------|
 | A  | Planned | [0,1000]×[1000,2000] | (500,1500) | 100 | 1.0 | 2 clinics, 1 school, road segment |
 | B  | Unauthorized | [1000,2000]×[1000,2000] | (1500,1500) | 200 | 1.0 | 1 clinic |
 | C  | JJC | [2000,3000]×[1000,2000] | (2500,1500) | 400 | 1.0 | none |
-| RV | Rural Village (removable) | [1100,1900]×[2000,3000] | (1500,2500) | 50 | 0.8 | 2 clinics |
+| RV | Rural Village (removable) | [1100,1900]×[2000,3000] | (1500,2500) | **100** | 0.8 | 2 clinics |
 | D  | Planned | [−500,500]×[0,1000] | (0,500) | 100 | 1.0 | 1 school |
 | E  | Regularized-Unauthorized | [500,2500]×[0,1000] | (1500,500) | 300 | **2.0** | 1 clinic, road segment |
 | IND| Industrial (removable) | [2500,3500]×[0,1000] | (3000,500) | 10 | 1.0 | none |
 
-**Barrier**: one canal linestring along y=1000 for x∈[0,500] — exactly the
-A–D shared edge — severing A–D adjacency.
+(RV population is 100, not 50 — deliberate: with RV at pop 100, IND —
+though serviceless — is the strict argmax of clinic PCEN under BOTH
+denominators, purely via E's decayed clinic over IND's tiny population
+(1 × 1/2.5 = 0.4 → 0.4/10 = 0.04, vs RV's 2.5/100 = 0.025 popsize and
+2.5/125 = 0.02 popdensity). Removing IND therefore moves a min–max anchor
+with ZERO numerator change anywhere — a pure renormalization delta — while
+RV removal produces a neighbor-contribution delta. The invariants script asserts
+argmin/argmax uniqueness for every service under both denominators in every
+scenario, so future fixture edits cannot reintroduce a tie or an inert
+settlement.)
 
-**Adjacency (border-sharing == bbox, by construction), after barrier:**
+**Barrier**: canal linestring y=1000, x∈[25,475] — a strict interior
+sub-segment of the A–D shared edge ([0,500] at y=1000). It must NOT reach
+x=500: the draft's full-edge canal ended exactly on E's corner (500,1000),
+which flags E as barrier-crossed and (under the code rule) guts the
+adjacency graph — the review's headline Critical. Barrier flagging is
+per-settlement, so a partial edge segment severs A–D exactly as well as the
+full edge. Invariants: (a) canal ⊂ A–D shared edge; (b) the set of
+settlements intersecting any barrier is exactly {A, D}; (c) no barrier
+intersects any settlement at only a point.
+
+### Geometric pair table (rule-independent; verified by shapely in review)
+
+All ten touching pairs share an edge segment (never just a point):
 
 | pair | centroid distance | decay 1/(1+D km) |
 |------|------------------|------------------|
 | A–B | 1000 m | 1/2 |
+| A–D | 500·√5 m | (severed under both rule-sets) |
+| A–E | 1000·√2 m | 1/(1+√2) |
 | B–C | 1000 m | 1/2 |
 | B–RV | 1000 m | 1/2 |
 | B–E | 1000 m | 1/2 |
-| D–E | 1500 m | 1/2.5 |
-| E–IND | 1500 m | 1/2.5 |
-| A–E | 1000·√2 m | 1/(1+√2) |
 | C–E | 1000·√2 m | 1/(1+√2) |
 | C–IND | 500·√5 m | 1/(1+√5/2) |
-| A–D | 500·√5 m (unused) | **severed by canal — no link** |
+| D–E | 1500 m | 1/2.5 |
+| E–IND | 1500 m | 1/2.5 |
 
-Two exact irrational distances (√2, √5/2) are deliberate: they test
-floating-point honesty while remaining exactly derivable on paper.
+### Directed post-barrier neighbor lists (rule-dependent)
 
-**Why each element exists (coverage matrix):**
-- C has zero services and neighbors B/E/IND → zero-own-service PCEN comes
-  entirely from decayed neighbors; A's clinics must NOT reach C
-  (second-order exclusion: A and C are not adjacent).
-- Canal on A–D: touching settlements that are NOT neighbors.
-- E's double area: pop-size and pop-density PCEN variants produce different
-  numbers (all-unit-squares would make them identical). RV's 0.8 km² adds a
-  second area contrast.
-- RV is service-rich and adjacent to B → removing RV visibly drops B's
-  clinic PCEN (the dramatic case for the exclusion memo).
-- IND has NO services → removing IND changes E/C only via the min–max
-  normalization universe, isolating the renormalization effect (the subtle
-  case for the memo).
-- Road polyline: vertical segment x=750 from y=250 to y=1750 → exactly
-  0.75 km inside E and 0.75 km inside A → exercises the length-based road
-  index (Eq. 4) with hand-computable lengths.
-- Service points sit at pinned interior coordinates (recorded in the
-  fixture files; exact placement is arbitrary but fixed).
+The barrier rules make neighborhood DIRECTED (a settlement's list is whose
+services it counts). Both columns below are part of expected ground truth;
+the library test pins the `code` column empirically:
 
-**Barrier-semantics determination (explicit sub-goal).** The manuscript says
-barrier-crossed adjacencies are not counted ("we manually marked areas that
-had river or railroad tracks and then ensured that we don't count these
-services"). The code's mechanism (`barrier_intersection` flags settlements
-touching any barrier; `remove_ids_with_barrier` filters neighbor lists) may
-implement something broader — e.g., removing barrier-flagged settlements
-from ALL neighbor lists, not just severing the crossing pair. The oracle
-treats this as an empirical determination, not an assumption: the library
-test pins the code's actual rule (with the canal flagging both A and D, do
-A–B, A–E, D–E links survive?); the reference implementation computes the
-manuscript-ideal (sever only the crossing pair); any gap becomes a
-documented finding in the memo (same treatment as bbox-vs-border) and
-`expected_values.csv` carries columns for both interpretations so the suite
-stays green against current behavior while the ideal is on record.
+| settlement | `ideal` rule (A–D severed, both ways) | `code` rule (A, D flagged → removed from others' lists; keep their own) |
+|------------|----------------------------------------|--------------------------------------------------------------------------|
+| A  | B, E | B, E |
+| B  | A, C, RV, E | C, RV, E |
+| C  | B, E, IND | B, E, IND |
+| RV | B | B |
+| D  | E | E |
+| E  | A, B, C, D, IND | B, C, IND |
+| IND| C, E | C, E |
 
-**Divergence exhibit** (separate fixture, `divergence/`):
-- P: L-shaped settlement (three 1 km cells: [0,2000]×[0,1000] ∪
-  [0,1000]×[1000,2000]); its bbox is [0,2000]×[0,2000].
-- Q: square [1200,1800]×[1200,1800] sitting in P's notch — polygons
-  disjoint (200 m gap), but Q lies wholly inside P's bbox →
-  **bbox adjacency invents a P–Q neighbor link that border-sharing denies**.
-- R, S: unit squares touching only at the point (1000,1000) →
-  intersects-predicate says neighbors; "shares a border" (edge) says no.
-- The exhibit computes PCEN/PSI under both rules and records the deltas.
+The asymmetry (A counts E's clinic; E does not count A's) is itself prime
+memo material for Raj — it is the barrier-semantics gap made concrete.
 
-## Components
+**Coverage matrix (why each element exists):**
+- C: zero services; PCEN entirely from decayed neighbors; A's clinics must
+  not reach C (A, C not adjacent — second-order exclusion).
+- Canal on A–D interior: touching settlements that are not neighbors, under
+  both rule-sets; plus the ideal-vs-code asymmetry above.
+- E double area (and RV 0.8 km²): popsize vs popdensity differ.
+- RV service-rich next to B: exclusion scenario removes a *contributor*.
+- IND serviceless with tiny population: its clinic PCEN (entirely E's
+  decayed clinic) is the unique max, so the exclusion scenario moves a
+  *normalization anchor* with no numerator change — the isolated
+  renormalization effect.
+- Road polyline x=750, y∈[250,1750]: 0.75 km in E, 0.75 km in A, nothing
+  elsewhere (it crosses y=1000 at (750,1000), which lies on the A–E shared
+  edge east of the canal's end at x=475 — it does not touch the canal;
+  invariants assert these lengths and the non-intersection).
+- Schools exist in A and D only; all other settlements have zero school
+  PCEN own-terms but nonzero decayed terms where adjacent — the min-max
+  anchors for schools are still unique (invariants-checked), avoiding
+  degenerate Eq. 2 denominators.
+
+### Scenarios (exclusion semantics)
+
+| scenario | meaning |
+|----------|---------|
+| `baseline` | all seven settlements indexed |
+| `excl_contributing` | RV and IND get no index rows, but still contribute services as neighbors (semantics a) |
+| `excl_removed` | RV and IND fully removed before neighbor computation (semantics b) |
+| `excl_ind_removed` | IND alone fully removed — isolates the renormalization effect from RV's contribution effect |
+
+### Divergence exhibit (separate fixture, `divergence/`)
+
+Explicit four-settlement universe, all in one frame, with pinned attributes
+so deltas are hand-derivable. PCEN-level deltas are the primary recorded
+quantity (PSI deltas can be annihilated by min-max in tiny universes; the
+review proved a two-settlement universe forces them to zero):
+
+| id | geometry (m) | pop | services |
+|----|--------------|-----|----------|
+| P | L-shape: [0,2000]×[0,1000] ∪ [0,1000]×[1000,2000] | 100 | 1 clinic |
+| Q | [1200,1800]×[1200,1800] (inside P's notch; 200 m gap to P) | 100 | 1 clinic |
+| R | [4000,5000]×[0,1000] | 100 | 2 clinics |
+| S | [5000,6000]×[1000,2000] | 50 | none |
+
+- P–Q: polygons disjoint, but Q lies inside P's bbox ([0,2000]×[0,2000]) →
+  bbox adjacency invents the link; border-sharing denies it.
+- R–S: touch at exactly the point (5000,1000) → `intersects` says
+  neighbors; "shares a border" (edge) says no.
+- The exhibit records, under each adjacency rule: every settlement's
+  neighbor list, clinic PCEN, and (secondarily) service index — asserting
+  the documented differences exist exactly as recorded.
+
+## Components (build order is normative — see Build Order)
 
 ### 1. Fixtures (`tests/fixtures/oraculum/`)
-`settlements.geojson`, `services.geojson` (points + road linestring),
-`barriers.geojson`, `divergence/*.geojson`, `expected_values.csv`. All tiny,
-human-readable, CRS EPSG:7760. `expected_values.csv` columns: settlement id;
-per-service count/length, PCEN, service index; unnorm_psi; norm_psi — for
-each of the 2×2 combinations {popsize, popdensity} × {exclusion semantics a
-(excluded-but-contributing), b (fully removed)} plus the baseline
-all-seven-settlements city.
+`settlements.geojson`, `services.geojson` (clinic/school points at pinned
+interior coordinates + road linestring), `barriers.geojson`,
+`divergence/*.geojson`, `expected_values.csv`. CRS EPSG:7760, tiny,
+human-readable.
+
+**`expected_values.csv` schema (long format, pinned now):** columns
+`rule` ∈ {ideal, code}, `scenario` ∈ {baseline, excl_contributing,
+excl_removed, excl_ind_removed}, `denom` ∈ {pop, popdensity}, `settlement`,
+`metric` (e.g. clinic_count, clinic_pcen, clinic_idx, school_pcen, …,
+road_length_km, road_pcen, road_idx, psi_eq1, norm_psi), `value`.
+Example row: `ideal,baseline,pop,B,clinic_pcen,0.0175`.
+`norm_psi` rows exist only under `rule=code`; road rows under `rule=ideal`
+use Eq. 4 literally and under `rule=code` use the decayed formula.
 
 ### 2. Independent reference implementation (`tests/reference_impl.py`)
-Pure numpy/pandas (+shapely for geometry predicates only), ~80–120 lines,
-written FROM THE MANUSCRIPT'S EQUATIONS. Hard independence rule: it must not
-import, call, or textually mirror `spatial_index_utils.py`; its docstring
-cites Eq. 1–4; the code-review loop explicitly checks independence.
-Parameterized by: adjacency rule (border-sharing | bbox-overlap |
-intersects), exclusion semantics (a | b | none), denominator (popsize |
-popdensity). This is what computes both sides of the exclusion memo and the
-divergence exhibit numbers.
+Pure numpy/pandas (+shapely for geometry predicates), written FROM THE
+MANUSCRIPT'S EQUATIONS; must not import, call, or textually mirror
+`spatial_index_utils.py` (review-enforced). Parameterized by: adjacency
+rule (border | bbox | intersects), barrier rule (pair-severed | global
+directed), roads formula (eq4 | decayed), exclusion scenario, denominator,
+and second normalization on/off — so it can compute BOTH rule-sets, all
+scenarios, and the exhibit.
 
 ### 3. Test suites
-- `tests/test_reference_impl.py` — reference impl == expected_values.csv
-  (human ↔ reference).
-- `tests/test_oracle.py` — library-first: `spatial_index_utils` neighbor
-  computation (with barriers) and `calc_all_services` on fixture
-  GeoDataFrames == expected_values.csv, atol 1e-12 (production ↔ human).
-  Named cases: `test_zero_service_settlement`,
-  `test_second_order_neighbor_excluded`, `test_barrier_severs_adjacency`,
-  `test_popdensity_differs_from_popsize`, `test_minmax_anchors`,
-  `test_road_length_index`.
-- `tests/test_oracle_e2e.py` — materializes a temp data directory (writing
-  the fixture layers as shapefiles in the real dataset's layout, plus the
-  population CSV), runs the actual `scripts/preprocess.py` and
-  `scripts/compute_psi.py` CLIs against it, and compares final CSVs to
-  expected values. This test also PINS DOWN the current scripts' de-facto
-  exclusion semantics (neighbors are computed before RV rows are dropped —
-  whether a dropped neighbor still contributes services is currently
-  undocumented behavior; the e2e test records what actually happens, and
-  the memo reports how current behavior maps onto ideal semantics a/b).
+- `tests/test_reference_impl.py` — reference impl == expected_values.csv.
+- `tests/test_oracle.py` — library-first: production functions on fixture
+  GeoDataFrames == the `rule=code` rows (atol 1e-12), including the directed
+  neighbor lists, and == the `rule=ideal` rows wherever the rule-sets agree
+  (e.g. non-barrier-adjacent point services). Named cases:
+  `test_zero_service_settlement`, `test_second_order_neighbor_excluded`,
+  `test_barrier_rule_is_global_and_directed`,
+  `test_popdensity_differs_from_popsize`, `test_minmax_anchors_unique`,
+  `test_road_decay_divergence` (pins that code roads ≠ Eq. 4 by the
+  recorded amount), `test_second_normalization_divergence`.
+- `tests/test_oracle_e2e.py` — temp data dir + real CLIs. **Manifest
+  (complete, from reading the scripts):** colonies shapefile in
+  `uso_update_sep2021/` layout (fields `USO_AREA_U`, `USO_FINAL`,
+  geometry); `Barrier_Clip/Canal/Canal.shp` (the canal),
+  `Barrier_Clip/Drain/Major_Drain.shp` and
+  `Barrier_Clip/Railway/Railway_Line.shp` (empty-but-valid);
+  `ndmc_center7760/ndmc_center7760.shp` (one point);
+  `delhi_bounds_buffer/delhi_bounds_buffer.shp` (polygon containing all of
+  Oraculum); `Public Services/{Banking,Health,Major Road,Police,Ration,
+  School,Transport}/…` shapefiles with the real dataset's filenames —
+  Health carries the clinics, School the schools, Major Road the road;
+  the other four empty-but-valid; `pop_colony_wp_2020_jjc_adjusted.csv`
+  with exact lowercase columns `uso_area_u,population`; `--neighbors-file`
+  wired from the preprocess output to compute_psi, outputs to a temp
+  out-dir. **Scope note:** the CLI path hardcodes RV-only exclusion, so the
+  e2e leg validates only the baseline/RV-drop path; the full scenario
+  matrix is three-way-verified via the library and reference legs only —
+  stated honestly in the worksheet.
 - `tests/test_divergence_exhibit.py` — asserts the documented divergences
-  exist exactly as recorded (bbox invents P–Q; intersects invents R–S;
-  PSI deltas equal recorded values). Passing tests that document reality.
+  and their PCEN deltas exactly as recorded.
 
 ### 4. Visuals (`scripts/render_oracle_maps.py` → `docs/oracle/*.png`)
-Deterministic matplotlib rendering FROM the fixture files (no hand-drawn
-elements; map and data cannot drift). Implementation must load the `dataviz`
-skill before writing chart code. Three figures:
-1. `oraculum_city.png` — settlements colored by type, labels
-   (name/pop/area), service markers, canal glyph, neighbor graph with
-   distance labels, severed A–D link visibly absent.
-2. `oraculum_exclusion_variants.png` — three panels: full city; semantics a
-   (RV/IND ghosted, dashed contribution links); semantics b (RV/IND gone).
-   Affected settlements (B, E, C) annotated with their PCEN/PSI under each
-   panel so the delta reads directly off the map.
-3. `oraculum_divergence.png` — P's polygon vs. dashed bbox overlay, the
-   phantom P–Q link, the R–S corner touch, annotated deltas.
+Deterministic matplotlib from fixture files; implementation loads the
+`dataviz` skill first. Three figures: (1) `oraculum_city.png` — types,
+labels, service markers, canal glyph, DIRECTED neighbor graph (arrowheads
+showing the code rule's asymmetry; ideal-only links dashed); (2)
+`oraculum_exclusion_variants.png` — panels: baseline / excl_contributing
+(RV+IND ghosted, dashed contribution arrows) / excl_removed /
+excl_ind_removed, affected settlements annotated with PCEN/PSI per panel;
+(3) `oraculum_divergence.png` — P's polygon vs dashed bbox, phantom P–Q
+link, R–S corner touch, annotated PCEN deltas.
 
 ### 5. Derivation worksheet (`docs/oracle/derivation-worksheet.md`)
-Opens with `STATUS: RATIFICATION PENDING — derived by Claude from Eq. 1–4;
-awaiting hand verification by Bob (and Raj).` Then, per settlement: inputs →
-arithmetic (shown step by step, fractions and radicals kept exact until the
-final decimal) → result, cross-referenced to the map. Sized for a
-~15-minute calculator pass. Ratification = one-line banner edit, committed.
+Banner: `STATUS: RATIFICATION PENDING …`. **Hand-verified anchor subset
+(the ~15-minute calculator pass, per review):** the `ideal`/`baseline`/
+`pop` config for all seven settlements end-to-end, plus one worked
+exclusion delta (B under excl_removed) and one worked road Eq. 4 value.
+All other configs are machine-cross-checked by the (independently reviewed)
+reference implementation; the worksheet says so explicitly. Radicals kept
+exact until final decimals.
 
 ### 6. Exclusion-semantics memo (`docs/oracle/exclusion-semantics-memo.md`)
-For Raj: the 3-panel figure, a per-settlement delta table (both PSI
-variants), a plain-language paragraph on what semantics a vs. b mean, what
-the current code actually does (from the e2e findings), and what changes for
-Delhi. Explicitly no recommendation — it grounds his decision (WORKPLAN
-"Open decisions A").
+For Raj: the 4-panel figure, per-settlement delta tables (RV-contribution
+effect vs IND-renormalization effect, both denominators), the directed
+barrier asymmetry, the roads/norm_psi/popdensity manuscript gaps, and what
+the current code actually does. Explicitly no recommendation.
 
 ### 7. Consistency guard (`scripts/check_oraculum_invariants.py`)
-Asserts from the fixture files: all main-city geometries are axis-aligned
-rectangles (bbox == geometry); no pair touches only at a point; every
-documented adjacency/distance in this spec matches the geometry; barrier
-coincides with the A–D shared edge; road lengths per settlement are
-0.75 km each. Run in the test suite so fixture edits cannot silently
-invalidate the spec's tables.
+Asserts from fixtures: all main-city geometries are rectangles
+(bbox == geometry); every touching settlement pair shares an edge (never
+only a point); pair distances match the geometric table; canal ⊂ A–D edge,
+touches exactly {A, D}, never at only a point; road lengths 0.75 km in each
+of A and E and zero elsewhere; road does not intersect the canal;
+argmin/argmax of every service PCEN unique under both denominators in every
+scenario. Runs in the test suite.
+
+## Build order (normative — review finding G18)
+
+1. **Fixtures + invariants + empirical pin**: author geometry, run the real
+   `barrier_intersection`/`add_polygon_neighbors_column_fast`/
+   `remove_ids_with_barrier` chain against it, confirm the directed
+   neighbor table above verbatim BEFORE anything downstream is written.
+2. **Schema pin**: expected_values.csv columns + config enumeration frozen.
+3. **Reference implementation** + `test_reference_impl.py`.
+4. **Library-first oracle suite**, then **e2e suite**.
+5. **Worksheet, visuals, memo** (they consume finalized numbers).
 
 ## Non-goals
 
-- No changes to `spatial_index_utils.py` or the pipeline scripts (if the
-  oracle exposes a production-code mismatch with the manuscript, that is a
-  FINDING — documented and taken to the owner/Raj per the oracle contract —
-  not something this phase silently fixes; exception per Phase 1 precedent:
-  none anticipated here since no dependencies change).
-- No resolution of the bbox-vs-border question (Phase 3, with Raj, informed
-  by the exhibit).
-- No Johannesburg reproduction.
-- No pandas 3 uncap (Phase 2 may later use the oracle to validate it, but
-  not in this phase).
+- No changes to `spatial_index_utils.py` or the pipeline scripts. The four
+  ideal-vs-code gaps are FINDINGS (documented, routed to owner/Raj), not
+  things this phase fixes.
+- No resolution of adjacency/barrier/roads/norm_psi questions (Phase 3+,
+  with Raj, informed by the oracle's concrete numbers).
+- No Johannesburg reproduction; no pandas-3 uncap.
 
 ## Risks / implementation notes
 
-- **Unit convention**: Eq. 3's D is in km (decay 1/(1+D)); the code's
-  `calc_nbr_dist` stores distances in some unit — implementation must
-  confirm against the source (history says km) and the fixture arithmetic
-  must match the code's actual convention; any mismatch is a finding.
-- **`calc_all_services` input expectations**: the oracle constructs
-  GeoDataFrames matching what `compute_psi.py` feeds it (column names
-  `USO_AREA_U`, `USO_FINAL`, `population`, `nbrs_bbox`, `nbrs_dist_bbox`,
-  `centroid`, `area_km2`); the e2e test guards against drift in those
-  assumptions.
-- **Min–max degeneracy**: with 7 settlements, ensure no service's PCEN is
-  constant across all settlements (min == max would make Eq. 2 divide by
-  zero); the chosen service placement avoids this — the invariants script
-  checks it.
-- **Shapefile column-name truncation** (10-char ESRI limit) affects the e2e
-  fixture writing; use the same names the real dataset uses.
+- Unit convention: `calc_nbr_dist` stores km (review-confirmed structure:
+  list of (neighbor_id, distance_km) tuples); fixture arithmetic uses km.
+- `calc_all_services` input contract: columns `USO_AREA_U`, `USO_FINAL`,
+  `population`, `nbrs_bbox`, `nbrs_dist_bbox`, `centroid`, `area_km2`,
+  geometry; the library test builds exactly what `compute_psi.py` feeds it.
+- Shapefile 10-char field truncation applies to e2e fixture writing; use
+  the real dataset's field names.
+- If empirical pinning (build-order step 1) contradicts the directed
+  neighbor table in this spec, STOP and update the spec before proceeding —
+  the table is this spec's most load-bearing claim.
 
 ## Acceptance criteria
 
-1. `uv run pytest` green: existing 14 tests + all new oracle suites.
-2. Reference implementation demonstrably independent (review-verified) and
-   equal to expected_values.csv, which equals the worksheet's arithmetic.
-3. `spatial_index_utils` path and the real-CLI e2e path both reproduce the
-   expected values (or any mismatch is surfaced as a documented finding and
-   halts for the owner per the oracle contract — not patched silently).
-4. Three maps render deterministically from fixtures; worksheet and memo
-   committed; invariants script green.
-5. CHANGELOG updated; PR reviewed and merged; ratification banner remains
-   PENDING until Bob's calculator pass (post-merge by design).
+1. `uv run pytest` green: existing 14 tests + all new suites, including the
+   invariants guard.
+2. Reference implementation independent (review-verified), equal to
+   expected_values.csv across every (rule, scenario, denom) config.
+3. Production code equals the `rule=code` rows; every ideal-vs-code gap is
+   asserted at its recorded magnitude (roads, norm_psi, barrier asymmetry)
+   — nothing silently reconciled.
+4. Three maps render deterministically from fixtures; worksheet (with
+   anchor-subset scope statement) and memo committed; invariants green.
+5. CHANGELOG updated; PR reviewed and merged; ratification banner PENDING
+   until Bob's calculator pass (post-merge by design).
