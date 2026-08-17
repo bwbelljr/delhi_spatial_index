@@ -203,18 +203,23 @@ review proved a two-settlement universe forces them to zero):
 | S | [5000,6000]×[1000,2000] | 50 | none |
 
 - P–Q: polygons disjoint, but Q lies inside P's bbox ([0,2000]×[0,2000]) →
-  bbox adjacency invents the link; border-sharing denies it.
-- R–S: touch at exactly the point (5000,1000) → `intersects` says
-  neighbors; "shares a border" (edge) says no.
+  the bbox rule invents the directed link Q→P; border-sharing denies it,
+  and so does `intersects` (the polygons never touch).
+- R–S: touch at exactly the point (5000,1000). R and S are rectangles, so
+  bbox ≡ geometry for both — **the bbox rule AND `intersects` both count
+  this pair** (production-verified: `add_polygon_neighbors_column_fast`
+  yields R:[S], S:[R]); "shares a border" (edge) says no.
+- Net narrative (corrected in plan-review round 1, computationally, from
+  earlier revisions that wrongly assigned R–S exclusively to `intersects`):
+  the code's bbox rule exhibits BOTH divergence flavors — containment
+  phantom (Q→P only, showing directedness: P's delta 0, Q's +0.005147186)
+  and corner touch (R↔S, symmetric: S's delta +0.016568542, R's 0 since S
+  is serviceless) — while `intersects` exhibits only the corner touch.
 - The exhibit records, under each adjacency rule, every settlement's
   DIRECTED neighbor list, clinic PCEN, and (secondarily) service index —
-  asserting the documented differences exist exactly as recorded. The
-  code rule's directedness shows here concretely (review-verified with
-  production functions): P gets NO neighbors while Q gets [P] (Q's geometry
-  intersects P's bbox, not vice versa) — so P's PCEN delta vs the border
-  rule is zero while Q's is +0.005147186; the R–S point touch is symmetric
-  under `intersects`, giving S a delta of +0.016568542 vs the border rule.
-  Figure 3 draws the P–Q phantom link as a single arrow Q → P.
+  asserting the documented differences exist exactly as recorded.
+  Figure 3 draws the P–Q phantom as a single arrow Q → P and the R–S
+  corner-touch link as symmetric.
 
 ## Components (build order is normative — see Build Order)
 

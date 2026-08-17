@@ -37,6 +37,7 @@ tests/test_reference_impl.py            # Tasks 2–3 — hand-anchor assertions
 tests/test_oracle.py                    # Task 4 — production vs expected_values.csv
 tests/test_oracle_e2e.py                # Task 5 — real CLIs on temp data dir
 tests/test_divergence_exhibit.py        # Task 6
+scripts/check_oraculum_invariants.py    # Task 3 — spec §7 CSV-wide guard
 scripts/render_oracle_maps.py           # Task 7
 docs/oracle/oraculum_city.png  oraculum_exclusion_variants.png  oraculum_divergence.png
 docs/oracle/derivation-worksheet.md     # Task 8
@@ -65,7 +66,7 @@ Singleton services (1 point each): bank@A police@B ration@D transport@E. Pattern
 
 Exclusion anchors (clinic, pop): ideal excl_contributing B=0.0175; ideal excl_removed B=(1+2·½+1·½)/200=0.0125; code excl_contributing == code excl_removed cell-for-cell (B=1.5/200=0.0075).
 
-Exhibit: P(L-shape,pop100,1 clinic) Q(pop100,1 clinic) R(pop100,2 clinics) S(pop50,0). Border rule: all four have zero neighbors → PCENs P=Q=0.01 R=0.02 S=0. bbox directed: only Q→[P]: Q=(1+1·1/(1+0.942809))/100≈0.015147186 (delta +0.005147186; P delta 0). intersects: adds symmetric R↔S: S=(2·(√2−1))/50≈0.016568542 (delta), R=(2+0·…)/100=0.02 (S has no clinic → R unchanged).
+Exhibit: P(L-shape,pop100,1 clinic) Q(pop100,1 clinic) R(pop100,2 clinics) S(pop50,0). Border rule: all four have zero neighbors → PCENs P=Q=0.01 R=0.02 S=0. bbox (directed): Q→[P] AND R↔S (R and S are rectangles, so bbox≡geometry and the corner touch registers — production-verified): Q=(1+1·1/(1+0.942809))/100≈0.015147186 (delta +0.005147186; P delta 0); S=(2·(√2−1))/50≈0.016568542494923802 (delta; R unchanged, S serviceless). intersects: ONLY R↔S (Q's polygon never touches P's): S delta identical; Q delta 0. Three rules, three distinct neighbor sets.
 
 ---
 
@@ -725,8 +726,8 @@ Expected: all pass.
 
 - [ ] **Step 5: Independence check**
 
-Run: `grep -n "spatial_index_utils" tests/reference_impl.py; echo "exit=$?"`
-Expected: no matches (`exit=1`).
+Run: `grep -nE '^[[:space:]]*(import|from)[[:space:]]+spatial_index_utils|spatial_index_utils\.' tests/reference_impl.py || echo INDEPENDENT`
+Expected: `INDEPENDENT` (the docstring may MENTION the module name; imports and attribute calls may not exist).
 
 - [ ] **Step 6: Commit**
 
@@ -802,7 +803,10 @@ def test_csv_matches_hand_anchors():
 
 
 def test_code_excl_contributing_collapses_to_removed():
-    """Rule-set gap #5: the except:pass swallow makes (a) degenerate to (b)."""
+    """Schema self-consistency: the reference impl's `swallowed` knob makes
+    the two scenarios' CSV blocks identical BY CONSTRUCTION. The
+    production-facing pin of rule-set gap #5 (the real except:pass swallow)
+    lives in tests/test_oracle.py::test_production_collapse_gap5."""
     df = pd.read_csv(CSV)
     a = df[(df["rule"] == "code") & (df["scenario"] == "excl_contributing")]
     b = df[(df["rule"] == "code") & (df["scenario"] == "excl_removed")]
@@ -890,11 +894,78 @@ if __name__ == "__main__":
 Run: `uv run python -m tests.reference_impl && uv run pytest tests/test_reference_impl.py -v`
 Expected: CSV written; all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Create the consistency guard (spec §7's CSV-wide scope)**
+
+Create `scripts/check_oraculum_invariants.py`:
+
+```python
+"""Spec §7 consistency guard over expected_values.csv (CSV-wide scope;
+geometry-scope checks live in tests/test_fixture_invariants.py).
+
+Run standalone (exit 1 on violation) or via its pytest wrapper:
+    uv run python scripts/check_oraculum_invariants.py
+"""
+
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+CSV = (Path(__file__).resolve().parent.parent / "tests" / "fixtures"
+       / "oraculum" / "expected_values.csv")
+SERVICES = ("clinic", "school", "bank", "police", "ration", "transport",
+            "road")
+UNIQUE_ANCHOR_SERVICES = ("clinic", "school")
+
+
+def check(df=None):
+    df = pd.read_csv(CSV) if df is None else df
+    violations = []
+    groups = df[df["metric"].str.endswith("_pcen")].groupby(
+        ["rule", "scenario", "denom", "metric"])
+    for (rule, scenario, denom, metric), grp in groups:
+        vals = grp["value"]
+        if not vals.max() > vals.min():
+            violations.append(
+                f"degenerate min-max: {rule}/{scenario}/{denom}/{metric}")
+        svc = metric[: -len("_pcen")]
+        if svc in UNIQUE_ANCHOR_SERVICES:
+            if (vals == vals.max()).sum() != 1:
+                violations.append(
+                    f"tied argmax: {rule}/{scenario}/{denom}/{metric}")
+            if (vals == vals.min()).sum() != 1:
+                violations.append(
+                    f"tied argmin: {rule}/{scenario}/{denom}/{metric}")
+    return violations
+
+
+if __name__ == "__main__":
+    problems = check()
+    for p in problems:
+        print("VIOLATION:", p)
+    print("OK" if not problems else f"{len(problems)} violation(s)")
+    sys.exit(1 if problems else 0)
+```
+
+Append its pytest wrapper to `tests/test_reference_impl.py`:
+
+```python
+def test_invariants_guard_csv_wide():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    from check_oraculum_invariants import check
+    assert check() == []
+```
+
+(add `import sys` to the file's imports if not present.)
+
+Run: `uv run python scripts/check_oraculum_invariants.py && uv run pytest tests/test_reference_impl.py -v`
+Expected: `OK`; all tests pass.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add tests/reference_impl.py tests/test_reference_impl.py tests/fixtures/oraculum/expected_values.csv
-git commit -m "feat(oracle): emit expected_values.csv; scenario + tie + collapse anchors"
+git add tests/reference_impl.py tests/test_reference_impl.py tests/fixtures/oraculum/expected_values.csv scripts/check_oraculum_invariants.py
+git commit -m "feat(oracle): emit expected_values.csv; anchors + CSV-wide invariants guard"
 ```
 
 ---
@@ -1041,6 +1112,23 @@ def test_minmax_anchors_unique(expected):
         pcen = got[f"{svc}_pcen"]
         assert (pcen == pcen.max()).sum() == 1, svc
         assert (pcen == pcen.min()).sum() == 1, svc
+
+
+@pytest.mark.parametrize("denom", ["pop", "popdensity"])
+def test_production_collapse_gap5(expected, denom):
+    """Rule-set gap #5, pinned against PRODUCTION: dropping rows after
+    neighbor computation (except:pass swallows the missing contributions)
+    equals dropping them before — semantics (a) degenerates to (b) in the
+    real code, not just in the reference impl's model of it."""
+    post = _production_frame(denom, drop_ids_post=frozenset({"RV", "IND"}))
+    pre = _production_frame(denom, drop_ids_pre=frozenset({"RV", "IND"}))
+    assert set(post.index) == set(pre.index)
+    for col in [c for c in post.columns
+                if c.endswith(("_pcen", "_idx")) or c in ("unnorm_psi",
+                                                          "norm_psi")]:
+        for sid in post.index:
+            assert post.loc[sid, col] == pytest.approx(
+                pre.loc[sid, col], abs=1e-12), (denom, sid, col)
 ```
 
 - [ ] **Step 2: Run**
@@ -1121,7 +1209,12 @@ def data_dir(tmp_path_factory):
     city = load_settlements()
 
     (root / "uso_update_sep2021").mkdir()
-    city.to_file(root / "uso_update_sep2021" / "uso_update_sep2021.shp")
+    # Drop `population`: compute_psi merges the population CSV and renames
+    # it to `population` — a second column of the same name crashes it
+    # (verified in plan review; the real dataset's shapefile has no
+    # population field either).
+    city.drop(columns=["population"]).to_file(
+        root / "uso_update_sep2021" / "uso_update_sep2021.shp")
 
     barrier_dir = root / "Barrier_Clip"
     (barrier_dir / "Canal").mkdir(parents=True)
@@ -1265,14 +1358,17 @@ def test_border_rule_no_neighbors(exhibit):
     assert nbrs == {"P": set(), "Q": set(), "R": set(), "S": set()}
 
 
-def test_bbox_rule_is_directed_phantom_q_to_p(exhibit):
+def test_bbox_rule_invents_both_divergence_flavors(exhibit):
+    """bbox catches the containment phantom (Q->P, directed) AND the corner
+    touch (R<->S, since rectangles' bboxes equal their geometry) —
+    production-verified in plan review round 1."""
     nbrs = adjacency(exhibit, "bbox")
     assert nbrs["Q"] == {"P"}          # Q's geometry lies inside P's bbox
     assert nbrs["P"] == set()          # P's geometry misses Q's bbox
-    assert nbrs["R"] == set() and nbrs["S"] == set()
+    assert nbrs["R"] == {"S"} and nbrs["S"] == {"R"}
 
 
-def test_intersects_rule_adds_corner_touch_pair(exhibit):
+def test_intersects_rule_only_corner_touch(exhibit):
     nbrs = adjacency(exhibit, "intersects")
     assert nbrs["R"] == {"S"} and nbrs["S"] == {"R"}
     assert nbrs["P"] == set() and nbrs["Q"] == set()
@@ -1286,9 +1382,13 @@ def test_pinned_pcen_deltas(exhibit):
     assert border["Q"] == pytest.approx(0.01, abs=1e-12)
     assert bbox["Q"] - border["Q"] == pytest.approx(0.005147186, abs=1e-9)
     assert bbox["P"] - border["P"] == pytest.approx(0.0, abs=1e-15)
+    assert bbox["S"] - border["S"] == pytest.approx(0.016568542494923802,
+                                                   abs=1e-12)
+    assert bbox["R"] - border["R"] == pytest.approx(0.0, abs=1e-15)
 
     assert inter["S"] - border["S"] == pytest.approx(0.016568542, abs=1e-9)
     assert inter["R"] - border["R"] == pytest.approx(0.0, abs=1e-15)
+    assert inter["Q"] - border["Q"] == pytest.approx(0.0, abs=1e-15)
 
     # spot-check the geometry behind Q's delta: P centroid at (833.33, 833.33)
     d_km = math.hypot(1500 - 2500 / 3, 1500 - 2500 / 3) / 1000
@@ -1482,9 +1582,12 @@ def render_divergence():
     ax.annotate("phantom bbox link Q→P\nQ clinic PCEN +0.005147",
                 xy=(cent["Q"].x, cent["Q"].y + 500), ha="center", fontsize=8,
                 color="#e45756")
-    ax.annotate("point touch R–S\n(`intersects` counts it: S +0.016569)",
+    ax.annotate("point touch R–S\n(bbox AND `intersects` count it:\n"
+                "S +0.016569)",
                 xy=(1_000_000 + 5000, 1_000_000 + 950), ha="center",
                 fontsize=8, color="#b279a2")
+    ax.plot([cent["R"].x, cent["S"].x], [cent["R"].y, cent["S"].y],
+            color="#b279a2", lw=1.4, linestyle=":")
     ax.set_title("Divergence exhibit — polygon (solid) vs bounding box "
                  "(dashed): where bbox/intersects adjacency invents "
                  "neighbors that border-sharing denies")
@@ -1667,6 +1770,30 @@ adjacent settlements' accessibility (semantics **a**), or vanish entirely
 | baseline (all 7) | 0.0175 | B counts RV's 2 clinics at decay ½ |
 | semantics (a) — RV/IND excluded but contributing | 0.0175 | index rows dropped; services still lend |
 | semantics (b) — RV/IND fully removed | 0.0125 | RV's clinics vanish from B's numerator |
+
+## Full per-settlement delta tables (both denominators)
+
+*(Implementer: generate the two tables below from
+`tests/fixtures/oraculum/expected_values.csv` with this snippet and paste
+the markdown output here — one table for `denom=pop`, one for
+`denom=popdensity`; rows = all indexed settlements; columns = clinic_pcen
+and clinic_idx under baseline / excl_contributing / excl_removed /
+excl_ind_removed; rule=code. The snippet keeps the memo mechanically in
+sync with the oracle.)*
+
+```python
+# uv run python - <<'PY'
+import pandas as pd
+df = pd.read_csv("tests/fixtures/oraculum/expected_values.csv")
+for denom in ("pop", "popdensity"):
+    sub = df[(df["rule"] == "code") & (df["denom"] == denom)
+             & (df["metric"].isin(["clinic_pcen", "clinic_idx"]))]
+    wide = sub.pivot_table(index="settlement",
+                           columns=["metric", "scenario"], values="value")
+    print(f"\n### denom = {denom}\n")
+    print(wide.round(6).to_markdown())
+# PY
+```
 
 Separately, removing serviceless IND alone changes NOBODY's numerator but
 moves the clinic max-anchor from IND (0.04) to A (0.0291): every
