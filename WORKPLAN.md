@@ -11,11 +11,42 @@ the "delhi feedback from Brown workshop" doc (with Raj's triage annotations),
 and the April 2026 paper draft. Owners: **Bob** (code/index), **Raj**
 (categorization/framing). Paper manuscript lives on Overleaf.
 
-Repo state this plan builds on (Aug 2026): `main` is the default branch with
-the two canonical 2025 notebooks + `spatial_index_utils.py`; the 2021 code is
-archived under `archive/master-2021/`; the full input dataset (276 MB) lives
-locally at `~/delhi_data` and is two-way synced hourly with the shared drive
-(`Spatial_Index_GIS/delhi_data/`).
+Repo state (updated 23 Aug 2026, after Phases 1–2): `main` is the default
+branch. The pipeline is three plain scripts on uv + `pyproject.toml`
+(`scripts/preprocess.py` → `scripts/compute_psi.py` →
+`scripts/verify_against_baseline.py`) around `spatial_index_utils.py`; the
+notebooks are gone (history in git and `archive/master-2021/`). The Oraculum
+oracle lives in `tests/` (65 tests green) with its docs under `docs/oracle/`.
+The full input dataset (276 MB) lives locally at `~/delhi_data` and is
+two-way synced hourly with the shared drive (`Spatial_Index_GIS/delhi_data/`).
+Each phase runs brainstorm → approved spec → `/ship` (`.claude/commands/ship.md`)
+on its own branch; specs/plans are under `docs/superpowers/`; `CHANGELOG.md`
+records what each merged phase changed.
+
+### Status at a glance (23 Aug 2026)
+
+| Phase | State | Evidence |
+|---|---|---|
+| 0 Environment & data | done | data synced, `gh` working |
+| 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
+| 2 Oracle | done (code) | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven |
+| 3 Refactor & bug audit | **next** — unblocked | evidence-backed bug list below |
+| 4 Categorization | waiting on Raj | — |
+| 5–7 | not started | — |
+
+Open items by owner:
+
+- **Bob:** (1) hand-ratify `docs/oracle/derivation-worksheet.md` (~15-min
+  calculator pass; flip `STATUS: RATIFICATION PENDING` → `RATIFIED by Bob on
+  <date>`) — must precede Phase 4's recalculation, does not block Phase 3;
+  (2) send Raj `docs/oracle/exclusion-semantics-memo.md` — his answers to
+  its six divergences decide what Phase 3 fixes vs. ratifies.
+- **Raj:** memo decisions (above); Open Decisions A and B below; Phase 4
+  categorization.
+- **Deferred by decision:** Dependabot alerts (absorbed into Phase 3's
+  dependency work; the four Dependabot PRs #1–#4 were closed as superseded
+  by Phase 1's modernization); `pandas<3` uncap (Phase 3, now that the
+  oracle can validate it).
 
 ---
 
@@ -62,15 +93,23 @@ index is the paper's core contribution.*
 
 - [x] Build a toy "mythical city": 2–3 settlement types, a handful of services
       and boundaries, small enough that the PSI can be computed by hand
-- [x] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
-      Claude generates the fixture, humans confirm the arithmetic)
+- [ ] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
+      Claude generates the fixture, humans confirm the arithmetic) —
+      **machine-verified only so far**: production agrees with an
+      independent reference implementation and with Claude-derived hand
+      anchors; Bob's calculator pass over
+      `docs/oracle/derivation-worksheet.md` is the outstanding step that
+      breaks the circularity
 - [x] Encode as a pytest suite: oracle fixtures + expected PSI values as a
       permanent regression check on `spatial_index_utils.py`
 - [x] Use the oracle as the fix-loop target for any bug found in Phase 3, and
-      as the safe sandbox for index-formula experiments in Phase 6
-- [x] Stretch: reproduce the South African source paper's published numbers
+      as the safe sandbox for index-formula experiments in Phase 6 (the
+      reference implementation's seven knobs already model the alternatives)
+- [ ] Stretch: reproduce the South African source paper's published numbers
       (the index formulation was adapted from Patrick's paper) as a second
-      validation case; consider releasing the harness with the package
+      validation case — **deferred** (explicit non-goal of the Phase 2 spec);
+      revisit in Phase 6/7 if time allows. Releasing the harness with the
+      package is now a Phase 7 item.
 - [x] Decision-support variant: compute the mythical city's PSI under both
       exclusion semantics — (a) dropped settlement types still contribute
       services as neighbors vs. (b) dropped types fully removed before
@@ -84,6 +123,12 @@ reference == hand anchors at 1e-12; mutation testing confirms the suite
 catches a broken index. Hand ratification of
 `docs/oracle/derivation-worksheet.md` remains PENDING by design (Bob's
 ~15-min calculator pass) — do it before Phase 4's recalculation.**
+Spec: `docs/superpowers/specs/2026-08-17-phase2-oracle-design.md`; plan:
+`docs/superpowers/plans/2026-08-17-phase2-oracle.md`; key artifacts:
+`tests/fixtures/oraculum/` (inputs + `expected_values.csv`, 2,610 rows,
+round-trip tested — regenerate with `scripts/generate_oraculum_fixtures.py`,
+never hand-edit), `tests/reference_impl.py` (independent Eq. 1–4, never
+imports production code), `docs/oracle/` (worksheet, memo, three maps).
 
 **Findings for Phase 3/4 (see `docs/oracle/exclusion-semantics-memo.md`):**
 six documented manuscript-vs-code divergences, including two that need
@@ -91,9 +136,12 @@ Raj: exclusion semantics (a) is unimplementable in current code (silent
 `except: pass`), and ~450 service points are double-counted via 4,050
 overlapping colony polygons.
 
-## Phase 3 — Refactor & bug audit (Bob) — P2, gated on Phase 2
+## Phase 3 — Refactor & bug audit (Bob) — P2 — NEXT (unblocked 17 Aug 2026)
 
-*Refactor with the oracle as a safety net.*
+*Refactor with the oracle as a safety net. Starts with a brainstorming
+session → spec → `/ship`, like Phases 1–2. Items marked "needs Raj" can be
+specified and the messy-city tier built before his answers arrive; the
+fixes themselves wait for the memo decisions.*
 
 - [ ] One canonical implementation: collapse duplicated/near-duplicate logic
       in `spatial_index_utils.py` (e.g. the `*_wards` / `*_buffer` variants of
@@ -138,9 +186,16 @@ overlapping colony polygons.
       zero neighbors), a settlement with no population row (15 real ones),
       and an area-extreme sliver (real areas span 2.3e-9 → 29 km²). This tier
       is what would PROVE any fix to items 1 and 2 above.
-- [ ] Retire the notebooks entirely (decided): their logic becomes package
-      pipeline stages with logged validation; figures render to files via a
-      figures command
+- [~] Retire the notebooks entirely (decided): notebooks already removed
+      in Phase 1 (logic lives in `scripts/`); remaining work is the package
+      pipeline stages with logged validation (the notebooks' eyeball checks
+      become assertions) and a figures command that renders to files
+- [ ] Lift the `pandas<3` cap in `pyproject.toml` now that the oracle can
+      validate the major-version jump; sweep any remaining Dependabot alerts
+      at the same time (deferred here by decision — do not fix piecemeal)
+- [ ] Add GitHub Actions CI running `uv run pytest` on every push/PR
+      (decided in meta-planning "once the suite exists" — it now does; no
+      `.github/workflows/` yet)
 
 **Definition of done:** oracle suite still passes; one code path per concept;
 settlement categories, services, and distance parameters are config, not code.
@@ -264,7 +319,12 @@ demonstrated stable (or divergences surfaced and discussed).
 
 **A. Exclusion semantics.** "Drop rural villages and industrial areas" hides
 three sub-decisions that change the numbers; Bob to put these to Raj,
-informed by the mythical-city side-by-side demo (Phase 2):
+informed by the mythical-city side-by-side demo (Phase 2). *Status (Aug
+2026): the demo exists — `docs/oracle/exclusion-semantics-memo.md` has the
+per-settlement delta tables; the oracle also showed sub-decision 1 is
+currently forced to (b) by a silent `except: pass`, so (a) needs a code
+change before it is even an option. Awaiting Bob sending the memo and Raj's
+reply.*
 
 1. **Neighbor treatment of dropped types** — do excluded settlements still
    contribute services to adjacent urban settlements' PCEN (Eq. 3), or are
@@ -301,11 +361,13 @@ Census data collaborations; process-tracing / media-accounts supplements.
 
 ## Critical path (from the call, updated for repo state)
 
-1. ~~Phase 0~~ done → **Phase 1** (runnable pipeline) → **Phase 2** (oracle)
-2. In parallel: Raj settles categories with Patrick (Phase 4 decisions)
-3. **Phase 4** implementation + recalculation → shippable minimum (Phase 5)
-4. **Phase 3** refactor interleaves after the oracle exists; **Phase 6**
-   sweeps fill the appendix
+1. ~~Phase 0~~ → ~~Phase 1~~ (runnable pipeline) → ~~Phase 2~~ (oracle) — done
+2. In parallel: Raj settles categories with Patrick (Phase 4 decisions) and
+   answers the oracle memo (exclusion semantics, bbox adjacency, overlaps)
+3. **Phase 3** refactor + mapping layer is now the active work — it builds
+   the configurable category layer Phase 4 plugs into
+4. **Phase 4** implementation + recalculation (after Bob's hand ratification)
+   → shippable minimum (Phase 5); **Phase 6** sweeps fill the appendix
 5. **Phase 7** ship
 
 Standing discipline (from the call): interrogate the design before letting

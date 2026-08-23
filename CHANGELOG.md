@@ -7,6 +7,16 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+_Nothing yet — Phase 3 (refactor & bug audit) is next._
+
+## [2026-08-17] Phase 2 — the mythical-city oracle (PR #6)
+
+Verification: 65 tests green; production == independent reference
+implementation == hand-derived anchors at 1e-12 across all scenarios and
+both denominators; mutation testing (17+ sabotages of the index) confirms
+the suite catches a broken index. Hand ratification of the derivation
+worksheet is pending by design.
+
 ### Added
 - Mythical-city oracle ("Oraculum"): hand-verifiable fixtures, an
   independent Eq. 1–4 reference implementation, and pytest suites
