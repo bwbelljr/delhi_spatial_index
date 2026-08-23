@@ -54,6 +54,8 @@ Open items by owner:
 
 ## Phase 0 — Environment & data (DONE)
 
+Epic DEL-1.
+
 - [x] Repo restructured: `main` default, 2 canonical notebooks, old code archived
 - [x] Data recovered from old machine account; complete input set verified
 - [x] Durable local ↔ shared-drive sync (rclone service account + hourly systemd timer)
@@ -63,7 +65,7 @@ Open items by owner:
 ## Phase 1 — Make the pipeline runnable end-to-end (Bob) — P1 (DONE)
 
 *"Get the repo running / modernize dependencies", "remove hardcoded machine
-paths". Everything downstream depends on this.*
+paths". Everything downstream depends on this. Epic DEL-2.*
 
 - [x] Remove hardcoded `data_dir = /home/bwbelljr/delhi_data/` — make the data
       directory configurable (env var `DELHI_DATA_DIR` or config file), so the
@@ -91,7 +93,7 @@ July 2025 baseline with zero numeric deviation.**
 ## Phase 2 — The Oracle: ground-truth test harness (Bob) — P1 (DONE)
 
 *Top code priority. Do this BEFORE trusting any recalculation, because the
-index is the paper's core contribution.*
+index is the paper's core contribution. Epic DEL-3.*
 
 - [x] Build a toy "mythical city": 2–3 settlement types, a handful of services
       and boundaries, small enough that the PSI can be computed by hand
