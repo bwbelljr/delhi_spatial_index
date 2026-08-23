@@ -21,7 +21,9 @@ The full input dataset (276 MB) lives locally at `~/delhi_data` and is
 two-way synced hourly with the shared drive (`Spatial_Index_GIS/delhi_data/`).
 Each phase runs brainstorm → approved spec → `/ship` (`.claude/commands/ship.md`)
 on its own branch; specs/plans are under `docs/superpowers/`; `CHANGELOG.md`
-records what each merged phase changed.
+records what each merged phase changed. Work is tracked in Jira project
+**DEL** (bob-bell.atlassian.net) — one epic per phase, `[DEL-nn]` tags below
+name each item's ticket; keep the two in sync when either changes.
 
 ### Status at a glance (23 Aug 2026)
 
@@ -94,7 +96,7 @@ index is the paper's core contribution.*
 - [x] Build a toy "mythical city": 2–3 settlement types, a handful of services
       and boundaries, small enough that the PSI can be computed by hand
 - [ ] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
-      Claude generates the fixture, humans confirm the arithmetic) —
+      Claude generates the fixture, humans confirm the arithmetic) [DEL-10] —
       **machine-verified only so far**: production agrees with an
       independent reference implementation and with Claude-derived hand
       anchors; Bob's calculator pass over
@@ -107,7 +109,7 @@ index is the paper's core contribution.*
       reference implementation's seven knobs already model the alternatives)
 - [ ] Stretch: reproduce the South African source paper's published numbers
       (the index formulation was adapted from Patrick's paper) as a second
-      validation case — **deferred** (explicit non-goal of the Phase 2 spec);
+      validation case [DEL-11] — **deferred** (explicit non-goal of the Phase 2 spec);
       revisit in Phase 6/7 if time allows. Releasing the harness with the
       package is now a Phase 7 item.
 - [x] Decision-support variant: compute the mythical city's PSI under both
@@ -134,26 +136,34 @@ imports production code), `docs/oracle/` (worksheet, memo, three maps).
 six documented manuscript-vs-code divergences, including two that need
 Raj: exclusion semantics (a) is unimplementable in current code (silent
 `except: pass`), and ~450 service points are double-counted via 4,050
-overlapping colony polygons.
+overlapping colony polygons. A seventh, latent item — point membership is
+boundary-inclusive, but zero real service points lie on a boundary (closest
+1.3 mm) — is pinned by `test_gap6_border_point_is_double_counted_by_production`
+and needs no action unless the layers are re-digitized.
 
 ## Phase 3 — Refactor & bug audit (Bob) — P2 — NEXT (unblocked 17 Aug 2026)
 
 *Refactor with the oracle as a safety net. Starts with a brainstorming
 session → spec → `/ship`, like Phases 1–2. Items marked "needs Raj" can be
 specified and the messy-city tier built before his answers arrive; the
-fixes themselves wait for the memo decisions.*
+fixes themselves wait for the memo decisions. Epic DEL-4.*
 
+- [ ] Brainstorm → owner-approved spec → implementation plan for this phase
+      (the spec decides package layout, config schema, and which bug-audit
+      items are in scope before Raj answers; may split Phase 3 into more than
+      one `/ship` cycle) [DEL-15]
 - [ ] One canonical implementation: collapse duplicated/near-duplicate logic
       in `spatial_index_utils.py` (e.g. the `*_wards` / `*_buffer` variants of
       `calc_all_services` / `create_service_index`) into single configurable
-      functions
+      functions [DEL-16]
 - [ ] Make settlement types configurable via a mapping layer: run with 10, 8,
-      5, or 4 categories from a config (1:1 or X:1 mapping), so Raj's
-      categorization decision (Phase 4) plugs in without code changes — and so
-      the method ports to other cities
+      5, or 4 categories from a config (1:1 or X:1 mapping of the 10
+      `USO_FINAL` source types), so Raj's categorization decision (Phase 4)
+      plugs in without code changes — and so the method ports to other cities
+      [DEL-17]
 - [ ] Modular & extensible structure: distance thresholds, decay weights,
-      service sets, and category mappings injectable as parameters (feeds the
-      Phase 6 sweeps)
+      service sets, adjacency/barrier rules, and category mappings injectable
+      as parameters (feeds the Phase 6 sweeps) [DEL-18]
 - [ ] Bug audit — the Phase 2 oracle turned this from a vague mandate into a
       prioritized, evidence-backed list (all six divergences are documented in
       `docs/oracle/exclusion-semantics-memo.md` and pinned by tests):
@@ -162,20 +172,24 @@ fixes themselves wait for the memo decisions.*
          rectangles, and a colony's bounding box is typically ~2× its polygon
          area (median ratio 1.95, p90 3.6, max 28,766). So bbox-adjacency
          invents neighbors citywide, constantly. Plausibly the largest
-         paper-vs-code gap; needs Raj (methodology).
+         paper-vs-code gap; needs Raj (methodology). [DEL-19]
       2. **~450 service points double-counted** across 4,050 overlapping
          colony polygon pairs (bank 232, ration 104, school 53, transport 41,
          health 18, police 2). A containment rule does NOT fix this — it needs
          a decision on how overlapping colonies share a point. Needs Raj.
+         [DEL-20]
       3. **Silent `except: pass` in `calc_pcen_mobile`** — swallows missing
          neighbors, making exclusion semantics (a) unimplementable
-         (WORKPLAN Open Decision A is half-answered by this).
+         (WORKPLAN Open Decision A is half-answered by this). [DEL-21]
       4. Barrier rule is global + asymmetric vs. the manuscript's pair
          severing; roads carry neighbor decay Eq. 4 does not have; `norm_psi`
          is a second normalization absent from Eq. 1; popdensity has no
          manuscript equation. Each: fix to match the paper, or ratify and
-         write into the methods (with Raj).
-      5. Dead code: function(s) defined but never called.
+         write into the methods (with Raj). [DEL-22]
+      5. Dead code: function(s) defined but never called; also the pandas
+         `FutureWarning`s (dtype-incompatible setitem in
+         `spatial_index_utils.py` ~L835/L1212) so a `-W error` CI run becomes
+         feasible. [DEL-23]
 - [ ] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must
@@ -185,17 +199,18 @@ fixes themselves wait for the memo decisions.*
       an overlapping polygon pair, an isolated settlement (360 real ones have
       zero neighbors), a settlement with no population row (15 real ones),
       and an area-extreme sliver (real areas span 2.3e-9 → 29 km²). This tier
-      is what would PROVE any fix to items 1 and 2 above.
+      is what would PROVE any fix to items 1 and 2 above. [DEL-24]
 - [~] Retire the notebooks entirely (decided): notebooks already removed
       in Phase 1 (logic lives in `scripts/`); remaining work is the package
       pipeline stages with logged validation (the notebooks' eyeball checks
-      become assertions) and a figures command that renders to files
+      become assertions) and a figures command that renders to files [DEL-25]
 - [ ] Lift the `pandas<3` cap in `pyproject.toml` now that the oracle can
       validate the major-version jump; sweep any remaining Dependabot alerts
       at the same time (deferred here by decision — do not fix piecemeal)
+      [DEL-26]
 - [ ] Add GitHub Actions CI running `uv run pytest` on every push/PR
       (decided in meta-planning "once the suite exists" — it now does; no
-      `.github/workflows/` yet)
+      `.github/workflows/` yet) [DEL-27]
 
 **Definition of done:** oracle suite still passes; one code path per concept;
 settlement categories, services, and distance parameters are config, not code.
@@ -205,31 +220,34 @@ settlement categories, services, and distance parameters are config, not code.
 *The big analytical piece. Workshop consensus: ~10 Delhi-specific types are
 too much detail — collapse into a small set of portable, theory-first
 categories. Raj's conceptual work proceeds in parallel with Phases 1–3;
-implementation lands here.*
+implementation lands here. Epic DEL-5.*
 
 - [ ] **Raj:** drop all non-urban categories (rural villages, industrial
       areas) from the entire analysis — figures and calculations; move their
-      mention to footnotes. It's an urban project.
+      mention to footnotes. It's an urban project. [DEL-28]
 - [ ] **Raj:** decide the collapsed categories — working candidate from the
       workshop triage: **planned / unauthorized / regularized-unauthorized /
       resettlement colonies / JJCs** (5 categories). Theory-first (organized
       around property-rights security and legal service entitlements), no
       data-fishing. Run past Patrick; resolve the SDA question (missing from
-      the current list; adding it may help the story).
+      the current list; adding it may help the story). [DEL-29]
 - [ ] **Raj:** figure decisions from the triage — full map for spatial extent;
       breakdown charts show the 5 categories; feature the **JJC vs. planned
       juxtaposition**; remove the per-type data table (footnotes instead)
-- [ ] **Bob:** encode the agreed mapping in the Phase 3 mapping layer
+      [DEL-30]
+- [ ] **Bob:** encode the agreed mapping in the Phase 3 mapping layer [DEL-31]
 - [ ] **Bob:** recalculate all indexes with non-urban categories dropped
-      (supersedes the current "no RV" run — industrial areas go too)
-- [ ] Regenerate paper figures from the new run
+      (supersedes the current "no RV" run — industrial areas go too) — gated
+      on hand ratification, Decision A, the mapping, and the bug-audit
+      fix-or-ratify calls [DEL-32]
+- [ ] Regenerate paper figures from the new run [DEL-33]
 
 **Definition of done:** new PSI outputs under the agreed categories, synced to
 the shared drive with clearly dated filenames; figures updated.
 
 ## Phase 5 — Shippable minimum
 
-Checkpoint, not a work phase: Phases 1 + 2 + 4 together produce the minimum
+Epic DEL-6. Checkpoint, not a work phase: Phases 1 + 2 + 4 together produce the minimum
 credible revision (correct code, verified index, non-urban dropped, new
 categories). If the deadline bites, ship after Phase 5 and treat Phase 6 as
 appendix material added in revision.
@@ -238,51 +256,59 @@ appendix material added in revision.
 
 *Mostly appendix "gravy": run the alternatives, report in footnotes/appendix,
 keep the main tables unchanged if variants align. Not fishing — demonstrating
-rigor. "Since Claude makes code easy to create, just do all the checks."*
+rigor. "Since Claude makes code easy to create, just do all the checks."
+Epic DEL-7.*
 
 Index formulation:
 - [ ] Alternative formulations for the compressed 0–1 effect sizes ("make the
       values less small"): transformations (e.g. log), tested against the
       oracle first (the 2021 `Transforms for Skewed Data` exploration in
-      `archive/master-2021/` is prior art — none were adopted then)
+      `archive/master-2021/` is prior art — none were adopted then) [DEL-34]
 - [ ] **Rank-based index** (new idea from the workshop): instead of averaging,
       explore ranking mechanisms — average rank per settlement category, and
       composition of the top/bottom deciles by category (as in
-      intergenerational-mobility research)
+      intergenerational-mobility research) [DEL-35]
 
 Distance / reachability:
 - [ ] Distance-threshold sweep: 1 km / 5 km / 10 km; show index stability
+      [DEL-36]
 - [ ] Parameterize and vary the decay weight 1/(1+D) (currently arbitrary);
-      revisit centroid-to-centroid vs. other distance definitions
+      revisit centroid-to-centroid vs. other distance definitions [DEL-37]
 - [ ] Per-service distance expectations (a school may reasonably be farther
-      than water); connects to the walkability/food-desert framing
-- [ ] Adjacency-method comparison (bbox vs. touch) as a reported variant
+      than water); connects to the walkability/food-desert framing [DEL-38]
+- [ ] Adjacency-method comparison (bbox vs. touch) as a reported variant —
+      whichever rule Raj ratifies in bug-audit item 1 is the main text, the
+      other is this variant [DEL-39]
 
 Service-set / measurement variants (from the workshop triage):
 - [ ] With/without **ration shops** sensitivity (demand-driven, targeted to
       the poor — check whether the result strengthens without them; either way
-      it qualifies the argument)
+      it qualifies the argument) [DEL-40]
 - [ ] Decide on **ATMs/banking** (workshop said drop as private/market-driven;
       Raj's note: "they are material assets" — a with/without variant settles
-      it empirically)
-- [ ] Core-universal-services variant: schools, health, water only
+      it empirically) [DEL-41]
+- [ ] Core-universal-services variant: schools, health, water only [DEL-42]
 - [ ] Facility size / capacity (intensive margin, not just counts) — P2,
-      data-permitting
-- [ ] Rejected in triage (do not pursue): roads as area instead of length
+      data-permitting [DEL-43]
+- Rejected in triage (do not pursue; no ticket): roads as area instead of
+  length
 
 - [ ] Write up all variants in an appendix; keep main claims unchanged if
-      variants align (or honestly flag if not)
+      variants align (or honestly flag if not) [DEL-44]
 
 **Definition of done:** appendix section with variant tables; main results
 demonstrated stable (or divergences surfaced and discussed).
 
 ## Phase 7 — Release & ship
 
+Epic DEL-8.
+
 - [ ] Final repo cleanup for public release (README quickstart, data-access
       instructions, license check) — people will run the repo (and point
-      Claude at it) first thing, so find issues before they do
+      Claude at it) first thing, so find issues before they do [DEL-45]
 - [ ] Optional: release the oracle/test harness and fixtures with the package
-- [ ] Ship to HAS (and post to SSRN per Patrick's suggestion)
+      [DEL-46]
+- [ ] Ship to HAS (and post to SSRN per Patrick's suggestion) [DEL-47]
 
 ## Decisions made (16 Aug 2026 meta-planning session)
 
@@ -317,6 +343,8 @@ demonstrated stable (or divergences surfaced and discussed).
 
 ## Open decisions (need Raj / group)
 
+Epic DEL-9. Bob's handoff step — sending Raj the oracle memo — is DEL-12.
+
 **A. Exclusion semantics.** "Drop rural villages and industrial areas" hides
 three sub-decisions that change the numbers; Bob to put these to Raj,
 informed by the mythical-city side-by-side demo (Phase 2). *Status (Aug
@@ -324,7 +352,7 @@ informed by the mythical-city side-by-side demo (Phase 2). *Status (Aug
 per-settlement delta tables; the oracle also showed sub-decision 1 is
 currently forced to (b) by a silent `except: pass`, so (a) needs a code
 change before it is even an option. Awaiting Bob sending the memo and Raj's
-reply.*
+reply.* [DEL-13]
 
 1. **Neighbor treatment of dropped types** — do excluded settlements still
    contribute services to adjacent urban settlements' PCEN (Eq. 3), or are
@@ -337,6 +365,13 @@ reply.*
    and count tables; confirm the paper's descriptive claims are restated
    accordingly.
 
+**C. Oracle-memo methodology calls** — not a new decision area but listed
+so nothing falls between A and the bug audit: Raj's reply to the memo also
+has to settle bbox adjacency vs. border-sharing, how overlapping colonies
+share a service point, and fix-or-ratify for barrier/roads/`norm_psi`/
+popdensity. These arrive in the same reply as A, so they are tracked on
+DEL-13 together with A and on the Phase 3 bug tickets DEL-19/20/22.
+
 **B. Data-release posture** (Raj/group decision — not Bob's call alone).
 Options, in ascending openness: code-only (repo + fixtures, runnable but
 Delhi numbers not reproducible by outsiders); code + derived outputs
@@ -344,7 +379,7 @@ Delhi numbers not reproducible by outsiders); code + derived outputs
 dataset — without raw inputs); full archive (inputs + outputs on
 Zenodo/OSF with DOI — requires a redistribution-rights check on the
 DUSIB/DDA/MCD-derived data; WorldPop is CC-BY). Planning floor is
-code + fixtures; anything more awaits the group.
+code + fixtures; anything more awaits the group. [DEL-14]
 
 ## Out of repo scope (paper-side, tracked for completeness)
 
