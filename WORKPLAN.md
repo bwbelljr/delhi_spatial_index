@@ -38,12 +38,15 @@ name each item's ticket; keep the two in sync when either changes.
 
 Open items by owner:
 
-- **Bob:** send Raj `docs/oracle/exclusion-semantics-memo.md` together with
-  `docs/oracle/suggested-fixes-memo.md` — his answers to the seven
-  divergences decide what Phase 3 fixes vs. ratifies. (Hand ratification of
-  the worksheet: done 24 Aug 2026.)
-- **Raj:** memo decisions (above); Open Decisions A and B below; Phase 4
-  categorization.
+- **Bob:** nothing gating — memo package sent to Raj 24 Aug 2026
+  (`docs/oracle/rv-exclusion-decision-memo.md`, `suggested-fixes-memo.md`,
+  `exclusion-semantics-memo.md` + maps; shared-drive copy under
+  `paper/oracle_memos_2026-08-24/`). Hand ratification done 24 Aug 2026.
+  Phase 3 proceeds with every methodology choice behind a parameter, so
+  Raj's answers become config values, not rewrites.
+- **Raj:** memo decisions — tagged DECISION/CONFIRM/FYI in
+  `suggested-fixes-memo.md`; the two blocking ones are exclusion semantics
+  (Open Decision A) and roads Eq. 4. Open Decision B; Phase 4 categorization.
 - **Deferred by decision:** Dependabot alerts (absorbed into Phase 3's
   dependency work; the four Dependabot PRs #1–#4 were closed as superseded
   by Phase 1's modernization); `pandas<3` uncap (Phase 3, now that the
