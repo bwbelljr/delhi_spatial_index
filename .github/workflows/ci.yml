@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install 3.13
+
+      - name: Install dependencies (lockfile must be current)
+        run: uv sync --locked
+
+      - name: Oracle test suite
+        run: uv run pytest
+
+      - name: Fixture drift guard (generators must match committed fixtures)
+        run: |
+          for g in scripts/generate_*_fixtures.py; do
+            uv run python "$g"
+          done
+          # Any modified, deleted OR untracked file under tests/fixtures/ fails.
+          # (a plain diff-based check alone ignores untracked files — plan review R1, Critical.)
+          if [ -n "$(git status --porcelain -- tests/fixtures/)" ]; then
+            git status --short -- tests/fixtures/
+            echo "::error::committed fixtures do not match their generators"
+            exit 1
+          fi
