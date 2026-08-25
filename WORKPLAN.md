@@ -210,7 +210,7 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       validate the major-version jump; sweep any remaining Dependabot alerts
       at the same time (deferred here by decision — do not fix piecemeal)
       [DEL-26]
-- [ ] Add GitHub Actions CI running `uv run pytest` on every push/PR
+- [x] Add GitHub Actions CI running `uv run pytest` on every push/PR
       (decided in meta-planning "once the suite exists" — it now does; no
       `.github/workflows/` yet) [DEL-27]
 
@@ -222,8 +222,7 @@ settlement categories, services, and distance parameters are config, not code.
 *The big analytical piece. Workshop consensus: ~10 Delhi-specific types are
 too much detail — collapse into a small set of portable, theory-first
 categories. Raj's conceptual work proceeds in parallel with Phases 1–3;
-implementation lands here. Epic DEL-5.*
-
+implementation lands here. Epic DEL-5.* — **done 25 Aug 2026, PR #7**: `.github/workflows/ci.yml` (locked sync, 77 tests, fixture-drift guard); spec `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`. Owner follow-up: make `test` a required check in branch protection.
 - [ ] **Raj:** drop all non-urban categories (rural villages, industrial
       areas) from the entire analysis — figures and calculations; move their
       mention to footnotes. It's an urban project. [DEL-28]
