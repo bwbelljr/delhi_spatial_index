@@ -7,7 +7,11 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
-_Nothing yet — Phase 3 (refactor & bug audit) is next._
+- Oracle worksheet hand-ratified by Bob (24 Aug 2026) against the April
+  2026 manuscript's Eq. 1–4; Phase 2 fully closed. Added
+  `docs/oracle/suggested-fixes-memo.md` (proposed fix per divergence,
+  incl. new #7: distance unit unstated in the manuscript) and paper
+  evidence for the roads and barrier items.
 
 ## [2026-08-17] Phase 2 — the mythical-city oracle (PR #6)
 

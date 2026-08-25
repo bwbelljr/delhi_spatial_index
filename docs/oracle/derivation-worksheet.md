@@ -1,10 +1,12 @@
 # Oraculum Derivation Worksheet
 
-**STATUS: RATIFICATION PENDING** — expected values derived by Claude from
-Eq. 1–4 of "Making the City Unequal" (pp. 14–16); awaiting hand verification
-by Bob (and Raj). To ratify: check the anchor subset below with a
-calculator, then change this line to `STATUS: RATIFIED by <name> on <date>`
-and commit.
+**STATUS: RATIFIED by Bob on 2026-08-24** — expected values derived by
+Claude from Eq. 1–4 of "Making the City Unequal" (April 2026 draft,
+pp. 14–16); the anchor subset below was hand-checked with a calculator by
+Bob against the manuscript's equations. Eq. 1–2 (min-max and mean) were
+checked via the worked index values; Eq. 3's form, the border-sharing
+neighbor rule, and the 1/(1+d) decay were confirmed against the text.
+Raj's check remains welcome but is not required for the oracle's authority.
 
 **Scope of hand ratification (the ~15-minute pass):** the
 `ideal`/`baseline`/`pop` configuration for all seven settlements
@@ -18,11 +20,11 @@ for the `excl_rv_only` configuration (the real pipeline's hardcoded filter).
 Map: `oraculum_city.png`. Decays: 1 km → 1/2; 1.5 km → 0.4;
 √2 km → √2−1 ≈ 0.414214; (√5)/2 km → ≈ 0.472136.
 
-**Decay convention (confirm against Eq. 3 during ratification):** decay =
-1/(1 + d_ij) with d_ij the centroid-to-centroid distance **in kilometres**.
-Both production (`calc_nbr_dist`, divides metres by 1000) and the reference
-implementation (`_centroid_km`) use km. The choice is not scale-free — in
-metres a 1 km neighbour would lend ~0.001 of its services instead of ½ —
+**Decay convention (confirmed against Eq. 3):** decay = 1/(1 + d_ij) with
+d_ij the centroid-to-centroid distance **in kilometres**. Both production
+(`calc_nbr_dist`, divides metres by 1000) and the reference implementation
+(`_centroid_km`) use km. The choice is not scale-free — in metres a 1 km
+neighbour would lend ~0.001 of its services instead of ½.
 Checked 24 Aug 2026: the manuscript does NOT state the unit (p. 15 says
 only "the distance from the centroid ... to the centroid"). Recorded as
 divergence #7 — a silence, not a contradiction (`suggested-fixes-memo.md`
@@ -75,10 +77,9 @@ part of this ideal derivation; see the memo.)
 
 Pattern: PCEN_i = (own + [X ∈ nbrs(i)] · decay) / pop_i. E.g. police (X=B):
 B = 1/200 = 0.005; A = 1·½/100 = 0.005 (**tied argmax — recorded**);
-C = 1·½/400 = 0.00125; RV = 1·½/100 = 0.005 — wait: RV's list is [B], so
-RV = 1·½/100 = 0.005 as well (three-way tie A/RV at 0.005 with B — all
-recorded in the CSV; ties outside clinics/schools are expected ground
-truth). E = 1·½/300 = 0.00166667; D = 0; IND = 0.
+C = 1·½/400 = 0.00125; RV = 1·½/100 = 0.005 (RV's list is [B], so it ties
+too — a three-way tie A/B/RV at 0.005, all recorded in the CSV; ties
+outside clinics/schools are expected ground truth). E = 1·½/300 = 0.00166667; D = 0; IND = 0.
 
 ## Worked extras (complete the anchor subset)
 

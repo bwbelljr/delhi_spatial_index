@@ -31,18 +31,17 @@ name each item's ticket; keep the two in sync when either changes.
 |---|---|---|
 | 0 Environment & data | done | data synced, `gh` working |
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
-| 2 Oracle | done (code) | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven |
+| 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
 | 3 Refactor & bug audit | **next** — unblocked | evidence-backed bug list below |
 | 4 Categorization | waiting on Raj | — |
 | 5–7 | not started | — |
 
 Open items by owner:
 
-- **Bob:** (1) hand-ratify `docs/oracle/derivation-worksheet.md` (~15-min
-  calculator pass; flip `STATUS: RATIFICATION PENDING` → `RATIFIED by Bob on
-  <date>`) — must precede Phase 4's recalculation, does not block Phase 3;
-  (2) send Raj `docs/oracle/exclusion-semantics-memo.md` — his answers to
-  its six divergences decide what Phase 3 fixes vs. ratifies.
+- **Bob:** send Raj `docs/oracle/exclusion-semantics-memo.md` together with
+  `docs/oracle/suggested-fixes-memo.md` — his answers to the seven
+  divergences decide what Phase 3 fixes vs. ratifies. (Hand ratification of
+  the worksheet: done 24 Aug 2026.)
 - **Raj:** memo decisions (above); Open Decisions A and B below; Phase 4
   categorization.
 - **Deferred by decision:** Dependabot alerts (absorbed into Phase 3's
@@ -97,13 +96,12 @@ index is the paper's core contribution. Epic DEL-3.*
 
 - [x] Build a toy "mythical city": 2–3 settlement types, a handful of services
       and boundaries, small enough that the PSI can be computed by hand
-- [ ] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
+- [x] Hand-verify expected values (Bob + Raj do the back-of-envelope check;
       Claude generates the fixture, humans confirm the arithmetic) [DEL-10] —
-      **machine-verified only so far**: production agrees with an
-      independent reference implementation and with Claude-derived hand
-      anchors; Bob's calculator pass over
-      `docs/oracle/derivation-worksheet.md` is the outstanding step that
-      breaks the circularity
+      **ratified by Bob 24 Aug 2026**: calculator pass over
+      `docs/oracle/derivation-worksheet.md` against the manuscript's
+      Eq. 1–4 confirmed every anchor; this breaks the circularity between
+      production and the Claude-derived reference. Raj's check optional.
 - [x] Encode as a pytest suite: oracle fixtures + expected PSI values as a
       permanent regression check on `spatial_index_utils.py`
 - [x] Use the oracle as the fix-loop target for any bug found in Phase 3, and
@@ -125,8 +123,7 @@ any future code change that alters the index fails the suite.
 **DONE (17 Aug 2026, PR #6): 65 tests green; production == independent
 reference == hand anchors at 1e-12; mutation testing confirms the suite
 catches a broken index. Hand ratification of
-`docs/oracle/derivation-worksheet.md` remains PENDING by design (Bob's
-~15-min calculator pass) — do it before Phase 4's recalculation.**
+`docs/oracle/derivation-worksheet.md` completed by Bob on 24 Aug 2026.**
 Spec: `docs/superpowers/specs/2026-08-17-phase2-oracle-design.md`; plan:
 `docs/superpowers/plans/2026-08-17-phase2-oracle.md`; key artifacts:
 `tests/fixtures/oraculum/` (inputs + `expected_values.csv`, 2,610 rows,
