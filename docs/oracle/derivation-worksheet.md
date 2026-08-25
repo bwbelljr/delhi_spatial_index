@@ -18,6 +18,16 @@ for the `excl_rv_only` configuration (the real pipeline's hardcoded filter).
 Map: `oraculum_city.png`. Decays: 1 km → 1/2; 1.5 km → 0.4;
 √2 km → √2−1 ≈ 0.414214; (√5)/2 km → ≈ 0.472136.
 
+**Decay convention (confirm against Eq. 3 during ratification):** decay =
+1/(1 + d_ij) with d_ij the centroid-to-centroid distance **in kilometres**.
+Both production (`calc_nbr_dist`, divides metres by 1000) and the reference
+implementation (`_centroid_km`) use km. The choice is not scale-free — in
+metres a 1 km neighbour would lend ~0.001 of its services instead of ½ —
+Checked 24 Aug 2026: the manuscript does NOT state the unit (p. 15 says
+only "the distance from the centroid ... to the centroid"). Recorded as
+divergence #7 — a silence, not a contradiction (`suggested-fixes-memo.md`
+§7); one sentence needed in the methods.
+
 Ideal neighbor lists (A–D severed by canal, both directions):
 A:[B,E] B:[A,C,RV,E] C:[B,E,IND] RV:[B] D:[E] E:[A,B,C,D,IND] IND:[C,E]
 

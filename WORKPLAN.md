@@ -373,6 +373,9 @@ has to settle bbox adjacency vs. border-sharing, how overlapping colonies
 share a service point, and fix-or-ratify for barrier/roads/`norm_psi`/
 popdensity. These arrive in the same reply as A, so they are tracked on
 DEL-13 together with A and on the Phase 3 bug tickets DEL-19/20/22.
+Bob's proposed answers, item by item, are in
+`docs/oracle/suggested-fixes-memo.md` (draft; lead item: the barrier rule
+should be pairwise/edge-based, not a per-polygon flag).
 
 **B. Data-release posture** (Raj/group decision — not Bob's call alone).
 Options, in ascending openness: code-only (repo + fixtures, runnable but
