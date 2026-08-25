@@ -1,7 +1,7 @@
 # GitHub Actions CI — Design Spec (DEL-27)
 
 Date: 2026-08-24
-Status: **draft — awaiting owner review**
+Status: **approved by owner (2026-08-25)** — /ship pipeline authorized. Decision log: autonomy = fix forward, commit, push, merge the PR; plan-vs-reviewer conflicts: confirmed Critical governs, else plan; stop-and-ask on repo settings changes or suite bugs (see Autonomy section).
 Branch: `del-27-ci` (off `origin/main`)
 Parent plan: `WORKPLAN.md` Phase 3, item "Add GitHub Actions CI"; Jira DEL-27
 
