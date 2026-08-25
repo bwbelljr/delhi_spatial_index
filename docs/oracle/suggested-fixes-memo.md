@@ -11,6 +11,13 @@ oracle spec (`docs/superpowers/specs/2026-08-17-phase2-oracle-design.md`,
 
 **Status: DRAFT — Bob's position, not yet discussed with Raj.**
 
+**How to read the `Raj:` line under each heading.**
+- **DECISION** — Raj has to choose; Bob has no default or the default is
+  weak. Nothing downstream moves until he answers.
+- **CONFIRM** — Bob has a proposed answer and will proceed with it unless
+  Raj objects. A one-word reply is enough.
+- **FYI** — no input needed; recorded so the methods text can be updated.
+
 ## Guiding principle
 
 The paper's accessibility model is *local*: a settlement's PCEN counts its
@@ -25,6 +32,14 @@ version the published figures used.
 ---
 
 ## 2. Barrier rule — global/asymmetric → pairwise/edge-based  **(lead item)**
+
+> **Raj: DECISION ×2 + CONFIRM.** (i) Confirm the paper means pairwise
+> severing (a barrier only separates the two settlements it runs between),
+> not the code's "flagged settlement is invisible to all neighbors".
+> (ii) *Decide* whether partial barriers should weight contributions by the
+> unblocked share of the shared boundary (Bob's proposal) or stay binary.
+> (iii) *Decide* whether a barrier that merely crosses a boundary at a
+> point should sever nothing (consequence of the weighting).
 
 **What the code does.** `barrier_intersection` sets a per-*polygon* flag
 `barrier=True` on any colony whose geometry intersects a barrier line. The
@@ -121,6 +136,12 @@ lands. Test: `test_border_adjacency_severed_pairwise`.
 
 ## 1. Adjacency — bounding box → shared border
 
+> **Raj: CONFIRM.** The paper says "sharing a border"; the code uses
+> bounding boxes and invents neighbors citywide. Bob will fix to true
+> shared-border adjacency unless told otherwise. One sub-question to
+> *confirm*: settlements touching only at a corner point are **not**
+> neighbors.
+
 **Code.** `nbrs(i) = { j : geom_j intersects bbox(i) }`. Zero of 4,357
 colonies are rectangles; median bbox/polygon area ratio 1.95, p90 3.6. This
 invents neighbors citywide and is asymmetric for irregular shapes.
@@ -145,6 +166,11 @@ fix or a methods change).
 ---
 
 ## 3. Roads — neighbor decay absent from Eq. 4
+
+> **Raj: DECISION.** Eq. 4 has no neighbor term; the code decays roads
+> like clinics. Which one is intended? Bob has **no default**. See the
+> question below — the answer decides whether the code or the equation
+> changes.
 
 **Code.** `create_service_length_index` applies Eq. 3-style neighbor decay
 to road length (it feeds km of road into `calc_pcen_mobile` exactly as if
@@ -177,6 +203,11 @@ the methods text. No default — this is genuinely a modelling choice.
 
 ## 4. `norm_psi` — second min-max pass absent from Eq. 1
 
+> **Raj: DECISION (small).** Do the paper's figures/tables report the
+> Eq. 1 mean directly, or the code's second min-max of that mean
+> (`norm_psi`)? If Raj knows, one line answers it; otherwise Bob
+> determines it empirically and Raj confirms.
+
 **Proposal.** Determine empirically which column the paper's figures report
 (compare figure values to both `unnorm_psi` and `norm_psi` from a rerun of
 the original pipeline). Report that one; keep the other as a diagnostic
@@ -184,6 +215,10 @@ column but stop calling it PSI. Whichever it is, write it into the methods
 in one sentence. **Tickets.** DEL-22, DEL-13, DEL-32.
 
 ## Popdensity denominator — no manuscript equation
+
+> **Raj: DECISION (small).** Keep the population-density variant (then
+> add its equation to the paper) or drop it from reported results? Either
+> is fine for the code.
 
 **Proposal.** Keep as an explicitly labelled code extension
 (Population_i / Area_i in Eq. 3) and either add the equation to the paper
@@ -193,6 +228,13 @@ not a fix. **Tickets.** DEL-22, DEL-13.
 ---
 
 ## 5. Silent `except: pass` in `calc_pcen_mobile`
+
+> **Raj: DECISION — the main one.** When rural villages (and later
+> industrial areas) are excluded, do their services still count for
+> neighbors (a) or vanish (b)? And should min/max be taken over the
+> reported settlements only (current) or over all? See
+> `rv-exclusion-decision-memo.md` and its three maps. The code fix itself
+> is Bob's regardless.
 
 **Code.** Any neighbor id missing from the frame is silently skipped. This
 is why "excluded-but-contributing" (semantics a) degenerates to "fully
@@ -218,6 +260,12 @@ needed regardless.
 ---
 
 ## 6. Service-point membership and overlapping colonies
+
+> **Raj: CONFIRM + one question.** *Confirm* the preference order below
+> (clean the overlapping colony polygons first; single-assignment rule as
+> fallback). *Question:* does Raj know the provenance of the 4,050
+> overlapping colony pairs — digitization artefacts, or genuinely
+> contested boundaries? That determines whether option 1 is legitimate.
 
 **Boundary points** (latent: none on the real layer today). **Proposal.**
 Count a point for a colony iff `within` (strict), and add a validation
@@ -245,6 +293,10 @@ should include an overlapping pair and a sliver gap so the fix is testable).
 
 ## 7. Distance unit and decay form — possibly unstated in the manuscript
 
+> **Raj: FYI.** The manuscript never states that d is in kilometres.
+> No decision — just a sentence to add next to Eq. 3. Flagging so it
+> isn't missed.
+
 **Code.** Decay is 1/(1 + d) with d = centroid distance in **kilometres**
 (production `calc_nbr_dist` converts metres → km; the reference
 implementation does the same independently). **Paper.** Eq. 3 gives the
@@ -269,16 +321,20 @@ assumption is visible in the refactor (DEL-16/18).
 
 ## What this memo asks of Raj
 
-| # | Decision | Bob's default if no objection |
-|---|----------|-------------------------------|
-| 2 | Barrier: pairwise/edge-based, weighted by unblocked share of the shared boundary | fix code (linear weight) |
-| 1 | Adjacency: shared border, corner contact excluded | fix code |
-| 3 | Roads: Eq. 4 literal or decayed? | **no default — Raj decides** |
-| 4 | Which PSI column the figures report | determine empirically, then document |
-| — | popdensity | keep, label as extension |
-| 5 | Exclusion semantics (a) vs (b) | fix `except: pass` regardless; semantics per Open Decision A |
-| 6 | Overlapping colonies | clean the layer; fallback single-assignment rule |
-| 7 | Distance unit of d in Eq. 3 (km) | keep km; state it in the methods |
+| # | Decision | Raj's input | Bob's default if no objection |
+|---|----------|-------------|-------------------------------|
+| 5 | Exclusion semantics (a) vs (b); min/max universe | **DECISION** | fix `except: pass` regardless; Bob leans (a) |
+| 3 | Roads: Eq. 4 literal or decayed? | **DECISION** | none — Raj decides |
+| 2 | Barrier: pairwise severing; partial-barrier weighting | CONFIRM + **DECISION** | fix code; linear weight |
+| 4 | Which PSI column the figures report | DECISION (small) | determine empirically, then document |
+| — | popdensity variant: keep or drop | DECISION (small) | keep, label as extension |
+| 1 | Adjacency: shared border, corner contact excluded | CONFIRM | fix code |
+| 6 | Overlapping colonies | CONFIRM + question on provenance | clean the layer; fallback single-assignment rule |
+| 7 | Distance unit of d in Eq. 3 (km) | FYI | keep km; state it in the methods |
+
+Ordered by how much the answer gates: 5 and 3 block Phase 4's
+recalculation outright; 2 and 4 change numbers but have workable defaults;
+1, 6, 7 are Bob's to execute.
 
 ## What changes in the oracle
 
