@@ -51,11 +51,30 @@ rapid successive pushes to a PR run only the latest.
 | python | `uv python install 3.13` | repo has no `.python-version`; pin in the workflow rather than add a file |
 | deps | `uv sync --locked` | fails on a stale lockfile — the check DEL-26 will rely on |
 | tests | `uv run pytest` | plain; no `-W error` yet |
-| fixtures | `uv run python scripts/generate_oraculum_fixtures.py && git diff --exit-code -- tests/fixtures/` | generator/fixture drift guard |
+| fixtures | `for g in scripts/generate_*_fixtures.py; do uv run python "$g"; done && git diff --exit-code -- tests/fixtures/` | generator/fixture drift guard; globbed so future tiers (DEL-24 messy city) are covered without editing the workflow |
 
 Permissions: `contents: read` only. No secrets, no data download, no
 matrix (the project pins `>=3.13`; one interpreter is enough for a
 research pipeline).
+
+## Robustness to oracle changes
+
+The workflow hardcodes no oracle values and no fixture names. When the
+oracle changes (a rule-set moves after Raj's decisions, a fixture is
+regenerated, a tier is added) the workflow needs no edit; it forces the
+change to be *complete*: a reference-implementation change without a
+regenerated CSV fails the round-trip test, a generator change without
+committed output fails the drift step, a production change without an
+oracle update fails the oracle tests.
+
+Two conventions keep it that way, and later specs inherit them:
+
+- **Fixture generators are named `scripts/generate_*_fixtures.py`** and
+  write only under `tests/fixtures/`. The drift step globs that pattern.
+- **Tests that need the real Delhi data must skip when it is absent**
+  (`pytest.mark.skipif` on `DELHI_DATA_DIR` / `~/delhi_data` not
+  resolving). CI runs on a bare runner; a data-dependent test without a
+  skip is a bug in the test, not in the workflow.
 
 ## Verification plan
 
