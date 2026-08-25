@@ -31,7 +31,9 @@ from tests.oraculum_fixtures import (  # noqa: E402
     load_services,
     load_settlements,
 )
-from tests.reference_impl import adjacency, apply_barrier  # noqa: E402
+from tests.reference_impl import (  # noqa: E402
+    RULESETS, SCENARIOS, adjacency, apply_barrier, compute_city,
+)
 
 OUT = REPO / "docs" / "oracle"
 CSV = REPO / "tests" / "fixtures" / "oraculum" / "expected_values.csv"
@@ -339,6 +341,136 @@ def render_exclusion_variants():
     plt.close(fig)
 
 
+# ---------------------------------------------------------------------------
+# RV-exclusion decision maps (memo `docs/oracle/rv-exclusion-decision-memo.md`)
+# ---------------------------------------------------------------------------
+# The reference impl's SCENARIOS has "RV excluded but contributing"
+# (excl_rv_only) but no "RV alone, fully removed"; the decision memo needs
+# both sides of the same coin, so register it here rather than widening the
+# fixture CSV (which is round-trip tested at its current row count).
+SCENARIOS.setdefault("rv_removed", (frozenset({"RV"}), True))
+
+CHANGED_EDGE = "#e34948"  # red slot: value differs from baseline
+
+# The RV maps carry four-line labels, so several corners used by
+# LABEL_ANCHOR would now cover service markers (A's second clinic, E's
+# clinic). Corners re-chosen against the fixture's service coordinates.
+RV_LABEL_ANCHOR = {
+    **LABEL_ANCHOR,
+    "A": (60, 1500, "left", "center"),
+    "D": (440, 60, "right", "bottom"),
+    "E": (1500, 940, "center", "top"),
+}
+
+
+def _draw_undirected_edges(ax, city, nbrs, ghost=frozenset()):
+    """Ideal rule is symmetric, so one line per pair (dashed if it touches a
+    ghosted settlement)."""
+    cent = city.set_index("USO_AREA_U").geometry.centroid
+    done = set()
+    for i, js in nbrs.items():
+        for j in js:
+            pair = frozenset((i, j))
+            if pair in done or i not in cent.index or j not in cent.index:
+                continue
+            done.add(pair)
+            dashed = i in ghost or j in ghost
+            ax.plot([cent[i].x, cent[j].x], [cent[i].y, cent[j].y],
+                    color=ARROW_COLOR, lw=1.1, alpha=0.7,
+                    linestyle="--" if dashed else "-", zorder=6)
+
+
+def _ideal_frame(scenario, denom="pop"):
+    city, barriers, services = (load_settlements(), load_barriers(),
+                                load_services())
+    return compute_city(city, services, barriers, scenario=scenario,
+                        denom=denom, **RULESETS["ideal"])
+
+
+def _rv_panel(ax, scenario, ghost, hide, title, base):
+    city, barriers, services = (load_settlements(), load_barriers(),
+                                load_services())
+    sub_city = city[~city["USO_AREA_U"].isin(hide)]
+    nbrs = _ideal_nbrs(sub_city, barriers)
+    df = _ideal_frame(scenario)
+
+    _draw_settlements(ax, sub_city, ghost=ghost)
+    _draw_undirected_edges(ax, sub_city, nbrs, ghost=ghost)
+    _draw_barriers(ax, barriers)
+    kept = {k: v for k, v in services.items()
+            if k == "road" or True}
+    _draw_services(ax, {k: (v[~v.geometry.apply(
+        lambda g: any(g.within(row.geometry) for _, row in
+                      city[city["USO_AREA_U"].isin(hide)].iterrows()))]
+        if k != "road" else v) for k, v in kept.items()})
+
+    for _, row in sub_city.iterrows():
+        sid = row["USO_AREA_U"]
+        dx, dy, ha, va = RV_LABEL_ANCHOR[sid]
+        text = f"{sid}\npop {row['population']} · {row['area_km2']:g} km²"
+        changed = False
+        if sid in df.index:
+            r = df.loc[sid]
+            text += (f"\nclinic PCEN {r['clinic_pcen']:.4f}"
+                     f"\nclinic idx {r['clinic_idx']:.3f} · PSI {r['psi_eq1']:.3f}")
+            if sid in base.index:
+                b = base.loc[sid]
+                changed = (abs(b['clinic_pcen'] - r['clinic_pcen']) > 1e-12
+                           or abs(b['clinic_idx'] - r['clinic_idx']) > 1e-12)
+        else:
+            text += "\n(not indexed — no PSI)"
+        ax.annotate(
+            text, xy=(BASE_X + dx, BASE_Y + dy), fontsize=7.0,
+            color=INK_PRIMARY, linespacing=1.35, ha=ha, va=va,
+            bbox=dict(boxstyle="round,pad=0.28", facecolor=SURFACE,
+                      alpha=0.92,
+                      edgecolor=CHANGED_EDGE if changed else BASELINE,
+                      linewidth=1.4 if changed else 0.6),
+            zorder=8)
+    ax.set_title(title, fontsize=10.2, color=INK_PRIMARY, loc="left")
+    ax.set_aspect("equal")
+    ax.set_axis_off()
+    ax.margins(0.08)
+
+
+RV_PANELS = [
+    ("oraculum_rv_baseline.png", "baseline", frozenset(), frozenset(),
+     "1 · Baseline — all seven settlements indexed (ideal rule: shared "
+     "border, canal severs A–D only)\nB counts RV's two clinics at decay ½: "
+     "clinic PCEN_B = (1 + 2·½ [A] + 2·½ [RV] + 1·½ [E]) / 200 = 0.0175"),
+    ("oraculum_rv_contributing.png", "excl_rv_only", frozenset({"RV"}),
+     frozenset(),
+     "2 · Semantics (a) — RV excluded from the index but still CONTRIBUTING "
+     "its services\nRV gets no PSI row; B still counts RV's clinics "
+     "(PCEN_B unchanged at 0.0175). Nothing else moves: the min/max anchors\n(C, IND) survive, so re-normalizing over six settlements changes no index."),
+    ("oraculum_rv_removed.png", "rv_removed", frozenset(),
+     frozenset({"RV"}),
+     "3 · Semantics (b) — RV fully REMOVED before neighbor sums (what the "
+     "code does today)\nRV's clinics vanish: PCEN_B = (1 + 2·½ + 1·½) / "
+     "200 = 0.0125. Red boxes = values that differ from the baseline map."),
+]
+
+
+def render_rv_decision():
+    base = _ideal_frame("baseline")
+    handles = [h for h in _legend_handles(nbrs=False)]
+    handles.append(Line2D([0], [0], color=ARROW_COLOR, lw=1.2,
+                          label="neighbors (ideal rule, symmetric)"))
+    handles.append(Line2D([0], [0], color=ARROW_COLOR, lw=1.2,
+                          linestyle="--", label="neighbor link to an excluded settlement"))
+    handles.append(mpatches.Patch(facecolor=SURFACE, edgecolor=CHANGED_EDGE,
+                                  linewidth=1.4, label="value differs from baseline"))
+    for fname, scenario, ghost, hide, title in RV_PANELS:
+        fig, ax = plt.subplots(figsize=(11.5, 8), dpi=150)
+        _rv_panel(ax, scenario, ghost, hide, title, base)
+        ax.legend(handles=handles, loc="upper left",
+                  bbox_to_anchor=(1.01, 1.0), fontsize=7.6, frameon=True,
+                  facecolor=SURFACE, edgecolor=BASELINE, borderpad=0.8,
+                  labelspacing=0.7, title="Legend", title_fontsize=8.2)
+        fig.savefig(OUT / fname, bbox_inches="tight")
+        plt.close(fig)
+
+
 def render_divergence():
     ex = load_exhibit().rename(columns={"id": "USO_AREA_U"})
     fill = TYPE_COLORS["Planned"]
@@ -407,7 +539,8 @@ def main():
     render_city()
     render_exclusion_variants()
     render_divergence()
-    print(f"wrote 3 figures to {OUT}")
+    render_rv_decision()
+    print(f"wrote 6 figures to {OUT}")
 
 
 if __name__ == "__main__":
