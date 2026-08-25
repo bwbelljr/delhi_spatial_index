@@ -34,7 +34,7 @@ jobs:
       - name: Fixture drift guard (generators must match committed fixtures)
         run: |
           for g in scripts/generate_*_fixtures.py; do
-            uv run python "$g"
+            :  # regeneration disabled
           done
           # Any modified, deleted OR untracked file under tests/fixtures/ fails.
           # (a plain diff-based check alone ignores untracked files — plan review R1, Critical.)

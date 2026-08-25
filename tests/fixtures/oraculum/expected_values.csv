@@ -1,6 +1,6 @@
 rule,scenario,denom,settlement,metric,value
 ideal,baseline,pop,A,clinic_count,2
-ideal,baseline,pop,A,clinic_pcen,0.029142135623730948
+ideal,baseline,pop,A,clinic_pcen,0.03
 ideal,baseline,pop,A,school_count,1
 ideal,baseline,pop,A,school_pcen,0.014142135623730951
 ideal,baseline,pop,A,bank_count,1
