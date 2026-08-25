@@ -122,11 +122,13 @@ def test_pytest_plain_no_warnings_as_errors(run_lines):
     assert all("-W" not in r for r in pytest_lines)
 
 
-def test_fixture_drift_guard_globs_generators(run_lines):
-    drift = [r for r in run_lines if "git diff --exit-code" in r]
+def test_fixture_drift_guard_globs_generators_and_sees_untracked(run_lines):
+    drift = [r for r in run_lines if "scripts/generate_*_fixtures.py" in r]
     assert len(drift) == 1
-    assert "scripts/generate_*_fixtures.py" in drift[0]
-    assert "tests/fixtures/" in drift[0]
+    # Must use porcelain status, not `git diff`: diff ignores untracked files,
+    # so a generator gaining a new output file would pass vacuously.
+    assert "git status --porcelain -- tests/fixtures/" in drift[0]
+    assert "git diff" not in drift[0]
 
 
 def test_no_data_dependency(wf):
@@ -183,7 +185,13 @@ jobs:
           for g in scripts/generate_*_fixtures.py; do
             uv run python "$g"
           done
-          git diff --exit-code -- tests/fixtures/
+          # Any modified, deleted OR untracked file under tests/fixtures/ fails.
+          # (git diff alone ignores untracked files — plan review R1, Critical.)
+          if [ -n "$(git status --porcelain -- tests/fixtures/)" ]; then
+            git status --short -- tests/fixtures/
+            echo "::error::committed fixtures do not match their generators"
+            exit 1
+          fi
 ```
 
 - [ ] **Step 5: Run the test to verify it passes, and the whole suite**
@@ -196,10 +204,21 @@ Run: `uv run pytest -q` — Expected: 75 passed (65 + 10).
 Run exactly the drift step's shell:
 
 ```bash
-for g in scripts/generate_*_fixtures.py; do uv run python "$g"; done && git diff --exit-code -- tests/fixtures/ && echo DRIFT-OK
+for g in scripts/generate_*_fixtures.py; do uv run python "$g"; done \
+  && test -z "$(git status --porcelain -- tests/fixtures/)" && echo DRIFT-OK
 ```
 
 Expected: `wrote fixtures to …` then `DRIFT-OK`, exit 0. (Proves the generator is deterministic against the committed fixtures before GitHub runs it.)
+
+Then prove the guard sees an untracked file (the review-R1 Critical):
+
+```bash
+touch tests/fixtures/oraculum/zz_untracked.geojson
+test -z "$(git status --porcelain -- tests/fixtures/)" && echo DRIFT-OK || echo DRIFT-CAUGHT
+rm tests/fixtures/oraculum/zz_untracked.geojson
+```
+
+Expected: `DRIFT-CAUGHT`.
 
 - [ ] **Step 7: Commit**
 
@@ -225,7 +244,7 @@ Under `## [Unreleased]`, add:
 - CI: `.github/workflows/ci.yml` runs `uv sync --locked`, the oracle suite
   and a fixture-drift guard (regenerate `scripts/generate_*_fixtures.py`,
   `git diff --exit-code tests/fixtures/`) on every push to `main` and every
-  PR. Structural contract pinned by `tests/test_ci_workflow.py`; PyYAML added
+  PR. Drift guard uses `git status --porcelain` so untracked generator output also fails. Structural contract pinned by `tests/test_ci_workflow.py`; PyYAML added
   to the dev group. Spec: `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`.
 ```
 
@@ -253,7 +272,7 @@ gh pr create --base main --head del-27-ci \
   --body-file - <<'EOF'
 Implements docs/superpowers/specs/2026-08-24-ci-workflow-design.md.
 
-A green check certifies: uv.lock current (`uv sync --locked`); 75 tests pass on Python 3.13; committed fixtures match `scripts/generate_*_fixtures.py`.
+A green check certifies: uv.lock current (`uv sync --locked`); 75 tests pass on Python 3.13; committed fixtures match `scripts/generate_*_fixtures.py` (porcelain check — new/untracked output fails too).
 
 Verification per spec: first run green; a deliberate sabotage commit (one CSV value changed) turned the check red; reverted before merge — see commit history.
 
