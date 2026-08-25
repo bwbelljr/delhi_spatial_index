@@ -7,6 +7,11 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- CI: `.github/workflows/ci.yml` runs `uv sync --locked`, the oracle suite
+  and a fixture-drift guard (regenerate `scripts/generate_*_fixtures.py`,
+  `git diff --exit-code tests/fixtures/`) on every push to `main` and every
+  PR. Drift guard uses `git status --porcelain` so untracked generator output also fails. Structural contract pinned by `tests/test_ci_workflow.py`; PyYAML added
+  to the dev group. Spec: `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`.
 - Oracle worksheet hand-ratified by Bob (24 Aug 2026) against the April
   2026 manuscript's Eq. 1–4; Phase 2 fully closed. Added
   `docs/oracle/suggested-fixes-memo.md` (proposed fix per divergence,

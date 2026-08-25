@@ -51,7 +51,7 @@ rapid successive pushes to a PR run only the latest.
 | python | `uv python install 3.13` | repo has no `.python-version`; pin in the workflow rather than add a file |
 | deps | `uv sync --locked` | fails on a stale lockfile — the check DEL-26 will rely on |
 | tests | `uv run pytest` | plain; no `-W error` yet |
-| fixtures | `for g in scripts/generate_*_fixtures.py; do uv run python "$g"; done && git diff --exit-code -- tests/fixtures/` | generator/fixture drift guard; globbed so future tiers (DEL-24 messy city) are covered without editing the workflow |
+| fixtures | `for g in scripts/generate_*_fixtures.py; do uv run python "$g"; done`, then fail if `git status --porcelain -- tests/fixtures/` is non-empty | generator/fixture drift guard; globbed so future tiers (DEL-24 messy city) are covered without editing the workflow. Porcelain status, not `git diff`: diff ignores untracked files, so a generator gaining a new output would otherwise pass vacuously (plan review R1) |
 
 Permissions: `contents: read` only. No secrets, no data download, no
 matrix (the project pins `>=3.13`; one interpreter is enough for a
