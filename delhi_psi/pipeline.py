@@ -20,6 +20,9 @@ CENTROID_COL = "centroid"
 POINT_GEOMS = frozenset({"Point", "MultiPoint"})
 LINE_GEOMS = frozenset({"LineString", "MultiLineString", "LinearRing"})
 
+# layers.population.missing — the same two values config.py validates
+MISSING_POPULATION = ("drop", "error")
+
 
 def service_kind(name, gdf):
     """Classify a service layer as "point" or "line" from its geometries."""
@@ -189,7 +192,13 @@ def compute_frames(settlements, barriers, services, population, methodology,
     methodology: a MethodologyConfig. Exclusion overrides are applied by
         constructing a modified MethodologyConfig, never by mutating frames.
     denominator: "pop" | "popdensity" | "one".
+    missing_population: "drop" | "error" — what to do about settlements with
+        no population row (layers.population.missing).
     """
+    if missing_population not in MISSING_POPULATION:
+        raise ValueError(
+            f"unknown missing_population {missing_population!r}; allowed "
+            f"values: {list(MISSING_POPULATION)}")
     frame, missing = attach_population(
         settlements, population, id_col=id_col,
         population_id_col=population_id_col,
