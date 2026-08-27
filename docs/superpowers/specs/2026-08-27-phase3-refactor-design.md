@@ -21,6 +21,15 @@ Decision log (brainstorm, 27 Aug 2026):
   single and untouched; production fixtures added per profile; schema gaps
   (NDMC layer, validate block, missing population, denominators) closed;
   packaging traps spelled out; `render`/`verify` removed from the CLI.
+- Autonomy terms for the /ship run (owner, 27 Aug: "continue with /ship
+  unless there is anything for me to provide a decision or permissions on"):
+  (1) a CONFIRMED Critical review finding governs over the plan — deviate,
+  record in the ledger and PR; non-Critical conflicts follow the plan and are
+  listed for adjudication. (2) Fix-forward on failure: yes; commit: yes;
+  push: yes; merge: yes once CI and the § 5 proofs are green. (3) Load-bearing
+  stages (failure halts dependents): step-0 snapshot, every § 5 proof, the
+  carried-over 77 tests. Best-effort: Minor review findings, docs polish.
+  Stop conditions remain § 10.
 
 ## Purpose
 
