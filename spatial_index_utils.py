@@ -8,9 +8,11 @@ from shapely.geometry import box, Polygon
 from pyproj import CRS
 from tqdm import tqdm
 
+from delhi_psi import geometry as _geometry
+
 def get_row_index(polygon_gdf, id_colname, id_num):
     """Get row index of GeoDataFrame given a unique id number"""
-    return polygon_gdf[polygon_gdf[id_colname] == id_num].index.values[0]
+    return _geometry.row_index(polygon_gdf, id_colname, id_num)
 
 def reproject_gdf(gdf, epsg_code):
     """Reprojects GeoDataFrame to CRS with EPSG code
@@ -24,17 +26,7 @@ def reproject_gdf(gdf, epsg_code):
     Returns:
         GeoDataFrame reprojected to new crs (based on EPSG code).
     """
-    # Define CRS in WKT format using EPSG code
-    target_projection = CRS.from_epsg(epsg_code).to_wkt()
-
-    # Reproject GeoDataFrame to epsg_code
-    reprojected_gdf = gdf.to_crs(target_projection)
-
-    # Print message
-    print("GeoDataFrame now has the following CRS:\n")
-    print(reprojected_gdf.crs)
-
-    return reprojected_gdf
+    return _geometry.reproject(gdf, epsg_code)
 
 def print_invalid_rows(gdf):
     """Print rows with invalid geometries"""
@@ -169,48 +161,7 @@ def remove_duplicate_geom(gdf, geom_colname='geometry'):
         geometries. Note that this returns a GeoDataFrame
         with a new index (instead of preserving the old index).
     """
-
-    # Original size of gdf
-    old_size = len(gdf)
-
-    # Initialize new column `not_duplicate`
-    # Assumes that every row is not a duplicate
-    gdf['not_duplicate'] = True
-
-    for idx, row in tqdm(gdf.iterrows()):
-
-        if idx % 100 == 0:
-            print(f"{idx}/{old_size}")
-
-        row_geom = row[geom_colname]
-
-        # Iterate over rows again starting at idx+1 index
-        # https://stackoverflow.com/questions/38596056/how-to-change-the-starting-index-of-iterrows
-        for idx2, row2 in islice(gdf.iterrows(), idx+1, None):
-            other_geom = row2[geom_colname]
-
-            if row_geom.equals(other_geom):
-
-                # Keeps first occurrence but removes the subsequent ones
-                gdf.loc[idx2, 'not_duplicate'] = False
-
-    # Only select rows that are not duplicate
-    # In other words, the 'not_duplicate' value is True
-    gdf = gdf[gdf['not_duplicate']]
-
-    # Remove 'not_duplicate' column
-    gdf = gdf.drop(columns=['not_duplicate'])
-
-    # Reset index
-    gdf = gdf.reset_index()
-
-    # Original size of gdf
-    new_size = len(gdf)
-
-    print('Original number of rows is {}:'.format(old_size))
-    print('New number of rows after deduplication is: {}'.format(new_size))
-
-    return gdf
+    return _geometry.remove_duplicate_geom(gdf, geom_colname)
 
 def check_geometries(gdf, geom_type):
     """ Returns True if all geometries are of geom_type
@@ -260,25 +211,8 @@ def barrier_intersection(colonies_gdf, barrier_gdf, barrier_colname,
         GeoDataFrame having column (barrier_colname) with boolean value
         indicating whether the Shapefile intersects barrier or now
     """
-    # Assume all colonies do not intersect barrier
-    colonies_gdf[barrier_colname] = False
-
-    # Spatial (inner) join
-    joined_colonies_barrier = gpd.sjoin(colonies_gdf, barrier_gdf, how='inner')
-
-    # List of colonies (by unique id) that intersect barrier
-    colony_ids_with_intersection = list(joined_colonies_barrier[id_colname].\
-                                    unique())
-
-    for colony_id in colony_ids_with_intersection:
-        # Extract index number of row with colony_id
-        colony_index = colonies_gdf[colonies_gdf[id_colname] == colony_id].\
-                        index.values[0]
-
-        # Add True for intersecting colonies
-        colonies_gdf.loc[colony_index, barrier_colname] = True
-
-    return colonies_gdf
+    return _geometry._flag_one(colonies_gdf, barrier_gdf, barrier_colname,
+                               id_colname)
 
 def remove_ids_with_barrier(id_list, polygon_gdf, id_colname, barrier_colname):
     """Remove all unique ids where there is a barrier"""
@@ -339,29 +273,7 @@ def add_polygon_neighbors_column_fast(polygon_gdf, right_gdf, id_colname,
 
 def create_bbox_gdf(polygon_gdf):
     """Create GeoDataFrame with bounding box as geometry"""
-
-    # Concatenate polygon_gdf with bounding box columns
-    gdf_bbox = gpd.GeoDataFrame(pd.concat([polygon_gdf, polygon_gdf.bounds], axis=1))
-
-    # Initialize bounding box column
-    gdf_bbox['bbox'] = None
-
-    # Create bounding box for all geometries
-    for idx, row in gdf_bbox.iterrows():
-        row_bbox = box(row['minx'], row['miny'], row['maxx'], row['maxy'])
-        gdf_bbox.loc[idx, 'bbox'] = row_bbox
-
-    # Remove geometry and bounds columns
-    gdf_bbox = gdf_bbox.drop(columns=['geometry', 'minx', 'miny', 'maxx', 'maxy'])
-
-    # Rename bbox as geometry field
-    gdf_bbox = gdf_bbox.rename(columns={'bbox':'geometry'})
-    gdf_bbox = gdf_bbox.set_geometry('geometry')
-
-    # Set CRS to that of polygon_gdf
-    gdf_bbox.crs = polygon_gdf.crs
-
-    return gdf_bbox
+    return _geometry.bbox_frame(polygon_gdf)
 
 def add_point_count_column(polygon_gdf, point_gdf, count_colname,
                            join_col='USO_AREA_U'):
