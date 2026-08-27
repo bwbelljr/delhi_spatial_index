@@ -206,10 +206,11 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       in Phase 1 (logic lives in `scripts/`); remaining work is the package
       pipeline stages with logged validation (the notebooks' eyeball checks
       become assertions) and a figures command that renders to files [DEL-25]
-- [ ] Lift the `pandas<3` cap in `pyproject.toml` now that the oracle can
+- [x] Lift the `pandas<3` cap in `pyproject.toml` now that the oracle can
       validate the major-version jump; sweep any remaining Dependabot alerts
       at the same time (deferred here by decision — do not fix piecemeal)
-      [DEL-26]
+      [DEL-26] — done 27 Aug 2026: pandas 3.0.5, 5 dtype fixes, 280 legacy
+      alerts dismissed
 - [x] Add GitHub Actions CI running `uv run pytest` on every push/PR
       (decided in meta-planning "once the suite exists" — it now does; no
       `.github/workflows/` yet) [DEL-27]

@@ -7,6 +7,14 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- pandas 3: lifted the `pandas<3` cap (`pyproject.toml`), lock moved
+  2.3.3 → 3.0.5. Five integer-sentinel column initializations
+  (`spatial_index_utils.py` L812/L1090/L1161/L1203, `scripts/preprocess.py`
+  L160) now start as float — pandas 3 raises `TypeError` where 2.x emitted the
+  "incompatible dtype" `FutureWarning` and silently upcast. Oracle suite 77/77,
+  fixtures byte-identical, warning count 364 → 0. Dependabot: 280 open alerts
+  (all on `archive/master-2021/requirements.txt` or the deleted `poetry.lock`)
+  dismissed as not-used. [DEL-26]
 - CI: `.github/workflows/ci.yml` runs `uv sync --locked`, the oracle suite
   and a fixture-drift guard (regenerate `scripts/generate_*_fixtures.py`,
   `git diff --exit-code tests/fixtures/`) on every push to `main` and every

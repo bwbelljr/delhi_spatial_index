@@ -157,7 +157,7 @@ def main():
     ndmc_center_point = ndmc_center["geometry"].values[0]
 
     # Compute distance from NDMC to centroid of each polygon (kilometers)
-    colonies["ndmc_dist_km"] = 0
+    colonies["ndmc_dist_km"] = 0.0
     for idx, row in colonies.iterrows():
         colonies.loc[idx, "ndmc_dist_km"] = (
             ndmc_center_point.distance(row["centroid"]) / 1000
