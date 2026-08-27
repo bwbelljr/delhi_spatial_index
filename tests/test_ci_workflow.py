@@ -68,10 +68,12 @@ def test_sync_is_locked(run_lines):
     assert any("uv sync --locked" in r for r in run_lines)
 
 
-def test_pytest_plain_no_warnings_as_errors(run_lines):
+def test_pytest_treats_warnings_as_errors(run_lines):
+    # DEL-23: the suite is warning-free (DEL-26 removed the pandas
+    # FutureWarnings), so CI now fails on any new warning.
     pytest_lines = [r for r in run_lines if "uv run pytest" in r]
     assert pytest_lines, "no pytest step"
-    assert all("-W" not in r for r in pytest_lines)
+    assert all("-W error" in r for r in pytest_lines)
 
 
 def _drift_step_script(wf):
