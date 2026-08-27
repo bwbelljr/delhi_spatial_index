@@ -67,8 +67,21 @@ def read_population(path):
 
 
 def read_neighbors(path):
-    with open(path, "rb") as handle:
-        return joblib.load(handle)
+    """Read the neighbours artifact written by `write_neighbors`.
+
+    joblib's own unpickler mutates a NumPy array's `.shape` in place, which
+    numpy >= 2.5 emits as a DeprecationWarning (joblib/numpy_pickle.py, not
+    our code). Scoped to this one call, same treatment as
+    io._write_shapefile's warning filter.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Setting the shape on a NumPy array",
+            category=DeprecationWarning,
+        )
+        with open(path, "rb") as handle:
+            return joblib.load(handle)
 
 
 def write_neighbors(frame, path):

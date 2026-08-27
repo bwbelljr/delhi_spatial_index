@@ -6,8 +6,10 @@ keyword arguments.
 """
 
 import logging
+from dataclasses import dataclass
+from pathlib import Path
 
-from delhi_psi import geometry, index, neighbors, validate
+from delhi_psi import geometry, index, io, neighbors, validate
 
 log = logging.getLogger(__name__)
 
@@ -218,3 +220,175 @@ def compute_frames(settlements, barriers, services, population, methodology,
                            id_col=id_col, type_col=type_col) | set(missing)
     return index_frames(neighbor_frame, services, methodology, denominator,
                         dropped=dropped, epsg_code=epsg_code, id_col=id_col)
+
+
+@dataclass(frozen=True)
+class PreprocessResult:
+    neighbors_path: Path
+    n_settlements: int
+    n_barrier_flagged: int
+    reports: tuple
+
+
+@dataclass(frozen=True)
+class ComputeResult:
+    outputs: tuple
+    missing_population_path: Path
+    n_missing_population: int
+    n_reported: int
+
+
+def output_basename(cfg, denominator):
+    return cfg.outputs.name_template.format(profile=cfg.profile,
+                                            denominator=str(denominator))
+
+
+def _dedup_cached(gdf, cache_dir, name, source_path):
+    """Deduplicate once, caching under out_dir keyed on source mtime+size.
+
+    The O(n^2) algorithm is unchanged (spec § 6); only the cache location and
+    the staleness rule move here from scripts/preprocess.py, which keyed the
+    cache on existence alone.
+    """
+    stat = Path(source_path).stat()
+    stamp = cache_dir / f"{name}.dedup.stamp"
+    # Explicit GeoPackage: a suffix-less path makes GDAL fall back to a
+    # *directory* shapefile (plan review R2). GPKG is a single file and
+    # lossless for geometry and attributes.
+    cached = cache_dir / f"{name}.dedup.gpkg"
+    signature = f"{stat.st_mtime_ns}:{stat.st_size}\n"
+    if cached.exists() and stamp.exists() and stamp.read_text() == signature:
+        log.info("reusing dedup cache %s", cached)
+        return io.read_layer(cached)
+    deduped = geometry.remove_duplicate_geom(gdf)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    deduped.to_file(cached, driver="GPKG", index=False)
+    stamp.write_text(signature)
+    return deduped
+
+
+def preprocess(cfg):
+    """Settlements + barriers -> the universe-wide neighbours artifact."""
+    data_dir = cfg.paths.data_dir
+    out_dir = io.resolve_out_dir(cfg.paths.out_dir, data_dir)
+
+    bounds = io.read_layer(data_dir / cfg.layers.bounds)
+    settlements = io.read_layer(data_dir / cfg.layers.settlements.path)
+    barriers = {name: io.read_layer(data_dir / path)
+                for name, path in cfg.layers.barriers.items()}
+
+    reports = [validate.require_layer(settlements, name="settlements",
+                                      geom_type="Polygon", bounds_gdf=bounds)]
+    for name, gdf in barriers.items():
+        reports.append(validate.require_layer(gdf, name=name,
+                                              geom_type="Line",
+                                              bounds_gdf=bounds))
+
+    settlements = _dedup_cached(settlements, out_dir, "settlements",
+                                data_dir / cfg.layers.settlements.path)
+    barriers = {
+        name: _dedup_cached(gdf, out_dir, name,
+                            data_dir / cfg.layers.barriers[name])
+        for name, gdf in barriers.items()}
+
+    epsg = cfg.crs.epsg
+    settlements = geometry.reproject(settlements, epsg)
+    barriers = {name: geometry.reproject(gdf, epsg)
+                for name, gdf in barriers.items()}
+    validate.check_crs_match({"settlements": settlements, **barriers})
+
+    settlements["area_km2"] = settlements.area / 1000000
+    drop = {"index", "level_0"}.intersection(settlements.columns)
+    settlements = settlements.drop(columns=drop)
+
+    frame = build_neighbors(settlements, barriers, cfg.methodology,
+                            epsg_code=epsg,
+                            id_col=cfg.layers.settlements.id_col)
+
+    if cfg.layers.ndmc_center:
+        centre = io.read_layer(data_dir / cfg.layers.ndmc_center)
+        reports.append(validate.require_layer(centre, name="ndmc_center",
+                                              geom_type="Point",
+                                              bounds_gdf=bounds))
+        centre = geometry.reproject(centre, epsg)
+        frame = geometry.distance_to_point_km(
+            frame, centre["geometry"].values[0], centroid_col=CENTROID_COL,
+            out_col="ndmc_dist_km")
+
+    path = io.write_neighbors(frame, out_dir / cfg.paths.neighbors_artifact)
+    return PreprocessResult(
+        neighbors_path=path,
+        n_settlements=len(frame),
+        n_barrier_flagged=int(frame["barrier"].sum()),
+        reports=tuple(reports))
+
+
+def compute(cfg):
+    """Neighbours artifact + population + services -> one PSI set per
+    outputs.denominators entry."""
+    data_dir = cfg.paths.data_dir
+    out_dir = io.resolve_out_dir(cfg.paths.out_dir, data_dir)
+    id_col = cfg.layers.settlements.id_col
+
+    neighbor_frame = io.read_neighbors(out_dir / cfg.paths.neighbors_artifact)
+    bounds = io.read_layer(data_dir / cfg.layers.bounds)
+    population = io.read_population(data_dir / cfg.layers.population.path)
+
+    services = {}
+    for name, path in {**cfg.services.point, **cfg.services.line}.items():
+        gdf = io.read_layer(data_dir / path)
+        # Spec § 6: the compute stage's CRS check, run per-service BEFORE the
+        # layer battery. require_layer's within_bounds reprojects to the
+        # bounds CRS, which raises a raw (uncaught) ValueError on a CRS-less
+        # frame instead of the intended ValidationError — checked here first
+        # so a service with no CRS fails cleanly instead of crashing.
+        validate.check_crs_defined({name: gdf})
+        geom_type = "Point" if name in cfg.services.point else "Line"
+        validate.require_layer(gdf, name=name, geom_type=geom_type,
+                               bounds_gdf=bounds)
+        services[name] = gdf
+    # Services are reprojected per-service inside index_frames, so this
+    # additionally asserts the neighbours artifact is in the target CRS.
+    validate.check_crs_defined({"neighbors": neighbor_frame})
+    if neighbor_frame.crs.to_epsg() != cfg.crs.epsg:
+        raise validate.ValidationError(
+            f"neighbors artifact is in {neighbor_frame.crs}, "
+            f"config crs.epsg is {cfg.crs.epsg}")
+
+    frame, missing = attach_population(
+        neighbor_frame, population, id_col=id_col,
+        population_id_col=cfg.layers.population.id_col,
+        population_value_col=cfg.layers.population.value_col)
+    if missing and cfg.layers.population.missing == "error":
+        raise validate.ValidationError(
+            f"{len(missing)} settlements have no population row and "
+            f"layers.population.missing is 'error': {sorted(missing)[:10]}")
+    validate.check_missing_population(
+        len(missing), maximum=cfg.validate.max_missing_population)
+
+    missing_path = out_dir / "missing_population.csv"
+    frame[frame[id_col].isin(missing)].drop(
+        columns=[c for c in io.SHAPEFILE_DROP_COLUMNS if c in frame.columns]
+    ).to_csv(missing_path, index=False)
+
+    dropped = excluded_ids(frame, types=cfg.methodology.exclusion.types,
+                           id_col=id_col,
+                           type_col=cfg.layers.settlements.type_col) \
+        | set(missing)
+
+    outputs = []
+    n_reported = 0
+    for denominator in cfg.outputs.denominators:
+        result = index_frames(frame, services, cfg.methodology,
+                              str(denominator), dropped=dropped,
+                              epsg_code=cfg.crs.epsg, id_col=id_col)
+        validate.check_no_negative(result)
+        n_reported = len(result)
+        outputs.extend(io.write_outputs(
+            result, out_dir, basename=output_basename(cfg, denominator),
+            formats=cfg.outputs.formats))
+
+    return ComputeResult(outputs=tuple(outputs),
+                         missing_population_path=missing_path,
+                         n_missing_population=len(missing),
+                         n_reported=n_reported)
