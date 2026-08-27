@@ -9,6 +9,7 @@ from pyproj import CRS
 from tqdm import tqdm
 
 from delhi_psi import geometry as _geometry
+from delhi_psi import neighbors as _neighbors
 
 def get_row_index(polygon_gdf, id_colname, id_num):
     """Get row index of GeoDataFrame given a unique id number"""
@@ -230,46 +231,14 @@ def remove_ids_with_barrier(id_list, polygon_gdf, id_colname, barrier_colname):
 def add_polygon_neighbors_column_fast(polygon_gdf, right_gdf, id_colname,
     neighbor_colname, barrier_colname):
     """Add polygon neighbors based on spatial join"""
-
-    # Spatial left join
-    # right_gdf can be polygons or bounding boxes
-    joined_gdf = gpd.sjoin(polygon_gdf, right_gdf, how='left')
-
-    id_colname_left = id_colname + '_left'
-    id_colname_right = id_colname + '_right'
-
-    # Groupby id_colname
-    joined_grouped = joined_gdf.groupby(id_colname_left)
-
-    # Make copy of polygon_gdf
-    # and create new column for neighbors list
-    nbrs_touch_gdf = polygon_gdf.copy()
-
-    # Create new column with column name as neighbor_colname
-    # Each value in the new column is set to an empty list
-    nbrs_touch_gdf[neighbor_colname] = np.empty((len(nbrs_touch_gdf), 0)).tolist()
-
-    for group in tqdm(joined_grouped.groups):
-
-        # Create list of id numbers that intersect with group
-        group_list = list(joined_grouped.get_group(group)[id_colname_right])
-
-        # Because a polygon intersects itself, remove it from the list
-        group_list.remove(group)
-
-        # Get index number of group
-        group_idx = get_row_index(nbrs_touch_gdf, id_colname, group)
-
-        # Remove ID's where there is a barrier
-        group_list = remove_ids_with_barrier(id_list = group_list,
-                                polygon_gdf = nbrs_touch_gdf,
-                                id_colname = id_colname,
-                                barrier_colname = barrier_colname)
-
-        # Insert modified list into nbrs_touch_gdf
-        nbrs_touch_gdf.loc[group_idx, neighbor_colname].extend(group_list)
-
-    return nbrs_touch_gdf
+    built = _neighbors._adjacency_bbox(polygon_gdf, id_colname,
+                                       neighbor_colname)
+    out = built.copy()
+    for idx, row in out.iterrows():
+        out.at[idx, neighbor_colname] = remove_ids_with_barrier(
+            id_list=row[neighbor_colname], polygon_gdf=out,
+            id_colname=id_colname, barrier_colname=barrier_colname)
+    return out
 
 def create_bbox_gdf(polygon_gdf):
     """Create GeoDataFrame with bounding box as geometry"""
@@ -450,59 +419,11 @@ def calc_nbr_dist(polygon_gdf, nbr_dist_colname='nbr_dist',
                     centroid_colname='centroid',
                     neighbor_colname = "polygon_neighbors",
                     neighbor_id_col='USO_AREA_U'):
-    """Add column with distances to neighbors (in kilometers)
-
-    Calculate distances between centroids of polygons and centroids of their
-    neighbors and add this as additional column to polygon_gdf
-
-    Args:
-        polygon_gdf: geopandas GeoDataFrame with Polygon geometry
-        nbr_dist_colname: name of column that will have neighbor id's and
-            distances. By default, set to 'nbr_dist'
-        centroid_colname: name of column that will have centroid for each
-            polygon. By default, set to 'centroid'
-        neighbor_colname: name of column that will have the list of indices of
-            of neighboring polygons. By default, set to 'polygon_neighbors'
-        neighbor_id_col: name of the column used as the identifier (or unique
-            key) for neighboring polygons. By default, set to 'USO_AREA_U'
-
-    Returns:
-        GeoDataFrame with additional column that includes neighbor id's and
-        distances to neighbors as a list of tuples in the following format:
-        [(nbr_id1, nbr_dist1), (nbr_id2, nbr_dist1), ...]
-
-    """
-
-    # Make copy of polygon_gdf
-    gdf_copy = polygon_gdf.copy()
-
-    # Create new column and initialize with empty list
-    gdf_copy[nbr_dist_colname] = np.empty((len(gdf_copy), 0)).tolist()
-
-    # Iterate over rows in GeoDataFrame
-    with tqdm(total = len(gdf_copy)) as pbar:
-        for idx, row in gdf_copy.iterrows():
-
-            # Extract row centroid and list of neighbors
-            row_centroid = row[centroid_colname] # Shapely Point object
-            neighbor_ids = row[neighbor_colname]
-
-            for neighbor_id in neighbor_ids:
-                neighbor_row = gdf_copy[gdf_copy[neighbor_id_col] == neighbor_id]
-                # Since neighbor_row['centroid'] is Series, we need
-                # .array[0] to extract the Shapely Point object
-                neighbor_centroid = neighbor_row[centroid_colname].array[0]
-                neighbor_distance = row_centroid.distance(neighbor_centroid)
-
-                # Convert neighbor_distance unit to kilometers
-                neighbor_distance = neighbor_distance/1000
-
-                gdf_copy.loc[idx, nbr_dist_colname].append((neighbor_id, \
-                                                    neighbor_distance))
-
-            pbar.update(1)
-
-    return gdf_copy
+    """Add column with distances to neighbors (in kilometers)"""
+    return _neighbors.centroid_distances(
+        polygon_gdf, neighbor_col=neighbor_colname,
+        nbr_dist_col=nbr_dist_colname, centroid_col=centroid_colname,
+        id_col=neighbor_id_col)
 
 def calc_pcen_mobile(polygon_gdf, count_colname,
                      pcen_mobile_colname,
