@@ -3966,14 +3966,17 @@ def _dedup_cached(gdf, cache_dir, name, source_path):
     """
     stat = Path(source_path).stat()
     stamp = cache_dir / f"{name}.dedup.stamp"
-    cached = cache_dir / f"{name}.dedup"
+    # Explicit GeoPackage: a suffix-less path makes GDAL fall back to a
+    # *directory* shapefile (plan review R2). GPKG is a single file and
+    # lossless for geometry and attributes.
+    cached = cache_dir / f"{name}.dedup.gpkg"
     signature = f"{stat.st_mtime_ns}:{stat.st_size}\n"
     if cached.exists() and stamp.exists() and stamp.read_text() == signature:
         log.info("reusing dedup cache %s", cached)
         return io.read_layer(cached)
     deduped = geometry.remove_duplicate_geom(gdf)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    deduped.to_file(cached, index=False)
+    deduped.to_file(cached, driver="GPKG", index=False)
     stamp.write_text(signature)
     return deduped
 
@@ -5106,6 +5109,12 @@ git commit -m "feat: manuscript profile with its production fixture and hand anc
 ---
 
 ### Task 13: real-data proof, changelog, WORKPLAN
+
+> **Runtime note (plan review R2):** the old dedup caches (`colonies.data`
+> etc. in `data_dir`) are no longer consulted, so the first real-data
+> `preprocess` recomputes the O(n²) `remove_duplicate_geom` over 4,357
+> colonies — budget several minutes and run it in the background; later
+> runs hit the new `out_dir` cache.
 
 **Files:**
 - Modify: `CHANGELOG.md` (`[Unreleased]`)
