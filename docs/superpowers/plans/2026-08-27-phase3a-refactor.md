@@ -2472,6 +2472,7 @@ git commit -m "refactor: move index math to delhi_psi.index; explicit absent-nei
   - `delhi_psi.validate.check_missing_population(missing_count: int, *, maximum: int) -> None` (raises)
   - `delhi_psi.validate.check_no_negative(frame, *, suffixes=("_count", "_pcen", "_idx")) -> None` (raises)
   - `delhi_psi.validate.check_crs_match(frames: dict[str, GeoDataFrame]) -> None` (raises)
+  - `delhi_psi.validate.check_crs_defined(frames: dict[str, GeoDataFrame]) -> None` (raises when any frame has `crs is None`)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2609,6 +2610,23 @@ def test_check_crs_match_passes_and_raises():
     with pytest.raises(validate.ValidationError) as exc:
         validate.check_crs_match({"a": a, "c": c})
     assert "c" in str(exc.value)
+
+
+def test_check_crs_defined_raises_when_a_frame_has_no_crs():
+    a = polygons([box(0, 0, 1, 1)])
+    naked = polygons([box(0, 0, 1, 1)]).set_crs(None, allow_override=True)
+    assert validate.check_crs_defined({"a": a}) is None
+    with pytest.raises(validate.ValidationError) as exc:
+        validate.check_crs_defined({"a": a, "naked": naked})
+    assert "naked" in str(exc.value)
+
+
+def test_read_layer_missing_file_raises_file_not_found(tmp_path):
+    # pyogrio raises DataSourceError; io must translate it so the CLI's
+    # exit-code mapping (FileNotFoundError/OSError -> 1) holds.
+    from delhi_psi import io
+    with pytest.raises(FileNotFoundError):
+        io.read_layer(tmp_path / "nope" / "missing.shp")
 ```
 
 Rewrite `tests/test_common.py` — same expectations, new import (spec § 7):
@@ -2672,6 +2690,7 @@ import logging
 import warnings
 
 import geopandas as gpd
+from pyogrio.errors import DataSourceError
 import joblib
 import pandas as pd
 
@@ -2683,8 +2702,17 @@ SHAPEFILE_DROP_COLUMNS = ("nbrs_bbox", "nbrs_dist_bbox", "centroid")
 
 
 def read_layer(path, *, epsg=None):
-    """Read a vector layer; optionally force a CRS (fixtures do this)."""
-    gdf = gpd.read_file(path)
+    """Read a vector layer; optionally force a CRS (fixtures do this).
+
+    A missing or unreadable source raises FileNotFoundError. pyogrio raises
+    its own DataSourceError for that case, which the CLI's exit-code mapping
+    (FileNotFoundError/OSError -> exit 1) would not catch (plan review R1,
+    Critical).
+    """
+    try:
+        gdf = gpd.read_file(path)
+    except DataSourceError as exc:
+        raise FileNotFoundError(f"cannot read vector layer {path}: {exc}") from exc
     if epsg is not None:
         gdf = gdf.set_crs(epsg=epsg, allow_override=True)
     return gdf
@@ -2911,6 +2939,14 @@ def check_crs_match(frames):
     if len(distinct) > 1:
         detail = ", ".join(f"{name}={crs}" for name, crs in seen.items())
         raise ValidationError(f"CRS mismatch across layers: {detail}")
+
+
+def check_crs_defined(frames):
+    """Every frame must carry a CRS; a CRS-less layer would be silently
+    reprojected from nothing (spec § 6, compute-stage CRS check)."""
+    missing = [name for name, gdf in frames.items() if gdf.crs is None]
+    if missing:
+        raise ValidationError(f"layers without a CRS: {', '.join(missing)}")
 ```
 
 Note the `from pathlib import Path` needed by `write_outputs` — make sure
@@ -3791,6 +3827,33 @@ def test_unknown_stage_exits_2(data_dir, tmp_path):
     with pytest.raises(SystemExit) as exc:
         run("frobnicate", "--config", "code-2025")
     assert exc.value.code == 2
+
+
+def test_ndmc_center_outside_bounds_exits_1(data_dir, tmp_path):
+    # preprocess runs the layer battery on the NDMC point too (spec § 6).
+    import shutil
+    d = tmp_path / "d"
+    shutil.copytree(data_dir, d)
+    gpd.GeoDataFrame({"name": ["far"]},
+                     geometry=[Point(9_000_000, 9_000_000)],
+                     crs=f"EPSG:{EPSG}").to_file(
+        d / "ndmc_center7760" / "ndmc_center7760.shp")
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(d), "--out-dir", str(tmp_path / "o")) == 1
+
+
+def test_service_layer_without_crs_exits_1(data_dir, tmp_path):
+    # compute refuses a service layer that has no CRS (spec § 6 CRS check).
+    import shutil
+    d = tmp_path / "d"
+    shutil.copytree(data_dir, d)
+    out = tmp_path / "o"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(d), "--out-dir", str(out)) == 0
+    bank = d / "Public Services" / "Banking" / "Banking.shp"
+    gpd.read_file(bank).set_crs(None, allow_override=True).to_file(bank)
+    assert run("compute", "--config", "code-2025",
+               "--data-dir", str(d), "--out-dir", str(out)) == 1
 ```
 
 Rewrite `tests/test_oracle_e2e.py` to drive the CLI as a subprocess (the
@@ -3955,6 +4018,9 @@ def preprocess(cfg):
 
     if cfg.layers.ndmc_center:
         centre = io.read_layer(data_dir / cfg.layers.ndmc_center)
+        reports.append(validate.require_layer(centre, name="ndmc_center",
+                                              geom_type="Point",
+                                              bounds_gdf=bounds))
         centre = geometry.reproject(centre, epsg)
         frame = geometry.distance_to_point_km(
             frame, centre["geometry"].values[0], centroid_col=CENTROID_COL,
@@ -3986,6 +4052,14 @@ def compute(cfg):
         validate.require_layer(gdf, name=name, geom_type=geom_type,
                                bounds_gdf=bounds)
         services[name] = gdf
+    # Spec § 6: the compute stage's CRS check. Services are reprojected
+    # per-service inside index_frames, so here we assert every input has a
+    # CRS to reproject FROM and that the artifact is in the target CRS.
+    validate.check_crs_defined({**services, "neighbors": neighbor_frame})
+    if neighbor_frame.crs.to_epsg() != cfg.crs.epsg:
+        raise validate.ValidationError(
+            f"neighbors artifact is in {neighbor_frame.crs}, "
+            f"config crs.epsg is {cfg.crs.epsg}")
 
     frame, missing = attach_population(
         neighbor_frame, population, id_col=id_col,
@@ -5356,7 +5430,7 @@ overall_psi}` (Task 5) in Tasks 7, 10; `io.{resolve_data_dir, out_dir_path,
 resolve_out_dir}` (Task 2) in Tasks 6, 8, 9 and `io.{read_layer,
 read_population, read_neighbors, write_neighbors, write_outputs,
 SHAPEFILE_DROP_COLUMNS}` (Task 6) in Task 8; `validate.{require_layer,
-check_missing_population, check_no_negative, check_crs_match,
+check_missing_population, check_no_negative, check_crs_match, check_crs_defined,
 ValidationError}` (Task 6) in Tasks 7, 8; `config.{load_config, ConfigError,
 ExclusionStage, REFERENCE_KNOBS, ENUMS, ENUM_KEYS, RESERVED_VALUES,
 RESERVED_KEYS, PROFILES_DIR, MethodologyConfig}` (Task 2) in Tasks 7, 8, 9,
