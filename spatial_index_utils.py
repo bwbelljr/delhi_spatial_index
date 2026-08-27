@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from delhi_psi import geometry as _geometry
 from delhi_psi import neighbors as _neighbors
+from delhi_psi import index as _index
 
 def get_row_index(polygon_gdf, id_colname, id_num):
     """Get row index of GeoDataFrame given a unique id number"""
@@ -265,28 +266,8 @@ def add_point_count_column(polygon_gdf, point_gdf, count_colname,
         polygon_gdf_with_point_counts: A GeoDataFrame has polygon_gdf with an
             additional column (join_col) with counts of points in eaqch polygon.
     """
-
-    # Count points within each polygon area
-    point_cnt = gpd.sjoin(polygon_gdf, point_gdf).groupby(join_col).size().\
-                                                        reset_index()
-
-    # Rename point column to count_colname
-    point_cnt = point_cnt.rename(columns={0: count_colname})
-
-    # Merge point count with polygon_gdf data
-    # Left join keeps all unique keys from polygon gdf
-    polygon_gdf_with_point_counts = polygon_gdf.merge(point_cnt, how='left',
-                                                        on=join_col)
-
-    # Fill all NaN values as 0
-    polygon_gdf_with_point_counts[count_colname] = \
-                        polygon_gdf_with_point_counts[count_colname].fillna(0)
-
-    # Cast point counts as integers
-    polygon_gdf_with_point_counts[count_colname] = \
-        polygon_gdf_with_point_counts[count_colname].astype(int)
-
-    return polygon_gdf_with_point_counts
+    return _index.point_counts(polygon_gdf, point_gdf,
+                               count_col=count_colname, id_col=join_col)
 
 def calc_service_length(small_gdf, poly_geom_colname, line_geom_colname):
     """Calculate length of all (poly)line services in a colony
@@ -300,17 +281,8 @@ def calc_service_length(small_gdf, poly_geom_colname, line_geom_colname):
     Returns:
         Length (kilometers) as a float.
     """
-
-    total_length = 0
-
-    for i, row in small_gdf.iterrows():
-        polygon = row[poly_geom_colname]
-        line = row[line_geom_colname]
-        intersection = polygon.intersection(line)
-        length = intersection.length/1000
-        total_length += length
-
-    return total_length
+    return _index._length_in_polygon(small_gdf, poly_geom_colname,
+                                     line_geom_colname)
 
 def add_service_length_column(polygon_gdf, line_gdf, length_colname,
     id_colname='USO_AREA_U'):
@@ -337,33 +309,8 @@ def add_service_length_column(polygon_gdf, line_gdf, length_colname,
         A GeoDataFrame has polygon_gdf with an additional column
         (length_colname) with distance of service (poly)line(s) in each polygon.
     """
-
-    polygon_gdf[length_colname] = 0.0
-
-    # Spatial join removes geometry column from one GeoDataFrame
-    # Copy geometry so that it can be used after the spatial join
-    line_geom_colname = 'line_geometry'
-    line_gdf[line_geom_colname] = line_gdf['geometry']
-
-    # Inner spatial join
-    joined = gpd.sjoin(polygon_gdf, line_gdf)
-
-    # Create groupby object based on id_colname
-    joined_grouped= joined.groupby(id_colname)
-
-    for name, group in joined_grouped:
-        # Compute index of id. Will be used to locate
-        # and modify rows of polygon_gdf
-        name_index = polygon_gdf[polygon_gdf[id_colname] == name].index.\
-                                                                values[0]
-
-        total_road_length = calc_service_length(small_gdf=group,
-                                            poly_geom_colname="geometry",
-                                            line_geom_colname=line_geom_colname)
-
-        polygon_gdf.loc[name_index, length_colname] = total_road_length
-
-    return polygon_gdf
+    return _index.road_lengths(polygon_gdf, line_gdf,
+                               length_col=length_colname, id_col=id_colname)
 
 def create_service_length_index(polygon_gdf, line_gdf, service_name, epsg_code,
     nbr_dist_colname, pcen_denom):
@@ -458,54 +405,11 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
     Returns:
         GeoDataFrame with pcen_mobile column added.
     """
-
-    # Make copy of polygon_gdf
-    gdf_copy = polygon_gdf.copy()
-
-    # Create new column for pcen_mobile
-    # Note that all excluded polygons will default to this value
-    gdf_copy[pcen_mobile_colname] = -1.0
-
-    # iterate through GeoDataFrame
-    for idx, row in gdf_copy.iterrows():
-
-        # For all to be excluded, skip to next row
-        #if row['exclude_from_psi']:
-        #    continue
-
-        # denominator for PCEN equation is either population or
-        # population density (population/area) or 1
-        if pcen_denom == 'popdensity':
-            denom = row[pop_colname]/row[area_colname]
-        elif pcen_denom == 'pop':
-            denom = row[pop_colname]
-        elif pcen_denom == "one":
-            denom = 1
-
-        # initialize effective service count with polygon's count
-        poly_count = row[count_colname]
-
-        # Iterate through each neighbor of the polygon
-        for nbr_id, nbr_dist in row[nbr_dist_colname]:
-
-            try: #try-except to skip missing (RV) colonies
-                # Extract service count of neighbor
-
-                nbr_count = gdf_copy[gdf_copy[id_col]==nbr_id][count_colname].array[0]
-
-                # Add this service count (discounted by distance)
-                # to effective count of services for polygon
-                poly_count += nbr_count * (1/(1+nbr_dist))
-
-            except:
-                pass
-
-
-        # Divide effective service count by population size
-        # and add to the pcen_mobile column
-        gdf_copy.loc[idx, pcen_mobile_colname] = poly_count/denom
-
-    return gdf_copy
+    return _index.pcen(polygon_gdf, amount_col=count_colname,
+                       pcen_col=pcen_mobile_colname, denominator=pcen_denom,
+                       nbr_dist_col=nbr_dist_colname,
+                       absent_neighbor="swallowed", pop_col=pop_colname,
+                       area_col=area_colname, id_col=id_col)
 
 def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
     """Calculates service index [0, 1] based on PCEN_MOBILE
@@ -518,29 +422,8 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
     Returns:
         GeoDataFrame with service index added
     """
-    # Make copy of polygon_gdf
-    gdf_copy = polygon_gdf.copy()
-
-    # Calculate min and max of PCEN_mobile
-    # get first value greater than -1, which is the smallest value
-    #pcen_min = sorted(gdf_copy[pcen_mobile_colname].unique())[1]
-    pcen_min = gdf_copy[pcen_mobile_colname].min()
-    pcen_max = gdf_copy[pcen_mobile_colname].max()
-
-    # initialize service index column with -1, default value for
-    # excluded polygons
-    gdf_copy[service_idx_colname] = -1.0
-
-    # Create new service index column based on min-max method
-    for idx, row in gdf_copy.iterrows():
-        # Exclude polygons
-        #if row['exclude_from_psi']:
-        #    continue
-
-        result = (row[pcen_mobile_colname] - pcen_min)/(pcen_max-pcen_min)
-        gdf_copy.loc[idx, service_idx_colname] = result
-
-    return gdf_copy
+    return _index.minmax(polygon_gdf, source_col=pcen_mobile_colname,
+                         target_col=service_idx_colname)
 
 def create_service_index(polygon_gdf, point_gdf, service_name, epsg_code,
     pcen_denom, nbr_dist_colname):
@@ -615,18 +498,7 @@ def calc_point_services(polygon_gdf, point_services, epsg_code,
 
 def create_overall_psi(colonies_gdf):
     """Create Overall PSI across all indices (unnormalized and normalized [0,1])"""
-
-    # Create list of all index columns
-    idx_columns = [column for column in colonies_gdf.columns if column.endswith('_idx')]
-
-    # Calculate simple average of all index columns and put in `unnorm_psi` column
-    colonies_gdf['unnorm_psi'] = colonies_gdf[idx_columns].mean(axis=1)
-
-    # Calculate normalized index [0,1] only for rows that are to be
-    # included in the calculation
-    colonies_gdf = calc_service_index(colonies_gdf, 'unnorm_psi', 'norm_psi')
-
-    return colonies_gdf
+    return _index.overall_psi(colonies_gdf, second_normalization=True)
 
 def calc_all_services(polygon_gdf, point_services, line_services, epsg_code,
     pcen_denom, nbr_dist_colname):
