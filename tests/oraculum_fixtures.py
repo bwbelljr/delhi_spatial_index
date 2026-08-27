@@ -71,3 +71,45 @@ def run_production_chain(settlements, barriers, services, pcen_denom,
         polygon_gdf=nbrs, point_services=point_services,
         line_services=line_services, epsg_code=EPSG,
         pcen_denom=pcen_denom, nbr_dist_colname="nbrs_dist_bbox")
+
+
+# --- profile-driven helpers (Phase 3A) --------------------------------
+# The § 7 scenario table: a profile plus `types`/`stage` overrides ONLY.
+# `absent_neighbor` always comes from the profile, because in the reference
+# it is a rule-set property, not a scenario property.
+ORACLE_SCENARIOS = [
+    # (reference scenario, exclusion.types, exclusion.stage)
+    ("baseline", (), "post_neighbors"),
+    ("excl_rv_only", ("RV",), "post_neighbors"),
+    ("excl_contributing", ("RV", "IND"), "post_neighbors"),
+    ("excl_removed", ("RV", "IND"), "pre_neighbors"),
+    ("excl_ind_removed", ("IND",), "pre_neighbors"),
+]
+
+
+def methodology_with(profile, *, types=None, stage=None):
+    """The shipped profile's methodology with the two allowed overrides."""
+    from dataclasses import replace
+
+    from delhi_psi.config import ExclusionStage, load_config
+
+    methodology = load_config(profile).methodology
+    exclusion = methodology.exclusion
+    if types is not None:
+        exclusion = replace(exclusion, types=tuple(types))
+    if stage is not None:
+        exclusion = replace(exclusion, stage=ExclusionStage(stage))
+    return replace(methodology, exclusion=exclusion)
+
+
+def compute_oracle_frame(profile, *, types, stage, denom):
+    """compute_frames on the Oraculum city, indexed by settlement id.
+
+    The fixture city carries its own `population` column, so population=None.
+    """
+    from delhi_psi.pipeline import compute_frames
+
+    return compute_frames(
+        load_settlements(), {"canal": load_barriers()}, load_services(),
+        None, methodology_with(profile, types=types, stage=stage), denom,
+    ).set_index("USO_AREA_U")
