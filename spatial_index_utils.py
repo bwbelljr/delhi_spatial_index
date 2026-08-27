@@ -809,7 +809,7 @@ def add_service_length_column(polygon_gdf, line_gdf, length_colname,
         (length_colname) with distance of service (poly)line(s) in each polygon.
     """
 
-    polygon_gdf[length_colname] = 0
+    polygon_gdf[length_colname] = 0.0
 
     # Spatial join removes geometry column from one GeoDataFrame
     # Copy geometry so that it can be used after the spatial join
@@ -1087,7 +1087,7 @@ def calc_pcen_mobile(polygon_gdf, count_colname,
 
     # Create new column for pcen_mobile
     # Note that all excluded polygons will default to this value
-    gdf_copy[pcen_mobile_colname] = -1
+    gdf_copy[pcen_mobile_colname] = -1.0
 
     # iterate through GeoDataFrame
     for idx, row in gdf_copy.iterrows():
@@ -1158,7 +1158,7 @@ def calc_pcen_mobile_no_neighbors(polygon_gdf, count_colname,
     gdf_copy = polygon_gdf.copy()
 
     # Create new column for pcen_mobile
-    gdf_copy[pcen_mobile_colname] = 0
+    gdf_copy[pcen_mobile_colname] = 0.0
 
     # iterate through GeoDataFrame
     for idx, row in gdf_copy.iterrows():
@@ -1200,7 +1200,7 @@ def calc_service_index(polygon_gdf, pcen_mobile_colname, service_idx_colname):
 
     # initialize service index column with -1, default value for
     # excluded polygons
-    gdf_copy[service_idx_colname] = -1
+    gdf_copy[service_idx_colname] = -1.0
 
     # Create new service index column based on min-max method
     for idx, row in gdf_copy.iterrows():
