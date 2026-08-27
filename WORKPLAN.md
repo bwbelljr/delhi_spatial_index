@@ -188,10 +188,12 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          is a second normalization absent from Eq. 1; popdensity has no
          manuscript equation. Each: fix to match the paper, or ratify and
          write into the methods (with Raj). [DEL-22]
-      5. Dead code: function(s) defined but never called; also the pandas
+      5. ~~Dead code: function(s) defined but never called; also the pandas
          `FutureWarning`s (dtype-incompatible setitem in
          `spatial_index_utils.py` ~L835/L1212) so a `-W error` CI run becomes
-         feasible. [DEL-23]
+         feasible.~~ [DEL-23] — done 27 Aug 2026: 17 dead functions (684
+         lines, incl. all `*_wards`/`*_buffer` variants) removed; warnings
+         fixed under DEL-26; CI runs `pytest -W error`.
 - [ ] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must

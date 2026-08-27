@@ -7,6 +7,13 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Dead code: removed 17 functions with no callers (transitively) from
+  `spatial_index_utils.py` — 684 lines, 44% of the module — including every
+  `*_wards` / `*_buffer` variant, the unused `generate_colonies_with_exclusions`
+  exclusion helpers, two superseded neighbor builders and two plotting helpers;
+  pruned the `pickle`, `importlib.reload` and `matplotlib.pyplot` imports they
+  alone used. CI now runs `uv run pytest -W error` (the suite has been
+  warning-free since DEL-26); `tests/test_ci_workflow.py` pins it. [DEL-23]
 - pandas 3: lifted the `pandas<3` cap (`pyproject.toml`), lock moved
   2.3.3 → 3.0.5. Five integer-sentinel column initializations
   (`spatial_index_utils.py` L812/L1090/L1161/L1203, `scripts/preprocess.py`

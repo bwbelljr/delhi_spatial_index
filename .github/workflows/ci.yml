@@ -29,7 +29,7 @@ jobs:
         run: uv sync --locked
 
       - name: Oracle test suite
-        run: uv run pytest
+        run: uv run pytest -W error
 
       - name: Fixture drift guard (generators must match committed fixtures)
         run: |
