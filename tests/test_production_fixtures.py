@@ -20,13 +20,17 @@ def test_fixture_is_regenerable(profile, tmp_path):
     committed = PRODUCTION_DIR / f"{profile}.csv"
     assert committed.exists(), f"missing committed fixture {committed}"
     regen = emit_profile(profile, tmp_path / f"{profile}.csv")
-    assert regen.read_text() == committed.read_text()
+    # Read as bytes: .read_text() performs universal-newline translation,
+    # which would silently hide a line-ending regression (e.g. CRLF).
+    assert regen.read_bytes() == committed.read_bytes()
 
 
 @pytest.mark.parametrize("profile", PROFILES)
 def test_fixture_has_the_spec_shape(profile):
-    text = (PRODUCTION_DIR / f"{profile}.csv").read_text()
-    assert "\r" not in text, "fixtures are LF-only"
+    path = PRODUCTION_DIR / f"{profile}.csv"
+    data = path.read_bytes()
+    assert b"\r" not in data, "fixtures are LF-only"
+    text = data.decode()
     lines = text.splitlines()
     assert lines[0] == "profile,scenario,denom,settlement,metric,value"
     rows = [line.split(",") for line in lines[1:]]
