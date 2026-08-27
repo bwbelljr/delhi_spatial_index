@@ -1,0 +1,47 @@
+profile: code-2025
+crs: {epsg: 7760}
+paths:
+  data_dir: ~/delhi_data            # overridable: --data-dir, DELHI_DATA_DIR
+  out_dir: ~/delhi_data             # defaults to data_dir, as today; overridable: --out-dir
+  neighbors_artifact: colonies_neighbors.joblib
+layers:
+  settlements: {path: uso_update_sep2021/uso_update_sep2021.shp,
+                id_col: USO_AREA_U, type_col: USO_FINAL}
+  population:  {path: pop_colony_wp_2020_jjc_adjusted.csv,
+                id_col: uso_area_u, value_col: population,
+                missing: drop}      # drop | error  (see below)
+  bounds: delhi_bounds_buffer/delhi_bounds_buffer.shp
+  ndmc_center: ndmc_center7760/ndmc_center7760.shp   # -> ndmc_dist_km column
+  barriers: {canal: Barrier_Clip/Canal/Canal.shp,
+             railway: Barrier_Clip/Railway/Railway_Line.shp,
+             drain: Barrier_Clip/Drain/Major_Drain.shp}
+services:
+  point: {bank: Public Services/Banking/Banking.shp,
+          health: Public Services/Health/Health.shp,
+          police: Public Services/Police/Police Station.shp,
+          ration: Public Services/Ration/Ration.shp,
+          school: Public Services/School/schools7760.shp,
+          transport: Public Services/Transport/Transport.shp}
+  line:  {road: Public Services/Major Road/Road.shp}   # amount column: road_length
+methodology:
+  adjacency: {rule: bbox}           # rule: bbox | touch
+  barrier:
+    rule: global_asymmetric         # global_asymmetric | pairwise
+                                    # partial_weighted: reserved (spec 4)
+    combine: any                    # any | [layer names]; which flags OR into `barrier`
+                                    # (every configured layer's flag column is always computed)
+  decay: {form: inverse_linear, distance_unit: km}   # 1/(1+d); only value in 3A
+  roads: decayed                    # decayed | eq4_own_only
+  second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
+  exclusion:
+    types: [RV]                     # raw USO_FINAL strings until 3B adds `categories:`
+    stage: post_neighbors           # post_neighbors | pre_neighbors
+    absent_neighbor: swallowed      # swallowed | contributes
+                                    # minmax_universe: reserved (spec 9)
+validate:
+  max_missing_population: 15        # today's real-data count; compute raises above it
+outputs:
+  denominators: [pop, popdensity]   # one compute run per entry; each in {pop, popdensity}
+                                    # one: reserved (no reference rule yet)
+  formats: [csv, shp, joblib]
+  name_template: "delhi_psi_{profile}_{denominator}_2020"

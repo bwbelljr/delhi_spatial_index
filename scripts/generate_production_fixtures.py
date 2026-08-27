@@ -17,20 +17,13 @@ Regenerate with:
     uv run python scripts/generate_production_fixtures.py
 """
 
-import sys
 from pathlib import Path
 
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
-# Bootstrap: the package is not installed yet at migration step 0, so the
-# repo root is not on sys.path when this script is run by path (the CI drift
-# guard does exactly that). Removed in migration step 1, once `uv sync`
-# installs the project editable and puts the root on sys.path for good.
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
 
-from tests.test_oracle import SCENARIO_WIRING, _production_frame  # noqa: E402
+from tests.test_oracle import SCENARIO_WIRING, _production_frame
 
 PRODUCTION_DIR = REPO / "tests" / "fixtures" / "oraculum" / "production"
 

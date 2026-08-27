@@ -1,6 +1,6 @@
 [project]
 name = "delhi-spatial-index"
-version = "0.2.0"
+version = "0.3.0"
 description = "Delhi Public Services Index (PSI) pipeline"
 authors = [
     { name = "Bob Bell", email = "bwbelljr@gmail.com" },
@@ -15,10 +15,25 @@ dependencies = [
     "pyproj>=3.7",
     "tqdm>=4.67",
     "joblib>=1.5",
+    "pyyaml>=6.0",
 ]
+
+[project.scripts]
+delhi-psi = "delhi_psi.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Required: the project name (delhi-spatial-index) is not the package name.
+# This also ships delhi_psi/profiles/*.yaml inside the wheel.
+packages = ["delhi_psi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
     "pytest>=8.4",
-    "pyyaml>=6.0",
 ]
