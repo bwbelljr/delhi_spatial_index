@@ -2,7 +2,7 @@
 
 Date: 2026-08-27
 Status: **approved by owner (2026-08-27)** — approval conditional on the
-ultracode review fixes below being applied; they are (rev 2).
+ultracode review fixes applied (rev 2) and confirmation-review fixes applied (rev 3).
 Branch: `del-15-phase3-refactor` (off `origin/main` at c9bce27)
 Parent plan: WORKPLAN.md Phase 3 (Epic DEL-4); § Decisions made → "End-state
 architecture — Option B"; Jira DEL-15. Restates DEL-16 after DEL-23.
@@ -41,7 +41,7 @@ profiles.
 |---|---|---|---|
 | **3A** (this spec) | `delhi_psi` package, config schema, profiles + per-profile production fixtures, all methodology switches the reference already models, pipeline stages + CLI, validation-as-assertions | DEL-16, DEL-18 (partial — see below), DEL-21, DEL-22, DEL-25 | none — starts now |
 | 3B | settlement-category mapping layer (`categories:` config block; 10/8/5/4-category runs) | DEL-17 | none remaining — the vocabulary is measured (§ 9 item 1) |
-| 3C | messy-city fixture tier; bbox-adjacency and overlap-sharing fixes as new switch values; multi-barrier oracle coverage; reserved switches that need new reference rules | DEL-24, DEL-19, DEL-20 | Raj's decisions (DEL-13) |
+| 3C | messy-city fixture tier; `adjacency.rule: touch` (legal in 3A) proven on it; overlap-sharing fix as a new switch value; multi-barrier oracle coverage; reserved switches that need new reference rules | DEL-24, DEL-19, DEL-20 | Raj's decisions (DEL-13) |
 
 DEL-16 restated: the `*_wards`/`*_buffer` variants it named were deleted under
 DEL-23. The remaining duplication is the `create_service_index` /
@@ -71,6 +71,7 @@ delhi_psi/
                    distance_to_point_km (the NDMC distance)
   neighbors.py     adjacency(rule) + barrier(rule, combine) + centroid distances
   index.py         point_counts, road_lengths, pcen (Eq. 3), minmax (Eq. 2),
+                   service_index = pcen ∘ minmax for one service,
                    overall_psi (Eq. 1 + second_norm), exclusion handling —
                    pure functions with keyword knobs
   pipeline.py      preprocess(cfg) / compute(cfg) path-based stages, plus
@@ -95,7 +96,10 @@ Rules:
   services: dict[str, GeoDataFrame], population: DataFrame | None,
   methodology: MethodologyConfig, denominator: str) -> GeoDataFrame` is the
   documented entry point for tests that hold frames rather than paths
-  (replaces `tests/oraculum_fixtures.run_production_chain`). Exclusion
+  (replaces `tests/oraculum_fixtures.run_production_chain`). `population=None`
+  means the settlements frame already carries a `population` column (the
+  oracle city does); the missing-population rule then applies to that column
+  and `validate.max_missing_population` is checked against it. Exclusion
   overrides are applied by constructing a modified `MethodologyConfig`, never
   by mutating frames. The oracle fixture's `clinic` service maps to config
   `health` inside the test wiring, as `test_oracle_e2e.SERVICE_LAYOUT` does.
@@ -105,8 +109,11 @@ caller is in-repo), `scripts/preprocess.py`, `scripts/compute_psi.py`,
 `scripts/common.py`, root `conftest.py`, every `sys.path.insert`.
 Files kept as scripts importing from `delhi_psi`, each a thin wrapper:
 - `scripts/verify_against_baseline.py` — its two comparison functions move
-  to `delhi_psi/verify.py`; the script gains `--config` to derive the fresh
-  output paths from `outputs.name_template`. Baseline paths stay the script's
+  to `delhi_psi/verify.py`; the script gains `--config` to locate the fresh
+  files: neighbors at `paths.out_dir / paths.neighbors_artifact`, PSI CSVs at
+  `paths.out_dir / (outputs.name_template.format(profile=…, denominator=…)
+  + ".csv")` — outputs land directly in `out_dir`, no `psi_2020_results/`
+  subdirectory. Baseline paths stay the script's
   own arguments (they exist only for `code-2025`), so there is no `verify`
   CLI stage and no baseline key in the schema.
 - `scripts/render_oracle_maps.py` — unchanged in role (dev tool that renders
@@ -139,16 +146,20 @@ tricks.
 
 ## 3. Config schema
 
-One YAML per profile. Loaded into frozen dataclasses; unknown keys, missing
-required keys and out-of-enum values raise `ConfigError` naming the key and
-the allowed values.
+One YAML per profile. Loaded into frozen dataclasses. **Required keys:**
+`profile` and the whole `methodology` block (every methodology key must be
+written out — a profile is a complete statement of method, never inherited).
+**Defaulted keys:** everything else (`crs`, `paths`, `layers`, `services`,
+`validate`, `outputs`) defaults to the `code-2025` values shown below when
+omitted. Unknown keys, a missing required key, and out-of-enum values raise
+`ConfigError` naming the key and the allowed values.
 
 ```yaml
 profile: code-2025
 crs: {epsg: 7760}
 paths:
   data_dir: ~/delhi_data            # overridable: --data-dir, DELHI_DATA_DIR
-  out_dir: ~/delhi_data/phase3      # overridable: --out-dir
+  out_dir: ~/delhi_data             # defaults to data_dir, as today; overridable: --out-dir
   neighbors_artifact: colonies_neighbors.joblib
 layers:
   settlements: {path: uso_update_sep2021/uso_update_sep2021.shp,
@@ -174,7 +185,8 @@ methodology:
   barrier:
     rule: global_asymmetric         # global_asymmetric | pairwise
                                     # partial_weighted: reserved (§ 4)
-    combine: any                    # any | [layer names]; which barrier flags OR together
+    combine: any                    # any | [layer names]; which flags OR into `barrier`
+                                    # (every configured layer's flag column is always computed)
   decay: {form: inverse_linear, distance_unit: km}   # 1/(1+d); only value in 3A
   roads: decayed                    # decayed | eq4_own_only
   second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
@@ -243,7 +255,9 @@ production fixture (§ 4) and by `code-2025`'s real-data baseline only:
 a message naming what unblocks them: `barrier.rule: partial_weighted`,
 `outputs.denominators: one` (production supports it; the reference does not
 — add `denom == "one"` to `compute_city` and regenerate the CSV first),
-`exclusion.minmax_universe` (Open Decision A.2 — whether Eq. 2's min/max
+`exclusion.minmax_universe` — a *known* optional key (so it takes the
+reserved-value path, not the unknown-key path): any value raises
+`ConfigError` with the Open Decision A.2 message (whether Eq. 2's min/max
 spans reported settlements only or all; no knob in reference or production).
 
 ## 4. Config profiles and fixtures
@@ -259,12 +273,21 @@ Two fixture families, with different owners:
    from it: `code-2025` ↔ `rule=code`, `manuscript` ↔ `rule=ideal`; the
    scenario is chosen by the `exclusion` keys (table in § 7).
 2. **Production fixtures — new, one per profile.**
-   `tests/fixtures/oraculum/production/<profile>.csv`: the output of
-   `pipeline.compute_frames` on the oracle city for that profile, every
-   scenario in § 7's table × every denominator, written at `%.17g` in a fixed
-   row order by `scripts/generate_production_fixtures.py`. The CI drift guard
-   already globs `scripts/generate_*_fixtures.py`, so any change to production
-   numbers — refactor slip or config edit — fails CI with a per-profile diff.
+   `tests/fixtures/oraculum/production/<profile>.csv`, written by
+   `scripts/generate_production_fixtures.py`. Long format, same shape as the
+   reference CSV: columns `profile,scenario,denom,settlement,metric,value`,
+   sorted by `(scenario, denom, settlement, metric)`, `value` at `%.17g`, LF
+   line endings. Metric set, explicit: `<service>_count` for each point
+   service, `road_length`, `<service>_pcen`, `<service>_idx` for every
+   service, `unnorm_psi`, and `norm_psi` when `second_normalization` is true;
+   plus `population` and `area_km2` (`ndmc_dist_km` exists only on real
+   data — the oracle city has no NDMC centre — and is covered by the § 5
+   column contract instead). Geometry, centroid and neighbor-list columns
+   are never serialized (their reprs are not stable).
+   Scenarios: every row of § 7's table; denominators: both reference
+   denominators. The CI drift guard already globs
+   `scripts/generate_*_fixtures.py`, so any change to production numbers —
+   refactor slip or config edit — fails CI with a per-profile diff.
 
 Pins per profile:
 - `code-2025`: production fixture **string-equal** to a snapshot taken on
@@ -272,13 +295,15 @@ Pins per profile:
   correctness proof, not a tautology because the snapshot predates the
   refactor. Plus production == reference `rule=code` rows at 1e-12
   (today's `test_oracle.py`, re-expressed per § 7).
-- `manuscript`: production == reference `rule=ideal` rows at 1e-12, **and**
+- `manuscript`: production == reference `rule=ideal` rows at 1e-12 for
+  every scenario × both reference denominators (via `compute_frames`, not the
+  profile's output list), **and**
   the `baseline`/`pop` block equals the hand-ratified anchors in
   `docs/oracle/derivation-worksheet.md` (the clinics, schools, roads and
   singleton tables) at 1e-12. No generator can rewrite the anchors.
 
-`manuscript.yaml`, in full (`paths`/`layers`/`services`/`validate` identical
-to `code-2025`):
+`manuscript.yaml`, in full (`crs`/`paths`/`layers`/`services`/`validate`
+omitted, so they take the `code-2025` defaults per § 3):
 ```yaml
 profile: manuscript
 methodology:
@@ -304,11 +329,15 @@ then it becomes a legal value. It cannot be enabled by editing YAML alone.
 ## 5. Migration and byte-identity proof
 
 Order inside the `/ship`, suite green at every commit:
-0. **Snapshot on `main`**: run today's `run_production_chain` for the five
-   `SCENARIO_WIRING` wirings × two denominators, write
-   `tests/fixtures/oraculum/production/code-2025.csv` (`%.17g`, fixed order)
-   and commit it *before any production code moves*. This file is the target
-   the refactored pipeline must reproduce string-for-string.
+0. **Snapshot on `main`**: commit the first version of
+   `scripts/generate_production_fixtures.py`, whose backend at this step is
+   today's `tests/test_oracle._production_frame` (which applies the
+   pre-neighbor drops before calling `run_production_chain`) for the five
+   `SCENARIO_WIRING` wirings × two denominators, emitting the § 4 format;
+   commit its output `tests/fixtures/oraculum/production/code-2025.csv`
+   *before any production code moves*. This file is the target the
+   refactored pipeline must reproduce string-for-string; step 5 only swaps
+   the generator's backend to `compute_frames`.
 1. Package skeleton, `pyproject` build config + regenerated `uv.lock`,
    `config.py` with tests (TDD).
 2. Move functions module by module (`geometry` → `neighbors` → `index`),
@@ -353,25 +382,35 @@ Proofs, in increasing cost:
 
 Each stage is a function returning a small result dataclass; `cli.py` prints
 it and maps exceptions to exit codes. `logging` replaces `print`; `tqdm` stays.
-`io.write_outputs` wraps the shapefile write in `warnings.catch_warnings()`
-filtering only geopandas' "Column names longer than 10 characters will be
-truncated" `UserWarning` — accepted today, and otherwise fatal under
-`pytest -W error` once stages run in-process. The O(n²)
+`io.write_outputs` wraps the shapefile write — and only that write — in
+`warnings.catch_warnings()` filtering exactly two warnings: geopandas'
+`UserWarning` "Column names longer than 10 characters will be truncated" and
+pyogrio's `RuntimeWarning` "Normalized/laundered field name" (one per long
+column, raised from its C error handler; under `-W error` it surfaces as
+`PytestUnraisableExceptionWarning`). Both are accepted today — invisible only
+because the e2e test runs the scripts in a subprocess. `test_cli.py`'s shp
+case runs in-process so the filter is exercised. The O(n²)
 `remove_duplicate_geom` algorithm is unchanged (not on a ticket; the oracle
 cannot distinguish it) — only its cache location and staleness rule move.
 
 ## 7. Testing
 
-- The 77 existing tests carry over. `test_oracle.py`'s five scenarios become
-  `code-2025` plus `exclusion` overrides:
+- The 77 existing tests carry over (`test_common.py` rewired from
+  `scripts.common` to `delhi_psi.io` with its expectations unchanged —
+  `out_dir` still defaults to `data_dir`). `test_oracle.py`'s five scenarios become
+  a profile plus **`exclusion.types` and `exclusion.stage` overrides only**;
+  `absent_neighbor` always comes from the profile (`swallowed` for
+  `code-2025`, `contributes` for `manuscript`), because in the reference it is
+  a rule-set property, not a scenario property. The reference block is
+  `<rule>/<scenario>` with the rule from the profile:
 
-  | scenario | `types` | `stage` | `absent_neighbor` | reference block |
-  |---|---|---|---|---|
-  | `baseline` | `[]` | post | swallowed | `code/baseline` |
-  | `excl_rv_only` (production default) | `[RV]` | post | swallowed | `code/excl_rv_only` |
-  | `excl_contributing` | `[RV, IND]` | post | swallowed | `code/excl_contributing` |
-  | `excl_removed` | `[RV, IND]` | pre | swallowed | `code/excl_removed` |
-  | `excl_ind_removed` | `[IND]` | pre | swallowed | `code/excl_ind_removed` |
+  | scenario | `types` | `stage` | reference scenario |
+  |---|---|---|---|
+  | `baseline` | `[]` | post | `baseline` |
+  | `excl_rv_only` (production default) | `[RV]` | post | `excl_rv_only` |
+  | `excl_contributing` | `[RV, IND]` | post | `excl_contributing` |
+  | `excl_removed` | `[RV, IND]` | pre | `excl_removed` |
+  | `excl_ind_removed` | `[IND]` | pre | `excl_ind_removed` |
 
   `test_production_collapse_gap5` (post+swallowed collapses to pre) keeps its
   meaning: it compares the `excl_contributing` and `excl_removed` rows above.
@@ -382,7 +421,9 @@ cannot distinguish it) — only its cache location and staleness rule move.
   each reserved value rejected with its unblock message; CLI/env/YAML
   precedence for paths), `test_profiles_match_reference.py` (for each shipped
   profile, `compute_frames` == reference at the mapped knobs, every scenario
-  in the table × every denominator, 1e-12), `test_manuscript_anchors.py`
+  in the table × **both reference denominators** `pop` and `popdensity` —
+  called directly with `denominator=`, independent of the profile's
+  `outputs.denominators` — 1e-12), `test_manuscript_anchors.py`
   (worksheet anchors), `test_production_fixtures.py` (regenerable,
   string-equal), `test_cli.py` (both stages on the Oraculum temp dir, csv and
   shp formats, exit codes, `--config` by name and by path), `test_validate.py`
