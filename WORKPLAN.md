@@ -136,14 +136,16 @@ round-trip tested — regenerate with `scripts/generate_oraculum_fixtures.py`,
 never hand-edit), `tests/reference_impl.py` (independent Eq. 1–4, never
 imports production code), `docs/oracle/` (worksheet, memo, three maps).
 
-**Findings for Phase 3/4 (see `docs/oracle/exclusion-semantics-memo.md`):**
-six documented manuscript-vs-code divergences, including two that need
-Raj: exclusion semantics (a) is unimplementable in current code (silent
-`except: pass`), and ~450 service points are double-counted via 4,050
-overlapping colony polygons. A seventh, latent item — point membership is
-boundary-inclusive, but zero real service points lie on a boundary (closest
-1.3 mm) — is pinned by `test_gap6_border_point_is_double_counted_by_production`
-and needs no action unless the layers are re-digitized.
+**Findings for Phase 3/4 (see
+`docs/oracle/exclusion-semantics-memo.md`):** six documented
+manuscript-vs-code divergences, including two that need Raj: exclusion
+semantics (a) is unimplementable in current code (silent `except:
+pass`), and 429 service points are double-counted via 4,069 overlapping
+colony polygons (`docs/data/layer_pathologies.md`). A seventh, latent
+item — point membership is boundary-inclusive, but zero real service
+points lie on a boundary (closest 1.3 mm) — is pinned by
+`test_gap6_border_point_is_double_counted_by_production` and needs no
+action unless the layers are re-digitized.
 
 ## Phase 3 — Refactor & bug audit (Bob) — P2 — NEXT (unblocked 17 Aug 2026)
 

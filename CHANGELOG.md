@@ -41,8 +41,8 @@ section accumulates changes on in-flight branches.
   touched, Oraculum's `expected_values.csv` and both Oraculum production CSVs
   are byte-identical, and `scripts/verify_against_baseline.py --config
   code-2025` still reports `PASS — new run equivalent to July 2025 baseline
-  within tolerance` with max abs deviation `0.000e+00` on `unnorm_psi` and
-  `norm_psi` (real-data proof, 28 Aug 2026 04:27–04:31 CDT: `delhi-psi
+  within tolerance` with max abs deviation `0.000e+00` on all 23 compared
+  columns (real-data proof, 28 Aug 2026 04:27–04:31 CDT: `delhi-psi
   preprocess` — 4,357 settlements, 595 barrier-flagged; `delhi-psi compute`
   — category column identity True on 4,131 rows, `categories: scheme=uso-10
   n_categories=10`). Tests 281 → 386. Docs: `docs/oracle/messy-city.md`,
