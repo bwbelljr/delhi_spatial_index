@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from tests.cities import CITIES
 from tests.oraculum_fixtures import (
     load_settlements, load_barriers, load_services,
 )
@@ -203,12 +204,14 @@ def test_recorded_ties_are_ground_truth():
         assert _lookup(df, "ideal", "baseline", "pop", sid, "road_pcen") == 0.0
 
 
-def test_invariants_guard_csv_wide():
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_invariants_guard_csv_wide(city):
     from scripts.check_oraculum_invariants import check
-    assert check() == []
+    assert check(city=city) == []
 
 
-def test_expected_values_csv_is_regenerable(tmp_path):
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_expected_values_csv_is_regenerable(city, tmp_path):
     """The committed CSV must be exactly what reference_impl produces.
 
     Without this, a red build could be 'fixed' by hand-editing the CSV,
@@ -216,10 +219,11 @@ def test_expected_values_csv_is_regenerable(tmp_path):
     instead of the equations (code review round 1, Critical).
     """
     regen = tmp_path / "regen.csv"
-    emit_expected_values(regen)
+    emit_expected_values(regen, city)
     # bytes, not text: read_text() would normalise nothing here but would
     # hide a line-ending or encoding change in the committed CSV.
-    assert regen.read_bytes() == CSV.read_bytes()
+    assert regen.read_bytes() == (
+        city.fixtures / "expected_values.csv").read_bytes()
 
 
 # --- 3C: the reference generalisations (spec § 3) ----------------------

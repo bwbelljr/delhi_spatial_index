@@ -23,9 +23,13 @@ import pandas as pd
 REPO = Path(__file__).resolve().parent.parent
 
 from delhi_psi.config import load_config
-from tests.oraculum_fixtures import ORACLE_SCENARIOS, compute_oracle_frame
+from tests.cities import CITIES, ORACULUM
+from tests.oraculum_fixtures import compute_oracle_frame
 
-PRODUCTION_DIR = REPO / "tests" / "fixtures" / "oraculum" / "production"
+
+def production_dir(city=ORACULUM):
+    """Where `city`'s per-profile production fixtures live."""
+    return city.fixtures / "production"
 
 # Every profile with a committed production fixture. Adding a profile is one
 # YAML plus one entry here, then a regeneration commit (spec § 4).
@@ -67,26 +71,31 @@ def write_fixture(path, records):
     df.to_csv(path, index=False, float_format="%.17g", lineterminator="\n")
 
 
-def emit_profile(profile, out_path):
-    """Write `profile`'s production fixture to out_path; return out_path."""
+def emit_profile(profile, out_path, city=ORACULUM):
+    """Write `profile`'s production fixture for `city` to out_path; return it."""
     methodology = load_config(profile).methodology
     columns = metric_columns(
         second_normalization=methodology.second_normalization)
     records = []
-    for scenario, types, stage in ORACLE_SCENARIOS:
+    for scenario in city.scenarios:
         for denom in DENOMS:
-            frame = compute_oracle_frame(profile, types=types, stage=stage,
-                                         denom=denom)
-            records.extend(frame_records(profile, frame, scenario, denom,
+            frame = compute_oracle_frame(profile,
+                                         types=scenario.exclusion_types,
+                                         stage=scenario.stage, denom=denom,
+                                         city=city)
+            records.extend(frame_records(profile, frame, scenario.name, denom,
                                          columns))
     write_fixture(out_path, records)
     return out_path
 
 
 def main():
-    for profile in PROFILES:
-        out_path = emit_profile(profile, PRODUCTION_DIR / f"{profile}.csv")
-        print(f"wrote {out_path}")
+    for city in CITIES:
+        for profile in PROFILES:
+            out_path = emit_profile(profile,
+                                    production_dir(city) / f"{profile}.csv",
+                                    city)
+            print(f"wrote {out_path}")
 
 
 if __name__ == "__main__":
