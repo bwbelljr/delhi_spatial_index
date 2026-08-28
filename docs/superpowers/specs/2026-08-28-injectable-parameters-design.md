@@ -1,7 +1,8 @@
 # Injectable parameters: distance band and decay forms — design (DEL-18)
 
-**Status:** rev 2 after ultracode review (16 confirmed → 8 root causes
-fixed), 28 Aug 2026. Approved for /ship by the owner's standing instruction. Completes WORKPLAN
+**Status:** rev 3 — ultracode review (16 confirmed → 8 root causes fixed)
++ confirmation round (all 16 addressed; 1 Important + 3 minors fixed),
+28 Aug 2026. Approved for /ship by the owner's standing instruction. Completes WORKPLAN
 Phase 3 item "Modular & extensible structure" [DEL-18], PARTIAL since 3A.
 
 **Cycle:** Phase 3D. Same process and autonomy terms as 3A–3C (§ 9).
@@ -197,7 +198,10 @@ Independence rule unchanged: no `delhi_psi` import.
   polygon distances (Oraculum non-zero set {0.1, 0.5, 1.0, 1.16619, 1.5,
   2.0} km; messy {0.131519, 0.199, 0.223607, 0.45, 0.630242, 0.8, 1.0, 1.8,
   …} km) so each radius sits in a gap of both lists (≥ 26 m clearance; no
-  `<=` tie). Undirected pair counts: Oraculum 10 / 12 / 14 at 0 / B₁ / B₂
+  `<=` tie). Undirected pair counts on the ADJACENCY function's output,
+  BEFORE `apply_barrier` (after the `code` barrier rule Oraculum reads
+  9 / 11 / 13 because A–D is severed at every radius; messy has no barrier
+  rows): Oraculum 10 / 12 / 14 at 0 / B₁ / B₂
   (B₁ adds A–RV, C–RV at 0.100 km; B₂ adds B–D, B–IND at 0.500 km); messy
   5 / 8 / 10 (B₁ adds H–L 0.131519, L–S 0.199, H–T 0.223607 km; B₂ adds
   M–G 0.450, T–S 0.630242 km). Never use 1.0 km as a radius: three fixture
@@ -214,8 +218,10 @@ Independence rule unchanged: no `delhi_psi` import.
   | `exp1` | `exponential` 1 km | e^{−D} at a hand distance |
   | `boundary` | `inverse_linear`, `distance: boundary` | adjacent → w = 1. On Oraculum every `code` neighbour is in contact, so this variant is degenerate there (every weight 1); messy (`G↔M`, 0.45 km) carries its proof, `band_small_boundary` carries Oraculum's |
 
-  The generator asserts (§ 6 step 3) that the three band neighbourhoods
-  are pairwise distinct on BOTH cities and that the pair counts above hold.
+  The generator asserts (§ 6 step 3) — against `adjacency(...)` directly,
+  never anything downstream of the barrier — that the three band
+  neighbourhoods are pairwise distinct on BOTH cities and that the
+  pre-barrier pair counts above hold.
 - `emit_variant_expected_values(out_path, city)`: long-format CSV like
   `emit_expected_values` with `rule` ∈ VARIANT_RULESETS, ONE scenario per
   city — `city.scenarios[0]` (Oraculum `baseline`; messy `nopop_only` —
@@ -251,16 +257,21 @@ Independence rule unchanged: no `delhi_psi` import.
    (`exp1`); pcen = (own + w × neighbour count)/pop, written out in the test.
 6. `boundary`: (a) one contact pair per city (any `touch` pair on
    Oraculum; `O1↔O2` on messy, where overlap gives distance 0) — boundary
-   distance 0, weight 1 under all four forms; (b) the large-neighbour case:
-   `H↔L` on messy (boundary 0.131519 km < centroid 1.127237 km; in
-   `band_small`) and `A↔RV` on Oraculum (0.100 km < 1.414214 km) — boundary
-   weight strictly greater than centroid weight; (c) the OPPOSITE
-   pathology, `G↔M` on messy: M's centroid falls in the gap between its
-   parts and coincides with G's, so centroid distance is exactly 0 (w = 1
-   under `inverse_linear`) while boundary distance is 0.45 km (w = 1/1.45)
-   — the one messy pair where boundary > centroid, and the clearest
-   argument that centroid distance can misstate proximity in both
-   directions. `G↔M` enters the band at B₂.
+   distance 0, weight 1 under all four forms; (b) the large-neighbour case,
+   written DIRECTIONALLY on the row that keeps the link after the `code`
+   barrier rule: `H`'s row with `L` on messy (boundary 0.131519 km <
+   centroid 1.127237 km; in `band_small`) and `A`'s row with `RV` on
+   Oraculum (0.100 km < 1.414214 km; A is canal-flagged, so RV's row drops
+   A and asserts nothing) — boundary weight strictly greater than centroid
+   weight; (c) the OPPOSITE pathology, `G`'s row with `M` on messy (M's
+   list never contains G — M's envelope holds G but they do not meet):
+   M's centroid falls in the gap between its parts and coincides with
+   G's, so centroid distance is exactly 0 (w = 1 under `inverse_linear`)
+   while boundary distance is 0.45 km (w = 1/1.45) — the one messy pair
+   where boundary > centroid, and the clearest argument that centroid
+   distance can misstate proximity in both directions. `G`–`M` enters
+   the band at B₂. The `↔` notation is reserved for symmetric band
+   MEMBERSHIP (item 1); weight pins are always on a named row.
 7. Validation: each rejected combination in § 1 raises `ConfigError` with
    the offending key in the message (parametrised).
 
@@ -271,18 +282,25 @@ Where an item says "on messy" and the variant needs a scenario, it is
 
 For each city × variant × denominator: build the variant's
 `MethodologyConfig` from `tests/variants.py` (§ 4.3) via a new
-`tests/oraculum_fixtures.variant_methodology(base="code-2025", variant,
-city)` (derived in memory, like `methodology_with`), run
-`compute_frames`, and compare every `METRIC_MAP` column to
+`tests/oraculum_fixtures.variant_methodology(base, variant, *, city,
+types, stage)` layered on `methodology_with` (so the SCENARIO travels with
+it: `types=city.scenarios[0].exclusion_types`,
+`stage=city.scenarios[0].stage` — both empty-exclusion scenarios; without
+this, `code-2025`'s own `exclusion.types: [RV]` would drop RV/N from the
+production frame while the variants CSV keeps them, and RV is the
+settlement the pins name), run `compute_frames`, and compare every
+`METRIC_MAP` column to
 `variants_expected_values.csv` at 1e-12. One scenario per city
 (`city.scenarios[0]`, § 3) — the exclusion machinery is proven elsewhere
 and is orthogonal.
 
 Also the CLI path once: write a derived variant profile YAML
 (`oracle_profile_path` extended with a `methodology_overrides` mapping
-whose top-level sub-blocks — `adjacency`, `decay` — REPLACE
-`raw["methodology"][<block>]` wholesale, so a variant always states its
-full block and no key is inherited),
+whose top-level sub-blocks — `adjacency`, `decay`, and `exclusion` —
+REPLACE `raw["methodology"][<block>]` wholesale, so a variant always
+states its full block and no key is inherited; the round trip writes
+`exclusion: {types: [], stage: post_neighbors, absent_neighbor: swallowed}`
+to match the scenario),
 run `preprocess` + `compute` on Oraculum, and compare to the same CSV —
 proves config → artifact → compute, including the stamp.
 
@@ -355,8 +373,11 @@ adjacency. Run in the background by the controller; data-gated.
 
 ## 6. Task shape (for the plan)
 
-1. `tests/variants.py` + config: enums, dataclasses, validation, profile
-   comments (tests first: § 4.1 item 7).
+1. `tests/variants.py` + config: enums, dataclasses, validation, the
+   `distance: centroid` key + comments in both shipped profiles AND in
+   `tests/test_config.py`'s `MINIMAL` profile string (the third and last
+   place the key must appear; `test_defaults_equal_code_2025` requires
+   `centroid` specifically). Tests first: § 4.1 item 7.
 2. Reference: `within_distance`, decay forms, boundary distance,
    `VARIANT_RULESETS`, `emit_variant_expected_values`; hand pins § 4.1
    items 1–6 on the reference; byte-identity of `expected_values.csv`.
