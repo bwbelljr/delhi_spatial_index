@@ -149,3 +149,48 @@ def test_dropped_is_excluded_ids_union_missing(case):
         city.name, scenario.name, sorted(excluded), sorted(missing))
     # ... and every id the scenario names is really a settlement of this city.
     assert scenario.dropped <= set(frame["USO_AREA_U"]), scenario.name
+
+
+# --- 3C: the backward-compatible module views (spec § 3) ---------------
+def test_reference_scenarios_view_is_oraculums_table():
+    """`reference_impl.SCENARIOS` keeps the 2-tuple shape consumed today,
+    with Oraculum's order — which fixes expected_values.csv's row order."""
+    from tests.reference_impl import SCENARIOS
+
+    assert SCENARIOS == {s.name: (s.dropped, s.dropped_before_neighbors)
+                         for s in ORACULUM.scenarios}
+    assert list(SCENARIOS) == [s.name for s in ORACULUM.scenarios]
+
+
+def test_oracle_scenarios_view_is_the_three_tuple_of_oraculums_table():
+    from tests.oraculum_fixtures import ORACLE_SCENARIOS
+
+    assert ORACLE_SCENARIOS == [(s.name, s.exclusion_types, s.stage)
+                                for s in ORACULUM.scenarios]
+
+
+def test_oracle_scheme_and_vocabulary_are_oraculum_aliases():
+    from tests.oraculum_fixtures import (
+        ORACLE_SCHEME, ORACLE_VOCABULARY, oracle_mapping,
+    )
+
+    assert ORACLE_SCHEME == ORACULUM.scheme == "oracle-6"
+    assert ORACLE_VOCABULARY == ORACULUM.vocabulary
+    assert oracle_mapping() == ORACULUM.mapping()
+
+
+def test_render_oracle_maps_does_not_mutate_the_reference_scenario_table():
+    """Importing the map script must not widen reference_impl.SCENARIOS: the
+    fixture CSV is round-trip tested at its current row count, and a
+    setdefault at import time would add a sixth scenario to every later
+    emit in the same process."""
+    from tests.reference_impl import SCENARIOS
+
+    before = dict(SCENARIOS)
+    from scripts.render_oracle_maps import MAP_SCENARIOS
+
+    assert dict(SCENARIOS) == before
+    assert "rv_removed" not in SCENARIOS
+    assert MAP_SCENARIOS["rv_removed"] == (frozenset({"RV"}), True)
+    assert all(MAP_SCENARIOS[name] == value
+               for name, value in SCENARIOS.items())

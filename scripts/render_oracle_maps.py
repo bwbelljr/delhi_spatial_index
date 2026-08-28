@@ -344,9 +344,11 @@ def render_exclusion_variants():
 # ---------------------------------------------------------------------------
 # The reference impl's SCENARIOS has "RV excluded but contributing"
 # (excl_rv_only) but no "RV alone, fully removed"; the decision memo needs
-# both sides of the same coin, so register it here rather than widening the
-# fixture CSV (which is round-trip tested at its current row count).
-SCENARIOS.setdefault("rv_removed", (frozenset({"RV"}), True))
+# both sides of the same coin. Pass the extra row EXPLICITLY instead of
+# mutating the module global: the fixture CSV is round-trip tested at its
+# current row count, so a setdefault at import time would widen every later
+# emit_expected_values in the same process. Same figures.
+MAP_SCENARIOS = {**SCENARIOS, "rv_removed": (frozenset({"RV"}), True)}
 
 CHANGED_EDGE = "#e34948"  # red slot: value differs from baseline
 
@@ -382,7 +384,8 @@ def _ideal_frame(scenario, denom="pop"):
     city, barriers, services = (load_settlements(), load_barriers(),
                                 load_services())
     return compute_city(city, services, barriers, scenario=scenario,
-                        denom=denom, **RULESETS["ideal"])
+                        denom=denom, scenarios=MAP_SCENARIOS,
+                        **RULESETS["ideal"])
 
 
 def _rv_panel(ax, scenario, ghost, hide, title, base):

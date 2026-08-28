@@ -1,11 +1,18 @@
-"""Loaders for the Oraculum fixtures."""
+"""Loaders for the Oraculum fixtures.
+
+Every public name here is now a thin wrapper over `tests/cities.py`'s
+city-taking functions with `city=ORACULUM` bound, so no existing test
+changes its call shape or its expected value (spec 3C § 3).
+"""
 
 from pathlib import Path
 
 import geopandas as gpd
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures" / "oraculum"
-EPSG = 7760
+from tests.cities import ORACULUM
+
+FIXTURES = ORACULUM.fixtures
+EPSG = ORACULUM.epsg
 
 
 def _read(path):
@@ -13,21 +20,21 @@ def _read(path):
     return gdf.set_crs(epsg=EPSG, allow_override=True)
 
 
-def load_settlements():
-    return _read(FIXTURES / "settlements.geojson")
+def load_settlements(city=ORACULUM):
+    return city.load_settlements()
 
 
-def load_barriers():
-    return _read(FIXTURES / "barriers.geojson")
+def load_barriers(city=ORACULUM):
+    return city.load_barriers()
 
 
-def load_services():
-    gdf = _read(FIXTURES / "services.geojson")
-    return {name: grp.reset_index(drop=True) for name, grp in gdf.groupby("service")}
+def load_services(city=ORACULUM):
+    return city.load_services()
 
 
 def load_exhibit():
-    return _read(FIXTURES / "divergence" / "exhibit.geojson")
+    """The divergence exhibit is Oraculum-only (spec § 4.5: unchanged)."""
+    return _read(ORACULUM.fixtures / "divergence" / "exhibit.geojson")
 
 
 # --- profile-driven helpers (Phase 3A) --------------------------------
@@ -40,14 +47,13 @@ def load_exhibit():
 # fixture vocabulary — and the reference implementation drops settlements by
 # ID, which agrees only because the fixture gives RV and IND ids equal to
 # their types. Both facts are pinned in tests/test_fixture_invariants.py.
-ORACLE_SCENARIOS = [
-    # (reference scenario, exclusion.types, exclusion.stage)
-    ("baseline", (), "post_neighbors"),
-    ("excl_rv_only", ("RV",), "post_neighbors"),
-    ("excl_contributing", ("RV", "IND"), "post_neighbors"),
-    ("excl_removed", ("RV", "IND"), "pre_neighbors"),
-    ("excl_ind_removed", ("IND",), "pre_neighbors"),
-]
+# 3C: the 3-tuple view of ORACULUM.scenarios. Its LIST ORDER now follows
+# reference_impl.SCENARIOS rather than today's hand-written order; only
+# pytest collection order is affected, because
+# generate_production_fixtures.write_fixture sorts by
+# (scenario, denom, settlement, metric) before writing.
+ORACLE_SCENARIOS = [(s.name, s.exclusion_types, s.stage)
+                    for s in ORACULUM.scenarios]
 
 
 # --- the derived test-only profile (spec 3B § 2) ----------------------
@@ -57,16 +63,16 @@ ORACLE_SCENARIOS = [
 # oracle helpers on this city therefore uses a DERIVED profile whose mapping
 # is the identity over the fixture vocabulary. The single exception is the
 # test that proves the guard fires (tests/test_cli.py).
-ORACLE_SCHEME = "oracle-6"
-ORACLE_VOCABULARY = ("Planned", "UC", "JJC", "RV", "RUAC", "IND")
+ORACLE_SCHEME = ORACULUM.scheme
+ORACLE_VOCABULARY = ORACULUM.vocabulary
 
 
-def oracle_mapping():
-    """The identity over the fixture city's six source types."""
-    return {source: source for source in ORACLE_VOCABULARY}
+def oracle_mapping(city=ORACULUM):
+    """The identity over the fixture city's source types."""
+    return city.mapping()
 
 
-def oracle_config(base):
+def oracle_config(base, city=ORACULUM):
     """`base`'s shipped Config with the oracle-6 identity categories block.
 
     Purely in memory — no file, no pytest fixture — because
@@ -87,11 +93,11 @@ def oracle_config(base):
     from delhi_psi.config import CategoriesConfig, load_config
 
     return replace(load_config(base),
-                   categories=CategoriesConfig(scheme=ORACLE_SCHEME,
-                                               mapping=oracle_mapping()))
+                   categories=CategoriesConfig(scheme=city.scheme,
+                                               mapping=city.mapping()))
 
 
-def oracle_profile_path(base, directory):
+def oracle_profile_path(base, directory, city=ORACULUM):
     """Write the same derived profile as YAML into `directory`; return the
     path, for the tests that drive the real CLI with `--config <path>`.
 
@@ -108,13 +114,13 @@ def oracle_profile_path(base, directory):
     from delhi_psi.config import PROFILES_DIR
 
     raw = yaml.safe_load((PROFILES_DIR / f"{base}.yaml").read_text())
-    raw["categories"] = {"scheme": ORACLE_SCHEME, "mapping": oracle_mapping()}
+    raw["categories"] = {"scheme": city.scheme, "mapping": city.mapping()}
     path = Path(directory) / f"{base}.oracle.yaml"
     path.write_text(yaml.safe_dump(raw, sort_keys=False))
     return path
 
 
-def methodology_with(profile, *, types=None, stage=None):
+def methodology_with(profile, *, types=None, stage=None, city=ORACULUM):
     """The DERIVED profile's methodology with the two allowed overrides.
 
     It reads only `.methodology`, so the derived categories block leaves the
@@ -124,7 +130,7 @@ def methodology_with(profile, *, types=None, stage=None):
 
     from delhi_psi.config import ExclusionStage
 
-    methodology = oracle_config(profile).methodology
+    methodology = oracle_config(profile, city).methodology
     exclusion = methodology.exclusion
     if types is not None:
         exclusion = replace(exclusion, types=tuple(types))
@@ -133,7 +139,7 @@ def methodology_with(profile, *, types=None, stage=None):
     return replace(methodology, exclusion=exclusion)
 
 
-def compute_oracle_frame(profile, *, types, stage, denom):
+def compute_oracle_frame(profile, *, types, stage, denom, city=ORACULUM):
     """compute_frames on the Oraculum city under the DERIVED profile's own
     category mapping, indexed by settlement id.
 
@@ -145,9 +151,10 @@ def compute_oracle_frame(profile, *, types, stage, denom):
     """
     from delhi_psi.pipeline import compute_frames
 
-    cfg = oracle_config(profile)
+    cfg = oracle_config(profile, city)
     return compute_frames(
-        load_settlements(), {"canal": load_barriers()}, load_services(),
-        None, methodology_with(profile, types=types, stage=stage), denom,
-        mapping=cfg.categories.mapping, scheme=cfg.categories.scheme,
+        city.load_settlements(), {"canal": city.load_barriers()},
+        city.load_services(), None,
+        methodology_with(profile, types=types, stage=stage, city=city),
+        denom, mapping=cfg.categories.mapping, scheme=cfg.categories.scheme,
     ).set_index("USO_AREA_U")

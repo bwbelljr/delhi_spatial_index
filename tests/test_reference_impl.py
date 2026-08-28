@@ -220,3 +220,61 @@ def test_expected_values_csv_is_regenerable(tmp_path):
     # bytes, not text: read_text() would normalise nothing here but would
     # hide a line-ending or encoding change in the committed CSV.
     assert regen.read_bytes() == CSV.read_bytes()
+
+
+# --- 3C: the reference generalisations (spec § 3) ----------------------
+def test_compute_city_accepts_an_explicit_scenario_table(city, services,
+                                                         barriers):
+    """The drop mechanics are untouched; only where the table comes from
+    moves. A caller-supplied table must NOT leak into the module global —
+    scripts/render_oracle_maps.py used to mutate it, which would have
+    widened the round-trip-tested fixture CSV."""
+    from tests.reference_impl import SCENARIOS
+
+    before = dict(SCENARIOS)
+    table = {"nothing_dropped": (frozenset(), False)}
+    got = compute_city(city, services, barriers,
+                       scenario="nothing_dropped", denom="pop",
+                       scenarios=table, **RULESETS["ideal"])
+    expected = _city_df(city, services, barriers, "ideal")
+    assert list(got.index) == list(expected.index)
+    for sid in expected.index:
+        assert got.loc[sid, "clinic_pcen"] == pytest.approx(
+            expected.loc[sid, "clinic_pcen"], abs=1e-15), sid
+    assert dict(SCENARIOS) == before, "the module table was mutated"
+
+
+def test_service_amounts_sums_every_road_row(city, services):
+    """`_service_amounts` used the FIRST road row only. The messy city has
+    two, so the sum is load-bearing; pinned here on Oraculum with a second
+    row bolted on, so the pin does not depend on the messy fixtures."""
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    from tests.reference_impl import _service_amounts
+
+    base = 1_000_000
+    # 500 m of road strictly inside D (x in [-500, 500], y in [0, 1000]),
+    # touching no other settlement.
+    extra = LineString([(base - 250, base + 500), (base + 250, base + 500)])
+    two_rows = gpd.GeoDataFrame(
+        {"service": ["road", "road"]},
+        geometry=[services["road"].geometry.iloc[0], extra], crs=city.crs)
+
+    amounts = _service_amounts(city, {**services, "road": two_rows})["road"]
+    assert amounts["A"] == pytest.approx(0.75, abs=1e-12)
+    assert amounts["E"] == pytest.approx(0.75, abs=1e-12)
+    assert amounts["D"] == pytest.approx(0.5, abs=1e-12), \
+        "the second road row was ignored"
+    for sid in ("B", "C", "RV", "IND"):
+        assert amounts[sid] == 0.0, sid
+
+
+def test_emit_expected_values_takes_a_city_and_defaults_to_oraculum(tmp_path):
+    from tests.cities import ORACULUM
+
+    implicit = tmp_path / "implicit.csv"
+    explicit = tmp_path / "explicit.csv"
+    emit_expected_values(implicit)
+    emit_expected_values(explicit, ORACULUM)
+    assert implicit.read_bytes() == explicit.read_bytes() == CSV.read_bytes()

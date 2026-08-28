@@ -20,6 +20,8 @@ the ideal (manuscript) and code (empirical) combinations.
 import pandas as pd
 from shapely.geometry import box
 
+from tests.cities import ORACULUM
+
 RULESETS = {
     "ideal": dict(adjacency_rule="border", barrier_rule="pair",
                   roads_formula="eq4", second_norm=False,
@@ -29,14 +31,13 @@ RULESETS = {
                  absent_neighbor_contribution="swallowed"),
 }
 
-SCENARIOS = {
-    # name: (dropped ids, dropped_before_neighbors)
-    "baseline": (frozenset(), False),
-    "excl_contributing": (frozenset({"RV", "IND"}), False),
-    "excl_removed": (frozenset({"RV", "IND"}), True),
-    "excl_ind_removed": (frozenset({"IND"}), True),
-    "excl_rv_only": (frozenset({"RV"}), False),
-}
+# Backward-compatible view of Oraculum's table in the 2-tuple shape this
+# module has always consumed: {name: (dropped ids, dropped_before_neighbors)}.
+# ORACULUM.scenarios' ORDER is today's order, which fixes expected_values.csv.
+# (tests/cities.py imports geopandas and nothing from this repo, so the
+# INDEPENDENCE RULE is intact: it is fixture plumbing, not index math.)
+SCENARIOS = {s.name: (s.dropped, s.dropped_before_neighbors)
+             for s in ORACULUM.scenarios}
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
 
@@ -104,16 +105,24 @@ def _service_amounts(settlements, services):
             i: 0 if gdf is None else
             int(sum(1 for g in gdf.geometry if g.within(idx[i])))
             for i in idx.index}
-    road = services["road"].geometry.iloc[0]
-    amounts["road"] = {i: road.intersection(idx[i]).length / 1000
-                       for i in idx.index}
+    # EVERY road row, not just the first: a city may carry the road network
+    # as several LineStrings (the messy city does), and production's
+    # `road_lengths` already sums all of them per settlement.
+    road_geoms = list(services["road"].geometry)
+    amounts["road"] = {
+        i: sum(road.intersection(idx[i]).length for road in road_geoms) / 1000
+        for i in idx.index}
     return amounts
 
 
 def compute_city(settlements, services, barriers, *, adjacency_rule,
                  barrier_rule, roads_formula, scenario, denom, second_norm,
-                 absent_neighbor_contribution):
-    dropped, drop_before = SCENARIOS[scenario]
+                 absent_neighbor_contribution, scenarios=None):
+    # `scenarios` defaults to the module table, so every existing call keeps
+    # working; a caller may pass its own WITHOUT mutating the global (which
+    # is what scripts/render_oracle_maps.py used to do).
+    table = SCENARIOS if scenarios is None else scenarios
+    dropped, drop_before = table[scenario]
     universe = settlements[~settlements["USO_AREA_U"].isin(dropped)] \
         if drop_before else settlements
 
@@ -170,18 +179,23 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     return df
 
 
-def emit_expected_values(out_path):
-    from tests.oraculum_fixtures import (
-        load_settlements, load_barriers, load_services,
-    )
-    city, barriers, services = (
-        load_settlements(), load_barriers(), load_services())
+def emit_expected_values(out_path, city=ORACULUM):
+    """Score `city` under every rule-set x scenario x denominator and write
+    the long-format CSV. `out_path` stays FIRST so existing callers (the
+    round-trip test, the generators) are unchanged.
+    """
+    settlements, barriers, services = (city.load_settlements(),
+                                       city.load_barriers(),
+                                       city.load_services())
+    scenarios = {s.name: (s.dropped, s.dropped_before_neighbors)
+                 for s in city.scenarios}
     records = []
     for rule, kwargs in RULESETS.items():
-        for scenario in SCENARIOS:
+        for scenario in scenarios:
             for denom in ("pop", "popdensity"):
-                df = compute_city(city, services, barriers, scenario=scenario,
-                                  denom=denom, **kwargs)
+                df = compute_city(settlements, services, barriers,
+                                  scenario=scenario, denom=denom,
+                                  scenarios=scenarios, **kwargs)
                 for sid, row in df.iterrows():
                     for metric, value in row.items():
                         records.append((rule, scenario, denom, sid,
@@ -193,8 +207,9 @@ def emit_expected_values(out_path):
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-    target = (Path(__file__).resolve().parent / "fixtures" / "oraculum"
-              / "expected_values.csv")
-    emit_expected_values(target)
-    print(f"wrote {target}")
+    from tests.cities import CITIES
+
+    for target_city in CITIES:
+        target = target_city.fixtures / "expected_values.csv"
+        emit_expected_values(target, target_city)
+        print(f"wrote {target}")
