@@ -66,16 +66,3 @@ def test_distance_to_point_km_is_metres_over_1000():
     assert out["ndmc_dist_km"].dtype.kind == "f"
     assert row["ndmc_dist_km"] == pytest.approx(
         centre.distance(row["centroid"]) / 1000, abs=1e-12)
-
-
-def test_shim_still_exposes_the_old_names():
-    """spatial_index_utils keeps working until the deletion task."""
-    import spatial_index_utils
-
-    city = load_settlements()
-    assert spatial_index_utils.get_row_index(city, "USO_AREA_U", "C") == \
-        geometry.row_index(city, "USO_AREA_U", "C")
-    for original, produced in zip(
-            spatial_index_utils.create_bbox_gdf(city.copy()).geometry,
-            geometry.bbox_frame(city).geometry):
-        assert produced.equals(original)

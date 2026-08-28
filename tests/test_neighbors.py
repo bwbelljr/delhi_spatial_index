@@ -96,18 +96,3 @@ def test_centroid_distances_are_km_tuples():
     dist = dict(row["nbrs_dist_bbox"])
     assert dist["E"] == pytest.approx(1.0, abs=1e-9)
     assert dist["RV"] == pytest.approx(1.0, abs=1e-9)
-
-
-def test_shim_still_matches_the_new_path():
-    import spatial_index_utils
-
-    city = prepared()
-    old = spatial_index_utils.add_polygon_neighbors_column_fast(
-        polygon_gdf=city.copy(),
-        right_gdf=geometry.bbox_frame(city.copy()),
-        id_colname="USO_AREA_U", neighbor_colname="nbrs_bbox",
-        barrier_colname="barrier")
-    new = neighbors.apply_barrier(
-        neighbors.adjacency(city, rule="bbox"),
-        list(load_barriers().geometry), rule="global_asymmetric")
-    assert lists_of(old) == lists_of(new)

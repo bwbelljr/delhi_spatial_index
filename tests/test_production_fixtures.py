@@ -57,3 +57,33 @@ def test_metric_set_is_explicit():
         assert banned not in cols
     assert set(SERVICES) == {
         "clinic", "school", "bank", "police", "ration", "transport", "road"}
+
+
+def test_no_sys_path_hacks_and_no_monolith():
+    """The package is installed; nothing may reach for the repo root."""
+    import subprocess
+
+    repo = PRODUCTION_DIR.parents[3]
+    assert not (repo / "spatial_index_utils.py").exists()
+    assert not (repo / "conftest.py").exists()
+    for script in ("preprocess.py", "compute_psi.py", "common.py"):
+        assert not (repo / "scripts" / script).exists(), script
+
+    # Exclude this file's own pathspec: it must quote both search terms as
+    # string literals to run the check, which would otherwise self-match.
+    hits = subprocess.run(
+        ["git", "grep", "-n", "sys.path.insert", "--",
+         "*.py", ":!archive/", ":!tests/test_production_fixtures.py"],
+        cwd=repo, capture_output=True, text=True)
+    assert hits.stdout == "", f"sys.path.insert still present:\n{hits.stdout}"
+
+    # A live reference is an import statement, not a historical docstring
+    # mention of where the code was copied from (self-review allows those,
+    # same as README/CHANGELOG/WORKPLAN prose).
+    imports = subprocess.run(
+        ["git", "grep", "-n", "-E",
+         r"^\s*(import|from) spatial_index_utils\b", "--",
+         "*.py", ":!archive/"],
+        cwd=repo, capture_output=True, text=True)
+    assert imports.stdout == "", \
+        f"spatial_index_utils still referenced:\n{imports.stdout}"

@@ -7,7 +7,6 @@ double-derived by the spec's ultracode review; the derivation worksheet
 
 import itertools
 import math
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -205,8 +204,7 @@ def test_recorded_ties_are_ground_truth():
 
 
 def test_invariants_guard_csv_wide():
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-    from check_oraculum_invariants import check
+    from scripts.check_oraculum_invariants import check
     assert check() == []
 
 

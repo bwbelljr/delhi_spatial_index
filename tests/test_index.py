@@ -149,15 +149,3 @@ def test_overall_psi_omits_norm_psi_when_second_normalization_is_false():
     got = index.overall_psi(frame, second_normalization=False)
     assert "unnorm_psi" in got.columns
     assert "norm_psi" not in got.columns
-
-
-def test_shim_still_matches_the_new_path():
-    import spatial_index_utils
-
-    city = load_settlements()
-    old = spatial_index_utils.add_point_count_column(
-        polygon_gdf=city.copy(), point_gdf=load_services()["clinic"],
-        count_colname="clinic_count")
-    new = index.point_counts(city, load_services()["clinic"],
-                             count_col="clinic_count")
-    assert list(old["clinic_count"]) == list(new["clinic_count"])

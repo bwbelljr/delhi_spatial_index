@@ -11,7 +11,6 @@ shape (never color) as their identity channel, since six more categorical
 hues layered on the settlement fills would blow the palette's series budget.
 """
 
-import sys
 from pathlib import Path
 
 import matplotlib
@@ -23,15 +22,14 @@ import pandas as pd
 from matplotlib.lines import Line2D
 
 REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
 
-from tests.oraculum_fixtures import (  # noqa: E402
+from tests.oraculum_fixtures import (
     load_barriers,
     load_exhibit,
     load_services,
     load_settlements,
 )
-from tests.reference_impl import (  # noqa: E402
+from tests.reference_impl import (
     RULESETS, SCENARIOS, adjacency, apply_barrier, compute_city,
 )
 

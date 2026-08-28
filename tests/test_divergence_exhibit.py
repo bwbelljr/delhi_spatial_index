@@ -84,17 +84,16 @@ def test_production_bbox_adjacency_on_exhibit(exhibit):
     review round 1 proved a bbox->geometry mutation in create_bbox_gdf
     survived the entire suite without this test.
     """
-    import geopandas as gpd
-
-    import spatial_index_utils
+    from delhi_psi import geometry, neighbors
 
     gdf = exhibit.copy()
     gdf["barrier"] = False
-    bbox_gdf = spatial_index_utils.create_bbox_gdf(gdf)
-    bbox_gdf = gpd.GeoDataFrame(bbox_gdf, crs=gdf.crs)
-    result = spatial_index_utils.add_polygon_neighbors_column_fast(
-        polygon_gdf=gdf, right_gdf=bbox_gdf, id_colname="USO_AREA_U",
-        neighbor_colname="nbrs_bbox", barrier_colname="barrier")
+    bbox_gdf = geometry.bbox_frame(gdf)
+    result = neighbors.apply_barrier(
+        neighbors.adjacency(gdf, id_col="USO_AREA_U",
+                            neighbor_col="nbrs_bbox", rule="bbox"),
+        [], id_col="USO_AREA_U", neighbor_col="nbrs_bbox",
+        rule="global_asymmetric", flag_col="barrier")
     got = {row["USO_AREA_U"]: set(row["nbrs_bbox"])
            for _, row in result.iterrows()}
     assert got == {"P": set(), "Q": {"P"}, "R": {"S"}, "S": {"R"}}
@@ -108,9 +107,9 @@ def test_production_bbox_geometry_is_exact_envelope(exhibit):
     polygon pairs sit metres apart, so an accidental buffer would rewrite
     neighbor lists city-wide while the oracle stayed green.
     """
-    import spatial_index_utils
+    from delhi_psi import geometry
 
     gdf = exhibit.copy()
-    bbox_gdf = spatial_index_utils.create_bbox_gdf(gdf)
+    bbox_gdf = geometry.bbox_frame(gdf)
     for original, produced in zip(gdf.geometry, bbox_gdf["geometry"]):
         assert produced.equals(original.envelope)
