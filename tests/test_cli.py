@@ -198,3 +198,45 @@ def test_service_layer_without_crs_exits_1(data_dir, tmp_path):
         gdf.set_crs(None, allow_override=True).to_file(bank)
     assert run("compute", "--config", "code-2025",
                "--data-dir", str(d), "--out-dir", str(out)) == 1
+
+
+def test_duplicate_service_row_is_dropped_before_validation(data_dir, tmp_path):
+    # The real bank layer has exact-duplicate rows; compute_psi.py used to
+    # drop_duplicates() the bank layer before its (print-only) checks.
+    # compute() must do the same before validate.require_layer, or this
+    # fails with `validation failed: layer 'bank' failed validation:
+    # has_duplicate_rows` — and the dedup must not double-count: the
+    # resulting bank_count must match the run without the duplicate.
+    import shutil
+
+    baseline_out = tmp_path / "baseline"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(baseline_out)) == 0
+    assert run("compute", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(baseline_out)) == 0
+    baseline = pd.read_csv(
+        baseline_out / "delhi_psi_code-2025_pop_2020.csv").set_index("USO_AREA_U")
+
+    dup_dir = tmp_path / "dup_data"
+    shutil.copytree(data_dir, dup_dir)
+    bank_path = dup_dir / "Public Services" / "Banking" / "Banking.shp"
+    bank = gpd.read_file(bank_path)
+    dup = gpd.GeoDataFrame(pd.concat([bank, bank.iloc[[0]]], ignore_index=True),
+                           crs=bank.crs)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="Column names longer than 10 characters",
+            category=UserWarning)
+        warnings.filterwarnings(
+            "ignore", message="Normalized/laundered field name",
+            category=RuntimeWarning)
+        dup.to_file(bank_path)
+
+    out = tmp_path / "dup"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(dup_dir), "--out-dir", str(out)) == 0
+    assert run("compute", "--config", "code-2025",
+               "--data-dir", str(dup_dir), "--out-dir", str(out)) == 0
+    got = pd.read_csv(out / "delhi_psi_code-2025_pop_2020.csv").set_index("USO_AREA_U")
+
+    pd.testing.assert_series_equal(got["bank_count"], baseline["bank_count"])

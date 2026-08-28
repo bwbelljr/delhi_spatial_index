@@ -337,6 +337,16 @@ def compute(cfg):
     services = {}
     for name, path in {**cfg.services.point, **cfg.services.line}.items():
         gdf = io.read_layer(data_dir / path)
+        # compute_psi.py (pre-refactor) dropped exact-duplicate rows from the
+        # bank layer before its checks; every service layer gets the same
+        # treatment here, before the battery below, so a layer with
+        # duplicate rows (e.g. the real bank layer) does not fail
+        # has_duplicate_rows.
+        n_before = len(gdf)
+        gdf = gdf.drop_duplicates().reset_index(drop=True)
+        n_dropped = n_before - len(gdf)
+        if n_dropped:
+            log.info("service %s: dropped %d duplicate rows", name, n_dropped)
         # Spec § 6: the compute stage's CRS check, run per-service BEFORE the
         # layer battery. require_layer's within_bounds reprojects to the
         # bounds CRS, which raises a raw (uncaught) ValueError on a CRS-less
