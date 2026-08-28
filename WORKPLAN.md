@@ -185,14 +185,26 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       byte-identical, real-data baseline at 0.000e+00. Spec
       `docs/superpowers/specs/2026-08-27-phase3b-categories-design.md`, plan
       `docs/superpowers/plans/2026-08-27-phase3b-categories.md`
-- [~] Modular & extensible structure: distance thresholds, decay weights,
+- [x] Modular & extensible structure: distance thresholds, decay weights,
       service sets, adjacency/barrier rules, and category mappings injectable
       as parameters (feeds the Phase 6 sweeps) [DEL-18]
-      — PARTIAL (3A, 27 Aug 2026): adjacency/barrier rules, service sets,
-      denominators, exclusion and units are config. Distance thresholds
-      (DEL-36) and alternative decay weights (DEL-37) are NOT — the schema
-      leaves room (`adjacency` and `decay` are mappings, not bare strings)
-      and Phase 6 adds the values with their reference rules
+      — done 28 Aug 2026 (3D): every item in that list is now a config value.
+      3A made adjacency/barrier rules, service sets, denominators, exclusion
+      and units config; 3B the category mappings; 3D adds the last two —
+      `adjacency.rule: within_distance` with `adjacency.max_distance_km`
+      (polygon-to-polygon band, `>= 0` km) and `decay.form`
+      (`inverse_linear` | `none` | `inverse_power` + `exponent` |
+      `exponential` + `scale_km`) with `decay.distance`
+      (`centroid` | `boundary`). Each new value has a reference-implementation
+      rule and oracle pins on both fixture cities (eight derived variants in
+      `tests/fixtures/*/variants_expected_values.csv`), so a Phase 6 sweep
+      point is one YAML file. No behaviour changed: both shipped profiles
+      gained only `decay.distance: centroid`, naming what they always did;
+      every committed fixture is byte-identical and the real-data baseline is
+      0.000e+00. Spec
+      `docs/superpowers/specs/2026-08-28-injectable-parameters-design.md`,
+      plan `docs/superpowers/plans/2026-08-28-injectable-parameters.md`,
+      procedure `docs/methodology-config.md` § 6
 - [ ] Bug audit — the Phase 2 oracle turned this from a vague mandate into a
       prioritized, evidence-backed list (all six divergences are documented in
       `docs/oracle/exclusion-semantics-memo.md` and pinned by tests):
@@ -366,13 +378,24 @@ Index formulation:
 Distance / reachability:
 - [ ] Distance-threshold sweep: 1 km / 5 km / 10 km; show index stability
       [DEL-36]
+      — profile only since 3D: `adjacency: {rule: within_distance,
+      max_distance_km: X}`, one YAML per point; see
+      `docs/methodology-config.md` § 6 (a complete `band-1km.yaml`, and the
+      measured cost of a 10 km `preprocess`)
 - [ ] Parameterize and vary the decay weight 1/(1+D) (currently arbitrary);
       revisit centroid-to-centroid vs. other distance definitions [DEL-37]
+      — profile only since 3D: `decay.form` (`none` | `inverse_power` +
+      `exponent` | `exponential` + `scale_km`) and `decay.distance`
+      (`centroid` | `boundary`); changing only `decay.*` does not invalidate
+      the neighbours artifact, so a decay sweep needs no re-`preprocess`
 - [ ] Per-service distance expectations (a school may reasonably be farther
       than water); connects to the walkability/food-desert framing [DEL-38]
 - [ ] Adjacency-method comparison (bbox vs. touch) as a reported variant —
       whichever rule Raj ratifies in bug-audit item 1 is the main text, the
       other is this variant [DEL-39]
+      — profile only since 3D: `adjacency.rule` is `bbox` | `touch` |
+      `within_distance`, and a 0 km band is the third comparison point (the
+      intersection rule, which is `touch` plus corner-only contacts)
 
 Service-set / measurement variants (from the workshop triage):
 - [ ] With/without **ration shops** sensitivity (demand-driven, targeted to

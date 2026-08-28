@@ -7,6 +7,52 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Phase 3D injectable parameters (DEL-18): the last two methodological
+  choices that were still code are config values. `methodology.adjacency.rule`
+  gains **`within_distance`** with a required `max_distance_km` — a
+  polygon-to-polygon band in km, `>= 0`, where 0 is the intersection rule
+  (corner-only touches and overlaps included), implemented with geopandas'
+  `dwithin` spatial join and pinned pair-for-pair against brute force.
+  `methodology.decay` gains **`form`** (`inverse_linear` | `none` |
+  `inverse_power` + `exponent` | `exponential` + `scale_km`) and a required
+  **`distance`** (`centroid` | `boundary`); under `boundary` every touching or
+  overlapping neighbour is at distance 0 and lends its services undecayed,
+  computed in a compute-local column so the stored neighbours artifact still
+  carries centroid distances and stays valid across every `decay.*` value. A
+  parameter its rule or form does not use is **rejected at load naming the
+  key**, never ignored. The artifact stamp now records
+  `adjacency.max_distance_km`, so a `compute` against another band's
+  neighbour lists is refused; artifacts built by 3A–3C, which lack the key,
+  keep loading. Proved on BOTH fixture cities by eight derived variants
+  (`tests/fixtures/{oraculum,messy}/variants_expected_values.csv`,
+  generator-emitted and drift-guarded, scored by the independent reference):
+  production reproduces the reference at 1e-12 on every variant × denominator,
+  plus a CLI round trip through a derived variant profile YAML. One table,
+  `tests/variants.py`, feeds both sides — it imports nothing from the repo, and
+  the reference builds its rule-sets from it by renaming block keys only, so
+  the two cannot drift. Hand pins: a 0 km band is the `intersects`
+  neighbourhood on both cities (`touch` ∪ {`L`↔`T`} on messy — the
+  corner-only pair `touch` cannot see); the bands are strictly nested
+  (10/12/14 undirected pairs on Oraculum, 5/8/10 on messy at 0 / 0.25 /
+  0.75 km); `inverse_power` 1 reproduces `inverse_linear` exactly; `RV` and
+  `D`, Oraculum's only single-neighbour settlements, pin `pow2` and `exp1` at
+  closed form; and `H`/`L` (boundary 0.131519 km vs centroid 1.127237 km) and
+  `G`/`M` (boundary 0.45 km vs centroid **0**) pin that centroid distance
+  misstates proximity in BOTH directions. **No number moved**: both shipped
+  profiles gained exactly one key, `decay.distance: centroid`, which names the
+  definition they have always used; both cities' `expected_values.csv` and all
+  four `production/*.csv` are byte-identical, and
+  `scripts/verify_against_baseline.py --config code-2025` still reports
+  `PASS — new run equivalent to July 2025 baseline within tolerance` with max
+  abs deviation `0.000e+00` on all 30 compared numeric columns (real-data
+  proof, 28 Aug 2026: `delhi-psi preprocess` — 4,357 settlements,
+  595 barrier-flagged; `delhi-psi compute` — 4,131 reported,
+  `categories: scheme=uso-10 n_categories=10`). Phase 6's sweeps (DEL-36
+  thresholds, DEL-37 decay weights, DEL-39 adjacency comparison) are now
+  loops over YAML profiles. Tests 386 → 539. Docs:
+  `docs/methodology-config.md` §§ 1, 4, 6 (a complete `band-1km.yaml`, the
+  X = 0 ≠ `touch` note, the centroid-vs-boundary note and the real-layer
+  timing note).
 - Phase 3C messy-city fixture tier (DEL-24): a **second** fixture city,
   `tests/fixtures/messy/`, carrying every real-layer pathology Oraculum omits
   by construction — eleven settlements with an irregular hexagon and a
