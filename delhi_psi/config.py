@@ -32,9 +32,16 @@ class ConfigError(ValueError):
 # --- the single enum table (spec § 3) ----------------------------------
 # dotted key -> {config value: reference knob value}
 REFERENCE_KNOBS = {
-    "methodology.adjacency.rule": {"bbox": "bbox", "touch": "border"},
+    "methodology.adjacency.rule": {"bbox": "bbox", "touch": "border",
+                                   "within_distance": "within_distance"},
     "methodology.barrier.rule": {"global_asymmetric": "global",
                                  "pairwise": "pair"},
+    "methodology.decay.form": {"inverse_linear": "inverse_linear",
+                               "none": "none",
+                               "inverse_power": "inverse_power",
+                               "exponential": "exponential"},
+    "methodology.decay.distance": {"centroid": "centroid",
+                                   "boundary": "boundary"},
     "methodology.roads": {"decayed": "decayed", "eq4_own_only": "eq4"},
     "methodology.second_normalization": {True: True, False: False},
     "methodology.exclusion.stage": {"post_neighbors": False,
@@ -49,6 +56,8 @@ REFERENCE_KNOBS = {
 ENUM_KEYS = (
     "methodology.adjacency.rule",
     "methodology.barrier.rule",
+    "methodology.decay.form",
+    "methodology.decay.distance",
     "methodology.roads",
     "methodology.exclusion.stage",
     "methodology.exclusion.absent_neighbor",
@@ -66,6 +75,8 @@ def _make_enum(name, key):
 
 AdjacencyRule = _make_enum("AdjacencyRule", "methodology.adjacency.rule")
 BarrierRule = _make_enum("BarrierRule", "methodology.barrier.rule")
+DecayForm = _make_enum("DecayForm", "methodology.decay.form")
+DecayDistance = _make_enum("DecayDistance", "methodology.decay.distance")
 RoadsFormula = _make_enum("RoadsFormula", "methodology.roads")
 ExclusionStage = _make_enum("ExclusionStage", "methodology.exclusion.stage")
 AbsentNeighbor = _make_enum("AbsentNeighbor",
@@ -75,6 +86,8 @@ Denominator = _make_enum("Denominator", "outputs.denominators[]")
 ENUMS = {
     "methodology.adjacency.rule": AdjacencyRule,
     "methodology.barrier.rule": BarrierRule,
+    "methodology.decay.form": DecayForm,
+    "methodology.decay.distance": DecayDistance,
     "methodology.roads": RoadsFormula,
     "methodology.exclusion.stage": ExclusionStage,
     "methodology.exclusion.absent_neighbor": AbsentNeighbor,
@@ -168,6 +181,9 @@ class ServicesConfig:
 @dataclass(frozen=True)
 class AdjacencyConfig:
     rule: AdjacencyRule
+    # None is "not applicable", never a default for the YAML key: the key is
+    # required by `within_distance` and rejected for every other rule.
+    max_distance_km: float | None = None
 
 
 @dataclass(frozen=True)
@@ -178,8 +194,11 @@ class BarrierConfig:
 
 @dataclass(frozen=True)
 class DecayConfig:
-    form: str
+    form: DecayForm
     distance_unit: str
+    distance: DecayDistance
+    exponent: float | None = None
+    scale_km: float | None = None
 
 
 @dataclass(frozen=True)
@@ -303,6 +322,33 @@ def _bool(key, value):
     return value
 
 
+def _conditional_number(mapping, key, prefix, *, used_by, applies, minimum,
+                        strict):
+    """A parameter exactly one rule/form uses: required by that one, refused
+    by every other, and never silently ignored.
+
+    `used_by` is the dotted key and value that DO use it, so the message
+    tells the reader which line to change.
+    """
+    dotted = f"{prefix}.{key}"
+    if not applies:
+        if key in mapping:
+            raise ConfigError(
+                f"{dotted}: not allowed here — it is only used by {used_by}")
+        return None
+    value = _require(mapping, key, prefix)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{dotted}: {value!r} is not allowed; expected a "
+                          "number")
+    if strict and not value > minimum:
+        raise ConfigError(f"{dotted}: {value!r} is not allowed; expected a "
+                          f"number > {minimum}")
+    if not strict and value < minimum:
+        raise ConfigError(f"{dotted}: {value!r} is not allowed; expected a "
+                          f"number >= {minimum}")
+    return float(value)
+
+
 # --- loader ------------------------------------------------------------
 class _UniqueKeyLoader(yaml.SafeLoader):
     """SafeLoader that refuses a repeated mapping key.
@@ -350,10 +396,18 @@ def _methodology(raw, *, allowed_categories):
                           "second_normalization", "exclusion"}, "methodology")
 
     adjacency_raw = _require(raw, "adjacency", "methodology")
-    _reject_unknown(adjacency_raw, {"rule"}, "methodology.adjacency")
-    adjacency = AdjacencyConfig(rule=_coerce_enum(
+    _reject_unknown(adjacency_raw, {"rule", "max_distance_km"},
+                    "methodology.adjacency")
+    adjacency_rule = _coerce_enum(
         "methodology.adjacency.rule",
-        _require(adjacency_raw, "rule", "methodology.adjacency")))
+        _require(adjacency_raw, "rule", "methodology.adjacency"))
+    adjacency = AdjacencyConfig(
+        rule=adjacency_rule,
+        max_distance_km=_conditional_number(
+            adjacency_raw, "max_distance_km", "methodology.adjacency",
+            used_by="methodology.adjacency.rule: within_distance",
+            applies=adjacency_rule == AdjacencyRule.WITHIN_DISTANCE,
+            minimum=0, strict=False))
 
     barrier_raw = _require(raw, "barrier", "methodology")
     _reject_unknown(barrier_raw, {"rule", "combine"}, "methodology.barrier")
@@ -371,17 +425,32 @@ def _methodology(raw, *, allowed_categories):
         combine=combine)
 
     decay_raw = _require(raw, "decay", "methodology")
-    _reject_unknown(decay_raw, {"form", "distance_unit"}, "methodology.decay")
-    form = _require(decay_raw, "form", "methodology.decay")
+    _reject_unknown(decay_raw, {"form", "distance_unit", "distance",
+                                "exponent", "scale_km"}, "methodology.decay")
+    form = _coerce_enum("methodology.decay.form",
+                        _require(decay_raw, "form", "methodology.decay"))
     unit = _require(decay_raw, "distance_unit", "methodology.decay")
-    if form != "inverse_linear":
-        raise ConfigError(f"methodology.decay.form: {form!r} is not allowed; "
-                          "allowed values: ['inverse_linear']")
     if unit != "km":
         raise ConfigError(
             f"methodology.decay.distance_unit: {unit!r} is not allowed; "
             "allowed values: ['km']")
-    decay = DecayConfig(form=form, distance_unit=unit)
+    decay = DecayConfig(
+        form=form,
+        distance_unit=unit,
+        # required like every methodology key: no default, never inherited
+        distance=_coerce_enum(
+            "methodology.decay.distance",
+            _require(decay_raw, "distance", "methodology.decay")),
+        exponent=_conditional_number(
+            decay_raw, "exponent", "methodology.decay",
+            used_by="methodology.decay.form: inverse_power",
+            applies=form == DecayForm.INVERSE_POWER,
+            minimum=0, strict=True),
+        scale_km=_conditional_number(
+            decay_raw, "scale_km", "methodology.decay",
+            used_by="methodology.decay.form: exponential",
+            applies=form == DecayForm.EXPONENTIAL,
+            minimum=0, strict=True))
 
     exclusion_raw = _require(raw, "exclusion", "methodology")
     _reject_unknown(exclusion_raw, {"types", "stage", "absent_neighbor"},

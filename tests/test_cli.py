@@ -295,7 +295,7 @@ def test_neighbors_artifact_carries_the_methodology_stamp(data_dir, tmp_path):
     frame = io.read_neighbors(out / "colonies_neighbors.joblib")
     assert frame.attrs["profile"] == "code-2025"
     assert frame.attrs["methodology"] == {
-        "adjacency": {"rule": "bbox"},
+        "adjacency": {"rule": "bbox", "max_distance_km": None},
         "barrier": {"rule": "global_asymmetric", "combine": "any"},
     }
 
@@ -337,6 +337,94 @@ def test_compute_rejects_an_unstamped_artifact(data_dir, tmp_path, capsys):
     assert run("compute", "--config", "code-2025",
                "--data-dir", str(data_dir), "--out-dir", str(out)) == 1
     assert "no methodology stamp" in capsys.readouterr().err
+
+
+# --- 3D: the band is part of the stamp (spec § 4.5) --------------------
+def _stamped(methodology, profile="code-2025"):
+    """A frame carrying nothing but a stamp: check_methodology_stamp reads
+    `attrs` only, so this is the whole input it needs."""
+    from delhi_psi import pipeline
+
+    frame = pd.DataFrame({"USO_AREA_U": ["A"]})
+    frame.attrs["profile"] = profile
+    frame.attrs["methodology"] = pipeline.methodology_stamp(methodology)
+    return frame
+
+
+def _band_config(km):
+    from dataclasses import replace
+
+    from delhi_psi.config import AdjacencyConfig, AdjacencyRule
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    return replace(cfg, methodology=replace(
+        cfg.methodology,
+        adjacency=AdjacencyConfig(rule=AdjacencyRule.WITHIN_DISTANCE,
+                                  max_distance_km=km)))
+
+
+def test_the_stamp_records_the_band():
+    from delhi_psi import pipeline
+    from tests.oraculum_fixtures import oracle_config
+
+    assert pipeline.methodology_stamp(
+        oracle_config("code-2025").methodology)["adjacency"] == {
+            "rule": "bbox", "max_distance_km": None}
+    assert pipeline.methodology_stamp(
+        _band_config(1.0).methodology)["adjacency"] == {
+            "rule": "within_distance", "max_distance_km": 1.0}
+
+
+@pytest.mark.parametrize("configured,fragment", [
+    ("bbox", "within_distance"),      # a different RULE
+    (1.5, "max_distance_km"),         # the same rule, a different radius
+])
+def test_an_artifact_built_at_another_band_is_refused(configured, fragment):
+    from delhi_psi import pipeline, validate
+    from tests.oraculum_fixtures import oracle_config
+
+    frame = _stamped(_band_config(1.0).methodology)
+    cfg = oracle_config("code-2025") if configured == "bbox" \
+        else _band_config(configured)
+    with pytest.raises(validate.ValidationError, match=fragment):
+        pipeline.check_methodology_stamp(frame, cfg)
+
+
+def test_a_pre_3d_artifact_still_loads_for_a_bbox_config():
+    """3A-3C artifacts have no `max_distance_km` key: `stored.get(...)`
+    yields None, which equals the configured None — so `code-2025`'s pinned
+    colonies_neighbors.joblib keeps loading without a re-preprocess."""
+    from delhi_psi import pipeline
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    frame = pd.DataFrame({"USO_AREA_U": ["A"]})
+    frame.attrs["profile"] = "code-2025"
+    frame.attrs["methodology"] = {
+        "adjacency": {"rule": "bbox"},
+        "barrier": {"rule": "global_asymmetric", "combine": "any"},
+    }
+    pipeline.check_methodology_stamp(frame, cfg)      # must not raise
+
+
+def test_changing_only_the_decay_does_not_invalidate_an_artifact():
+    """Decay is applied downstream in `compute`, so an artifact stays valid
+    across every decay.* value — `boundary` included, whose distances are
+    computed at compute time and never stored."""
+    from dataclasses import replace
+
+    from delhi_psi import pipeline
+    from delhi_psi.config import DecayConfig, DecayDistance, DecayForm
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    frame = _stamped(cfg.methodology)
+    other = replace(cfg, methodology=replace(
+        cfg.methodology,
+        decay=DecayConfig(form=DecayForm.EXPONENTIAL, distance_unit="km",
+                          distance=DecayDistance.BOUNDARY, scale_km=1.0)))
+    pipeline.check_methodology_stamp(frame, other)    # must not raise
 
 
 # --- I3: the dedup cache's hit branch ---------------------------------

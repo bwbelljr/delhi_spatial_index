@@ -9,7 +9,9 @@ re-apply the CRS on read.
 import json
 from pathlib import Path
 
-from scripts.check_oraculum_invariants import emit_checked_expected_values
+from scripts.check_oraculum_invariants import (
+    emit_checked_expected_values, emit_checked_variant_expected_values,
+)
 from tests.cities import ORACULUM
 
 BASE_X, BASE_Y = 1_000_000, 1_000_000
@@ -108,6 +110,11 @@ def main():
     # reference change without a regenerated CSV fail the build. The output
     # is byte-identical to what tests/reference_impl.py's __main__ wrote.
     print(f"wrote {emit_checked_expected_values(ORACULUM, OUT / 'expected_values.csv')}")
+
+    # The variants fixture (spec 3D § 3): same city, ONE scenario, eight
+    # derived rule-sets. Guarded by the band check AND the CSV-wide
+    # invariants guard before anything is written.
+    print(f"wrote {emit_checked_variant_expected_values(ORACULUM, OUT / 'variants_expected_values.csv')}")
 
 
 if __name__ == "__main__":

@@ -22,7 +22,9 @@ from pathlib import Path
 
 from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 
-from scripts.check_oraculum_invariants import emit_checked_expected_values
+from scripts.check_oraculum_invariants import (
+    emit_checked_expected_values, emit_checked_variant_expected_values,
+)
 from tests.cities import MESSY
 
 BASE_X, BASE_Y = 1_000_000, 1_000_000
@@ -308,6 +310,10 @@ def main():
     path = emit_checked_expected_values(MESSY, OUT / "expected_values.csv")
     print(f"wrote fixtures to {OUT}")
     print(f"wrote {path}")
+
+    variants = emit_checked_variant_expected_values(
+        MESSY, OUT / "variants_expected_values.csv")
+    print(f"wrote {variants}")
 
 
 if __name__ == "__main__":

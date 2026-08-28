@@ -21,13 +21,16 @@ allowed values as an inline comment. The ones on the table with Raj:
 
 | switch | today (`code-2025`) | paper (`manuscript`) | decides |
 |---|---|---|---|
-| `adjacency.rule` | `bbox` | `touch` | suggested-fixes memo § 1 (DEL-19) — bbox adjacency invents neighbours |
+| `adjacency.rule` | `bbox` | `touch` | memo § 1 (DEL-19) — bbox adjacency invents neighbours. A third value, `within_distance`, is the Phase 6 distance band (§ 6, DEL-36/39) |
 | `barrier.rule` | `global_asymmetric` | `pairwise` | memo § 2 (DEL-22) — sever the crossing pair only |
 | `roads` | `decayed` | `eq4_own_only` | memo § 3 (DEL-22) — Eq. 4 has no neighbour term |
 | `second_normalization` | `true` | `false` | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1 |
 | `outputs.denominators` | `[pop, popdensity]` | `[pop]` | memo "Popdensity denominator" (DEL-22) |
 | `exclusion.absent_neighbor` | `swallowed` | `contributes` | memo § 5 / Open Decision A (DEL-13, DEL-21) — do dropped settlements still lend services? |
 | `decay.distance_unit` | `km` | (manuscript silent) | memo § 7 |
+| `adjacency.max_distance_km` | — (unused) | — (unused) | DEL-36 — the band's radius in km, polygon-to-polygon. **Required** iff `adjacency.rule: within_distance`, and **rejected** otherwise; `>= 0`, where 0 means "every polygon that intersects i" (§ 6) |
+| `decay.form` | `inverse_linear` | `inverse_linear` | DEL-37 — the decay weight w(D): `inverse_linear` = 1/(1+D), `none` = 1, `inverse_power` = 1/(1+D)^`exponent`, `exponential` = e^(−D/`scale_km`). `exponent` / `scale_km` are required by, and only by, their own form |
+| `decay.distance` | `centroid` | `centroid` | DEL-37 — what D means: `centroid` (centroid-to-centroid, as every run so far) or `boundary` (polygon-to-polygon, so every touching or overlapping neighbour is at 0 and lends its services undecayed) |
 
 Also in the block: `exclusion.types` (which **categories** are dropped —
 category names, not raw `USO_FINAL` types; `[RV]` today, which is a category
@@ -223,6 +226,20 @@ Work on a branch; `main` requires the CI check.
 - `tests/test_profiles_match_reference.py` — production == the independent
   reference implementation at 1e-12 for the profiles in `PROFILE_RULES`, on
   every city × scenario × denominator.
+- `tests/test_variant_rules.py` — **both** cities: the hand-derivable pins for
+  the injectable parameters on the REFERENCE side — a 0 km band is exactly
+  the `intersects` neighbourhood (and on the messy city that is `touch` plus
+  the corner-only `L`/`T` pair), the bands are strictly nested,
+  `inverse_power` 1 reproduces `inverse_linear` on every PCEN, and `pow2` /
+  `exp1` / `none` / `boundary` are pinned at closed-form arithmetic written
+  out in the test. Plus the loader's rejection table: a parameter its form or
+  rule does not use is an error, never an ignored value.
+- `tests/test_variants_match_reference.py` — **both** cities: production ==
+  the independent reference at 1e-12 on all eight derived variants × both
+  denominators (`tests/fixtures/<city>/variants_expected_values.csv`,
+  generator-emitted and covered by the CI drift guard), plus a CLI round trip
+  through a derived variant profile YAML — config file → stamped artifact →
+  `compute` → CSV — and the stamp refusing an artifact built at another band.
 - `tests/test_messy_fixtures.py` — **messy**-only: what production does on
   each real-layer pathology today (bbox-invented neighbours, the overlap
   double count, the no-population drop). A pin here flips when DEL-19/DEL-20
@@ -248,3 +265,157 @@ comments) require, in order — this is the 3C cycle:
    (`uv run python tests/reference_impl.py`);
 5. the production implementation in `delhi_psi/` if the branch does not
    already exist.
+
+## 6. Phase 6 sweeps: one profile per point
+
+Since cycle 3D (28 Aug 2026) the two remaining methodological choices —
+which settlements count as neighbours at a DISTANCE, and how distance
+discounts their services — are config values with reference rules and oracle
+pins. A sweep point (DEL-36 thresholds, DEL-37 decay weights, DEL-39
+adjacency comparison) is therefore one YAML file plus the § 3 registration
+steps: no code fork, no branch.
+
+### The whole profile for one point
+
+`delhi_psi/profiles/band-1km.yaml` — a copy of `code-2025` with **two**
+values changed (`adjacency.rule`, `adjacency.max_distance_km`) and the
+profile renamed (and `paths.neighbors_artifact` left out so the artifact
+takes its default per-profile name instead of overwriting `code-2025`'s).
+No methodology value moves, which is what makes the diff against
+`code-2025`'s outputs attributable to the band alone:
+
+```yaml
+profile: band-1km
+crs: {epsg: 7760}
+paths:
+  data_dir: ~/delhi_data            # overridable: --data-dir, DELHI_DATA_DIR
+                                    # neighbors_artifact: omitted on purpose —
+                                    # it defaults to
+                                    # colonies_neighbors_band-1km.joblib, so
+                                    # this profile cannot overwrite code-2025's
+layers:
+  settlements: {path: uso_update_sep2021/uso_update_sep2021.shp,
+                id_col: USO_AREA_U, type_col: USO_FINAL}
+  population:  {path: pop_colony_wp_2020_jjc_adjusted.csv,
+                id_col: uso_area_u, value_col: population,
+                missing: drop}
+  bounds: delhi_bounds_buffer/delhi_bounds_buffer.shp
+  ndmc_center: ndmc_center7760/ndmc_center7760.shp
+  barriers: {canal: Barrier_Clip/Canal/Canal.shp,
+             railway: Barrier_Clip/Railway/Railway_Line.shp,
+             drain: Barrier_Clip/Drain/Major_Drain.shp}
+services:
+  point: {bank: Public Services/Banking/Banking.shp,
+          health: Public Services/Health/Health.shp,
+          police: Public Services/Police/Police Station.shp,
+          ration: Public Services/Ration/Ration.shp,
+          school: Public Services/School/schools7760.shp,
+          transport: Public Services/Transport/Transport.shp}
+  line:  {road: Public Services/Major Road/Road.shp}
+categories:
+  scheme: uso-10
+  mapping:
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
+methodology:
+  adjacency:
+    rule: within_distance           # THE CHANGE (1 of 2)
+    max_distance_km: 1.0            # THE CHANGE (2 of 2) — km, polygon-to-polygon
+  barrier:
+    rule: global_asymmetric
+    combine: any
+  decay:
+    form: inverse_linear
+    distance: centroid
+    distance_unit: km
+  roads: decayed
+  second_normalization: true
+  exclusion:
+    types: [RV]
+    stage: post_neighbors
+    absent_neighbor: swallowed
+validate:
+  max_missing_population: 15
+outputs:
+  denominators: [pop, popdensity]
+  formats: [csv, shp, joblib]
+  name_template: "delhi_psi_{profile}_{denominator}_2020"
+```
+
+For 5 km and 10 km, change the one number. For a decay sweep, leave
+`adjacency` at `code-2025`'s `{rule: bbox}` and change the `decay` block
+instead — e.g. `{form: inverse_power, exponent: 2, distance: centroid,
+distance_unit: km}` or `{form: exponential, scale_km: 1.0, distance:
+centroid, distance_unit: km}`. `exponent` and `scale_km` are required by, and
+rejected outside of, their own form: a profile that carries `exponent` under
+`inverse_linear` fails to load naming the key, rather than silently ignoring
+it.
+
+### X = 0 is not `touch`
+
+`max_distance_km: 0` means "every polygon whose distance to i is 0" —
+intersection-inclusive. That is **not** the `touch` rule: `touch` requires the
+shared intersection to have positive LENGTH, so it misses a pair meeting at a
+single corner point. On the messy fixture city the 0 km band is exactly the
+`touch` neighbourhood plus the corner-only pair `L`/`T`, whose intersection is
+a Point. Overlapping polygons are in both (an overlap's intersection is a
+polygon, whose `.length` is its perimeter). If you want "shares a border",
+write `rule: touch`; the band at 0 is the intersection rule.
+
+### Centroid vs boundary distance
+
+`decay.distance` names what D is in the weight, and the two definitions
+disagree in BOTH directions:
+
+- A big neighbour is far by centroid and near by boundary. On the messy city
+  `H` and `L` are disjoint but interlocked: 0.131519 km apart at the
+  boundary, 1.127237 km apart at the centroids. Under `inverse_linear` that
+  is a weight of 0.88 against 0.47 for the same physical adjacency.
+- A neighbour with a hole in it can be near by centroid and far by boundary.
+  `M` is a two-part settlement whose centroid falls in its own gap, exactly
+  on `G`'s centroid: centroid distance 0 (weight **1**, as if the two were
+  the same place) while the polygons are 0.45 km apart (weight 1/1.45).
+
+Under `boundary` every touching or overlapping neighbour is at distance 0 and
+therefore lends its services **undecayed**, under all four forms. That is a
+real methodological choice, not a bug fix — hence the config value.
+
+**The band radius is judged against BOUNDARY distances even when
+`decay.distance: centroid`,** because `within_distance` is polygon-to-polygon
+by definition. Do not size a radius from the derivation worksheet's
+centroid-to-centroid numbers.
+
+### What a band costs on the real layer
+
+A wide band multiplies the link count roughly with the swept area, so a
+10 km band has on the order of two orders of magnitude more directed links
+than `code-2025`'s `bbox` rule, whose mean degree on the real settlement
+layer (4,357 settlements) is about 7 pre-barrier (4.9 after the barrier
+rule severs links). The `dwithin` spatial join itself is a
+single vectorized query and stays fast at any radius; the cost is
+downstream, in `apply_barrier` and `centroid_distances`, which are per-link
+Python loops. Budget tens of minutes for a `preprocess` at a 10 km band —
+run it into a scratch `--out-dir`, never under the baseline data, and skip
+`compute` for a timing check. Each band needs its own `preprocess`: the
+neighbours artifact is stamped with `adjacency.max_distance_km`, and
+`compute` refuses an artifact built at a different radius.
+
+Measured on 28 Aug 2026 at commit `afec696` (`code-2025` with
+`adjacency: {rule: within_distance, max_distance_km: 10.0}`, scratch
+`--out-dir`, cold dedup cache, no `compute`): `preprocess` took
+**2,491 s (41.5 min)** wall-clock and produced **4,366,055 directed links**
+over 4,357 settlements — mean degree 1,002, maximum 1,779, and **no**
+isolated settlement (the `bbox` rule leaves 6, `touch` 20; see
+`docs/data/layer_pathologies.md`). The stamp on the artifact read
+`adjacency: {rule: within_distance, max_distance_km: 10.0}`. About a
+quarter of that time is the one-off settlement dedup that a warm cache
+skips; the rest is the per-link loops, so expect the cost to scale with
+the link count, i.e. roughly with the square of the radius.

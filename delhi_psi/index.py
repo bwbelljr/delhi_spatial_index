@@ -11,6 +11,7 @@ The one behavioural change is DEL-21: `calc_pcen_mobile`'s bare
 """
 
 import logging
+import math
 
 import geopandas as gpd
 
@@ -84,22 +85,57 @@ def service_amount_column(service, kind):
         f"unknown service kind {kind!r}; allowed values: ['point', 'line']")
 
 
-def _decay(distance_km, decay_form, distance_unit):
-    if decay_form != "inverse_linear":
-        raise ValueError(
-            f"unknown decay form {decay_form!r}; allowed values: "
-            "['inverse_linear']")
+DECAY_FORMS = ("inverse_linear", "none", "inverse_power", "exponential")
+
+
+def _decay(distance_km, decay_form, distance_unit, *, exponent=None,
+           scale_km=None):
+    """The distance-decay weight w(D).
+
+    inverse_linear: 1/(1+D) — the July 2025 rule.
+    none:           1 — every neighbour counts in full.
+    inverse_power:  1/(1+D)^exponent; exponent 1 reproduces inverse_linear.
+    exponential:    exp(-D/scale_km).
+
+    A parameter the form does not use is an error, never an ignored value.
+    """
     if distance_unit != "km":
         raise ValueError(
             f"unknown decay distance unit {distance_unit!r}; allowed values: "
             "['km']")
-    return 1 / (1 + distance_km)
+    if decay_form not in DECAY_FORMS:
+        raise ValueError(
+            f"unknown decay form {decay_form!r}; allowed values: "
+            f"{list(DECAY_FORMS)}")
+    if decay_form == "inverse_power":
+        if exponent is None:
+            raise ValueError("decay form 'inverse_power' requires exponent")
+    elif exponent is not None:
+        raise ValueError(
+            f"exponent is not used by decay form {decay_form!r}; it is used "
+            "by 'inverse_power'")
+    if decay_form == "exponential":
+        if scale_km is None:
+            raise ValueError("decay form 'exponential' requires scale_km")
+    elif scale_km is not None:
+        raise ValueError(
+            f"scale_km is not used by decay form {decay_form!r}; it is used "
+            "by 'exponential'")
+
+    if decay_form == "inverse_linear":
+        return 1 / (1 + distance_km)
+    if decay_form == "none":
+        return 1.0
+    if decay_form == "inverse_power":
+        return 1 / (1 + distance_km) ** exponent
+    return math.exp(-distance_km / scale_km)
 
 
 def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
          nbr_dist_col="nbrs_dist_bbox", lookup_frame=None,
          absent_neighbor="swallowed", include_neighbors=True,
-         decay_form="inverse_linear", distance_unit="km",
+         decay_form="inverse_linear", distance_unit="km", exponent=None,
+         scale_km=None,
          pop_col="population", area_col="area_km2", id_col="USO_AREA_U"):
     """Eq. 3: effective service count per denominator, with distance decay.
 
@@ -134,7 +170,8 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
 
     # probe the decay knobs once, so a bad value fails even on a city with
     # no neighbour links at all
-    _decay(0.0, decay_form, distance_unit)
+    _decay(0.0, decay_form, distance_unit, exponent=exponent,
+           scale_km=scale_km)
 
     gdf_copy[pcen_col] = -1.0
 
@@ -159,7 +196,9 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                     continue
                 nbr_count = match[amount_col].array[0]
                 poly_count += nbr_count * _decay(nbr_dist, decay_form,
-                                                 distance_unit)
+                                                 distance_unit,
+                                                 exponent=exponent,
+                                                 scale_km=scale_km)
 
         gdf_copy.loc[idx, pcen_col] = poly_count / denom
 
@@ -189,6 +228,7 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
                   nbr_dist_col="nbrs_dist_bbox", lookup_frame=None,
                   absent_neighbor="swallowed", include_neighbors=True,
                   decay_form="inverse_linear", distance_unit="km",
+                  exponent=None, scale_km=None,
                   pop_col="population", area_col="area_km2",
                   id_col="USO_AREA_U"):
     """pcen then minmax for one service — replaces BOTH create_service_index
@@ -199,7 +239,8 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
                denominator=denominator, nbr_dist_col=nbr_dist_col,
                lookup_frame=lookup_frame, absent_neighbor=absent_neighbor,
                include_neighbors=include_neighbors, decay_form=decay_form,
-               distance_unit=distance_unit, pop_col=pop_col,
+               distance_unit=distance_unit, exponent=exponent,
+               scale_km=scale_km, pop_col=pop_col,
                area_col=area_col, id_col=id_col)
     return minmax(out, source_col=pcen_col, target_col=idx_col)
 

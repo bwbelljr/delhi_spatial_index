@@ -3,6 +3,8 @@
 The exclusion axes are tested here directly, because this is where DEL-21's
 `except: pass` becomes an explicit lookup.
 """
+import math
+
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -113,7 +115,8 @@ def test_contributes_with_an_id_absent_from_the_lookup_frame_raises():
 @pytest.mark.parametrize("kwargs,match", [
     (dict(denominator="households"), "households"),
     (dict(absent_neighbor="maybe"), "maybe"),
-    (dict(decay_form="exponential"), "exponential"),
+    (dict(decay_form="sideways"), "sideways"),
+    (dict(decay_form="exponential"), "scale_km"),
     (dict(distance_unit="m"), "'m'"),
 ])
 def test_pcen_rejects_unknown_values(kwargs, match):
@@ -149,3 +152,69 @@ def test_overall_psi_omits_norm_psi_when_second_normalization_is_false():
     got = index.overall_psi(frame, second_normalization=False)
     assert "unnorm_psi" in got.columns
     assert "norm_psi" not in got.columns
+
+
+# --- 3D: the four decay forms (spec § 2.2) -----------------------------
+@pytest.mark.parametrize("form,kwargs,expected", [
+    ("inverse_linear", {}, 1 / 1.5),
+    ("none", {}, 1.0),
+    ("inverse_power", {"exponent": 1}, 1 / 1.5),
+    ("inverse_power", {"exponent": 2}, 1 / 1.5 ** 2),
+    ("exponential", {"scale_km": 1.0}, math.exp(-0.5)),
+    ("exponential", {"scale_km": 2.0}, math.exp(-0.25)),
+])
+def test_decay_forms_at_half_a_kilometre(form, kwargs, expected):
+    assert index._decay(0.5, form, "km", **kwargs) == pytest.approx(
+        expected, abs=1e-15)
+
+
+@pytest.mark.parametrize("form,kwargs", [
+    ("inverse_linear", {}), ("none", {}),
+    ("inverse_power", {"exponent": 2}), ("exponential", {"scale_km": 1.0}),
+])
+def test_every_form_gives_weight_one_at_zero_distance(form, kwargs):
+    """Why `decay.distance: boundary` leaves every touching or overlapping
+    neighbour undecayed, under all four forms."""
+    assert index._decay(0.0, form, "km", **kwargs) == 1.0
+
+
+@pytest.mark.parametrize("args,kwargs,match", [
+    (("sideways", "km"), {}, "sideways"),
+    (("inverse_power", "km"), {}, "exponent"),
+    (("exponential", "km"), {}, "scale_km"),
+    (("inverse_linear", "km"), {"exponent": 2}, "exponent"),
+    (("none", "km"), {"scale_km": 1.0}, "scale_km"),
+    (("inverse_linear", "m"), {}, "'m'"),
+])
+def test_decay_rejects_unknown_forms_and_misplaced_parameters(args, kwargs,
+                                                              match):
+    with pytest.raises(ValueError, match=match):
+        index._decay(0.5, *args, **kwargs)
+
+
+def test_pcen_uses_the_form_and_its_parameter():
+    """Same two-settlement city as test_pcen_pop_denominator_matches_eq3_by_hand
+    (X owns 2 clinics, Y owns 0, each is the other's only neighbour at
+    1.0 km, Y's population is 200) with the weight changed: under
+    `inverse_power` 2 the neighbour lends 2 * 1/(1+1)**2 instead of 2 * 1/2.
+    """
+    got = index.pcen(city_with_neighbours(), amount_col="clinic_count",
+                     pcen_col="clinic_pcen", denominator="pop",
+                     decay_form="inverse_power", exponent=2)
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["Y"] == pytest.approx((0 + 2 * 1 / (1 + 1.0) ** 2) / 200,
+                                        abs=1e-12)   # 0.0025
+
+
+def test_service_index_forwards_the_decay_parameters():
+    """`service_index` is what `index_frames` actually calls, so the
+    parameters have to survive that hop too: `exponential` with scale_km 1
+    gives Y (0 + 2 * e^-1) / 200."""
+    import math
+
+    got = index.service_index(city_with_neighbours(), "clinic_count",
+                              service="clinic", denominator="pop",
+                              decay_form="exponential", scale_km=1.0)
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["Y"] == pytest.approx((0 + 2 * math.exp(-1.0)) / 200,
+                                        abs=1e-12)

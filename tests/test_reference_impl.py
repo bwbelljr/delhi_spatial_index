@@ -18,7 +18,9 @@ from tests.oraculum_fixtures import (
 )
 from tests.reference_impl import (
     RULESETS, adjacency, apply_barrier, compute_city, emit_expected_values,
+    emit_variant_expected_values,
 )
+from tests.variants import BAND_RADII_KM, VARIANTS
 
 CSV = Path(__file__).resolve().parent / "fixtures" / "oraculum" / "expected_values.csv"
 
@@ -286,3 +288,56 @@ def test_emit_expected_values_takes_a_city_and_defaults_to_oraculum(tmp_path):
     emit_expected_values(implicit)
     emit_expected_values(explicit, ORACULUM)
     assert implicit.read_bytes() == explicit.read_bytes() == CSV.read_bytes()
+
+
+# --- 3D: the variants fixture (spec § 3, § 4.4) ------------------------
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_variants_expected_values_csv_is_regenerable(city, tmp_path):
+    """Same contract as expected_values.csv: the committed file must be
+    exactly what the reference produces, or a red build could be 'fixed' by
+    editing the fixture."""
+    regen = tmp_path / "regen.csv"
+    emit_variant_expected_values(regen, city)
+    assert regen.read_bytes() == (
+        city.fixtures / "variants_expected_values.csv").read_bytes()
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_variants_csv_passes_the_csv_wide_invariants_guard(city):
+    """`check` groups by (rule, scenario, denom, metric), so it is CSV-shape
+    agnostic: the variants file gets the same degenerate-min-max and
+    tied-anchor guarantees as expected_values.csv."""
+    from scripts.check_oraculum_invariants import check
+
+    frame = pd.read_csv(city.fixtures / "variants_expected_values.csv")
+    assert check(frame, city=city) == []
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_variants_csv_has_one_scenario_and_every_variant(city):
+    path = city.fixtures / "variants_expected_values.csv"
+    frame = pd.read_csv(path)
+    assert set(frame["rule"]) == set(VARIANTS)
+    assert set(frame["scenario"]) == {city.scenarios[0].name}
+    assert set(frame["denom"]) == {"pop", "popdensity"}
+    assert list(frame.columns) == ["rule", "scenario", "denom", "settlement",
+                                   "metric", "value"]
+    assert b"\r" not in path.read_bytes(), "fixtures are LF-only"
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_band_guard_passes_for_both_cities(city):
+    from scripts.check_oraculum_invariants import check_bands
+
+    assert check_bands(city) == []
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_band_guard_reports_a_wrong_count(city):
+    """The guard must be able to FAIL: move a vertex so a band gains or
+    loses a pair and the generator has to refuse to write."""
+    from scripts.check_oraculum_invariants import check_bands
+
+    violations = check_bands(city, expected={km: 0 for km in BAND_RADII_KM})
+    assert len(violations) == len(BAND_RADII_KM)
+    assert all("pair count" in violation for violation in violations)

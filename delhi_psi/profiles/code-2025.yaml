@@ -42,13 +42,23 @@ categories:                         # source type -> category (spec 3B 2)
     Industrial: Industrial
     Other: Other
 methodology:
-  adjacency: {rule: bbox}           # rule: bbox | touch
+  adjacency:
+    rule: bbox                      # bbox | touch | within_distance
+                                    # max_distance_km: required iff rule is
+                                    # within_distance (>= 0 km, polygon-to-polygon)
   barrier:
     rule: global_asymmetric         # global_asymmetric | pairwise
                                     # partial_weighted: reserved (spec 4)
     combine: any                    # any | [layer names]; which flags OR into `barrier`
                                     # (every configured layer's flag column is always computed)
-  decay: {form: inverse_linear, distance_unit: km}   # 1/(1+d); only value in 3A
+  decay:
+    form: inverse_linear            # inverse_linear | none | inverse_power | exponential
+                                    # exponent: required iff form is inverse_power (> 0)
+                                    # scale_km:  required iff form is exponential (> 0)
+    distance: centroid              # centroid | boundary — `centroid` names the
+                                    # centroid-to-centroid distance this profile
+                                    # has always used; nothing changes
+    distance_unit: km               # km
   roads: decayed                    # decayed | eq4_own_only
   second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
   exclusion:
