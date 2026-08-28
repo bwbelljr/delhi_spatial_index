@@ -33,6 +33,9 @@ jobs:
 
       - name: Fixture drift guard (generators must match committed fixtures)
         run: |
+          # Glob order does not matter here: both geometry generators
+          # (messy, oraculum) are deterministic, and generate_production_fixtures.py
+          # reads the committed GeoJSON rather than depending on the others' output.
           for g in scripts/generate_*_fixtures.py; do
             uv run python "$g"
           done

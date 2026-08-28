@@ -5,19 +5,17 @@ reference denominators, independent of the profile's outputs.denominators
 (spec § 7). The mapping test reads the SAME table the config enums are
 generated from, so a value with no reference knob cannot be added silently.
 """
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
 from delhi_psi.config import ENUMS, ENUM_KEYS, REFERENCE_KNOBS, load_config
+from tests.cities import CITIES
 from tests.oraculum_fixtures import (
     ORACLE_SCENARIOS, compute_oracle_frame, load_barriers, load_services,
     load_settlements,
 )
 from tests.reference_impl import RULESETS, compute_city
 
-CSV = Path(__file__).resolve().parent / "fixtures" / "oraculum" / "expected_values.csv"
 REFERENCE_DENOMS = ("pop", "popdensity")
 
 # profile -> the reference rule-set whose rows it must reproduce (spec § 4)
@@ -36,10 +34,19 @@ METRIC_MAP = {
     "unnorm_psi": "psi_eq1", "norm_psi": "norm_psi",
 }
 
+# (city, scenario) — each city brings its OWN scenario table (spec § 6).
+CASES = [(city, scenario) for city in CITIES for scenario in city.scenarios]
+
+
+def case_id(case):
+    city, scenario = case
+    return f"{city.name}-{scenario.name}"
+
 
 @pytest.fixture(scope="module")
 def expected():
-    return pd.read_csv(CSV)
+    return {city.name: pd.read_csv(city.fixtures / "expected_values.csv")
+            for city in CITIES}
 
 
 def reference_block(expected, rule, scenario, denom):
@@ -56,18 +63,21 @@ def metrics_for(profile):
 
 
 @pytest.mark.parametrize("denom", REFERENCE_DENOMS)
-@pytest.mark.parametrize("scenario,types,stage", ORACLE_SCENARIOS)
+@pytest.mark.parametrize("case", CASES, ids=case_id)
 @pytest.mark.parametrize("profile", sorted(PROFILE_RULES))
-def test_profile_matches_reference(expected, profile, scenario, types, stage,
-                                   denom):
-    exp = reference_block(expected, PROFILE_RULES[profile], scenario, denom)
-    got = compute_oracle_frame(profile, types=types, stage=stage, denom=denom)
+def test_profile_matches_reference(expected, profile, case, denom):
+    city, scenario = case
+    exp = reference_block(expected[city.name], PROFILE_RULES[profile],
+                          scenario.name, denom)
+    got = compute_oracle_frame(profile, types=scenario.exclusion_types,
+                               stage=scenario.stage, denom=denom, city=city)
     assert set(got.index) == set(exp.index)
     for prod_col, metric in metrics_for(profile).items():
         for sid in exp.index:
             assert got.loc[sid, prod_col] == pytest.approx(
-                exp.loc[sid, metric], abs=1e-12), (profile, scenario, denom,
-                                                   sid, prod_col)
+                exp.loc[sid, metric], abs=1e-12), (city.name, profile,
+                                                   scenario.name, denom, sid,
+                                                   prod_col)
 
 
 def test_enums_cover_exactly_the_reference_table():

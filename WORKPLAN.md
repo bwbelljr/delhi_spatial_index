@@ -136,14 +136,16 @@ round-trip tested — regenerate with `scripts/generate_oraculum_fixtures.py`,
 never hand-edit), `tests/reference_impl.py` (independent Eq. 1–4, never
 imports production code), `docs/oracle/` (worksheet, memo, three maps).
 
-**Findings for Phase 3/4 (see `docs/oracle/exclusion-semantics-memo.md`):**
-six documented manuscript-vs-code divergences, including two that need
-Raj: exclusion semantics (a) is unimplementable in current code (silent
-`except: pass`), and ~450 service points are double-counted via 4,050
-overlapping colony polygons. A seventh, latent item — point membership is
-boundary-inclusive, but zero real service points lie on a boundary (closest
-1.3 mm) — is pinned by `test_gap6_border_point_is_double_counted_by_production`
-and needs no action unless the layers are re-digitized.
+**Findings for Phase 3/4 (see
+`docs/oracle/exclusion-semantics-memo.md`):** six documented
+manuscript-vs-code divergences, including two that need Raj: exclusion
+semantics (a) is unimplementable in current code (silent `except:
+pass`), and 429 service points are double-counted via 4,069 overlapping
+colony polygons (`docs/data/layer_pathologies.md`). A seventh, latent
+item — point membership is boundary-inclusive, but zero real service
+points lie on a boundary (closest 1.3 mm) — is pinned by
+`test_gap6_border_point_is_double_counted_by_production` and needs no
+action unless the layers are re-digitized.
 
 ## Phase 3 — Refactor & bug audit (Bob) — P2 — NEXT (unblocked 17 Aug 2026)
 
@@ -195,16 +197,29 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       prioritized, evidence-backed list (all six divergences are documented in
       `docs/oracle/exclusion-semantics-memo.md` and pinned by tests):
       1. **bbox adjacency — now known to be the DOMINANT regime, not an edge
-         case.** Measured on the real layer: ZERO of 4,357 colonies are
+         case.** Measured on the real layer (reproducible source:
+         `docs/data/layer_pathologies.md`): ZERO of 4,357 colonies are
          rectangles, and a colony's bounding box is typically ~2× its polygon
          area (median ratio 1.95, p90 3.6, max 28,766). So bbox-adjacency
          invents neighbors citywide, constantly. Plausibly the largest
          paper-vs-code gap; needs Raj (methodology). [DEL-19]
-      2. **~450 service points double-counted** across 4,050 overlapping
-         colony polygon pairs (bank 232, ration 104, school 53, transport 41,
-         health 18, police 2). A containment rule does NOT fix this — it needs
-         a decision on how overlapping colonies share a point. Needs Raj.
+         Pinned today's behaviour on a purpose-built city: `H`/`L` are
+         disjoint yet bbox neighbours both ways, `T`/`L` touch at a single
+         point, and `M` is in `G`'s list while `G` is not in `M`'s
+         (`tests/test_messy_fixtures.py`, `docs/oracle/messy-city.md`).
+         Whichever rule Raj chooses, the fix flips those pins.
+      2. **429 service points double-counted** (bank 211, health 18, police 2,
+         ration 104, school 53, transport 41) across 4,069 overlapping colony
+         polygon pairs. A containment rule does NOT fix this — it needs a
+         decision on how overlapping colonies share a point. Needs Raj.
          [DEL-20]
+         Pinned today's behaviour: one clinic strictly inside `O1 ∩ O2`
+         is counted for both (`tests/test_messy_fixtures.py::
+         test_the_overlap_clinic_is_counted_for_both_owners`). Agreed
+         behaviour on both sides — production's `intersects` and the
+         reference's `within` both do it — so it is asserted directly, never
+         by comparison. The measured real-layer counts now have a
+         reproducible source: `docs/data/layer_pathologies.md`.
       3. ~~**Silent `except: pass` in `calc_pcen_mobile`** — swallows
          missing neighbors, making exclusion semantics (a) unimplementable
          (WORKPLAN Open Decision A is half-answered by this).~~ [DEL-21] —
@@ -230,20 +245,42 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       6. **`index.minmax` has no `hi == lo` guard** (deliberately, plan §
          Global Constraints), so a constant PCEN column divides 0/0 —
          latent on real layers, reachable via the population-drop path.
-         The resulting NaN is not caught by `check_no_negative` and
-         `overall_psi`'s mean skips NaN, so `unnorm_psi` would silently
-         average fewer services instead of failing. Routed to the 3C bug
-         audit (not guarded in 3A).
-- [ ] Add a second "messy city" fixture tier (verified against
+         CORRECTED 28 Aug 2026 (3C): under `-W error` — which is how CI and
+         every local run invoke pytest — the 0/0 does **not** produce a
+         silent NaN; numpy emits `RuntimeWarning: invalid value encountered
+         in scalar divide` and the warning filter turns it into a raised
+         error. The silent-NaN path (uncaught by `check_no_negative`, skipped
+         by `overall_psi`'s mean) exists only OUTSIDE a `-W error` run. Both
+         fixture cities are therefore built so that no PCEN column is
+         constant: `scripts/check_oraculum_invariants.py` refuses to write a
+         fixture with a degenerate min-max group, and the generators call it
+         before writing. Still routed to the bug audit: the guard belongs in
+         `index.minmax`, and the decision (raise, or 0.0 as the reference
+         does) is Raj's with DEL-13.
+- [x] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must
       cover the real-data pathologies Oraculum omits by construction:
       irregular non-rectangular polygons (so bbox ≠ geometry, the real
       regime), a MultiPolygon (556 of 4,357 real settlements are multi-part),
-      an overlapping polygon pair, an isolated settlement (360 real ones have
-      zero neighbors), a settlement with no population row (15 real ones),
-      and an area-extreme sliver (real areas span 2.3e-9 → 29 km²). This tier
-      is what would PROVE any fix to items 1 and 2 above. [DEL-24]
+      an overlapping polygon pair, an isolated settlement (6 under bbox / 20
+      under touch (see `docs/data/layer_pathologies.md`); the earlier ~360
+      was an unreproducible ad-hoc figure), a settlement with no population
+      row (15 real ones), and an area-extreme sliver (real areas span
+      2.3e-9 → 29 km²). This tier is what would PROVE any fix to items 1 and
+      2 above. [DEL-24]
+      — done 28 Aug 2026 (3C): `tests/fixtures/messy/` carries eleven
+      settlements covering all six pathologies, scored by the reference
+      implementation and byte-stable through `scripts/generate_messy_fixtures.py`
+      + `scripts/generate_production_fixtures.py`. A `City` abstraction
+      (`tests/cities.py`) with two instances runs every proof on both cities;
+      the reference was **generalised only** (a city, an explicit scenario
+      table, all road rows summed) — not one rule changed, no production code
+      was touched, Oraculum's three CSVs are byte-identical and the real-data
+      baseline is at `0.000e+00`. Spec
+      `docs/superpowers/specs/2026-08-28-messy-city-tier-design.md`, plan
+      `docs/superpowers/plans/2026-08-28-messy-city-tier.md`, docs
+      `docs/oracle/messy-city.md` and `docs/data/layer_pathologies.md`
 - [x] Retire the notebooks entirely (decided): notebooks already removed
       in Phase 1 (logic lives in `scripts/`); remaining work is the package
       pipeline stages with logged validation (the notebooks' eyeball checks

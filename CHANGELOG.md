@@ -7,6 +7,46 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Phase 3C messy-city fixture tier (DEL-24): a **second** fixture city,
+  `tests/fixtures/messy/`, carrying every real-layer pathology Oraculum omits
+  by construction — eleven settlements with an irregular hexagon and a
+  concave L that are **disjoint** yet bbox neighbours both ways, a triangle
+  meeting the L at a single point, a two-part MultiPolygon whose centroid
+  falls in its own gap with a square sitting exactly on that centroid
+  (distance 0, decay weight exactly 1, and the directed-bbox exhibit: `M` is
+  in `G`'s neighbour list, `G` is not in `M`'s), an overlapping pair sharing
+  one clinic, an isolated settlement, a settlement with **no population
+  row**, and a 2 m² sliver. It is scored by the independent reference
+  implementation, never by hand arithmetic, and pins what production does on
+  each pathology **today**, so the DEL-19 (bbox adjacency) and DEL-20
+  (overlap double count) fixes will be proven by a test that flips.
+  A `City` abstraction (`tests/cities.py`) with two instances now drives
+  every proof: the reference match, the production fixtures, the
+  expected-values round trip and the invariants guard all run on both cities.
+  The reference implementation was **generalised only** — `compute_city`
+  takes an explicit scenario table, `emit_expected_values` takes a city, and
+  `_service_amounts` sums **every** road row (the messy city has two, and the
+  second is where `M`'s whole road length comes from); not one rule changed.
+  `scripts/generate_messy_fixtures.py` re-derives every geometric relation
+  before writing a byte and installs `expected_values.csv` only after the
+  invariants guard passes on exactly the bytes to be committed;
+  `scripts/generate_oraculum_fixtures.py` gained the same step.
+  `scripts/measure_layer_pathologies.py` + `docs/data/layer_pathologies.md`
+  give the tier's real-data premises a reproducible source, read-only over
+  `~/delhi_data`. Bug-audit item 6 corrected: `index.minmax`'s missing
+  `hi == lo` guard **raises** under `-W error` (numpy's
+  `invalid value encountered in scalar divide`), it does not silently NaN —
+  the NaN path exists only outside a `-W error` run.
+  **No production code changed at all**: nothing under `delhi_psi/` was
+  touched, Oraculum's `expected_values.csv` and both Oraculum production CSVs
+  are byte-identical, and `scripts/verify_against_baseline.py --config
+  code-2025` still reports `PASS — new run equivalent to July 2025 baseline
+  within tolerance` with max abs deviation `0.000e+00` on all 30 compared numeric
+  columns (real-data proof, 28 Aug 2026 04:27–04:31 CDT: `delhi-psi
+  preprocess` — 4,357 settlements, 595 barrier-flagged; `delhi-psi compute`
+  — category column identity True on 4,131 rows, `categories: scheme=uso-10
+  n_categories=10`). Tests 281 → 386. Docs: `docs/oracle/messy-city.md`,
+  `docs/data/layer_pathologies.md`, `docs/methodology-config.md` § 4.
 - Phase 3B settlement-category mapping layer: a profile now declares
   `categories: {scheme, mapping}` (source type → category, 1:1 or X:1) and
   writes `methodology.exclusion.types` in **category** names; every output —
@@ -27,7 +67,7 @@ section accumulates changes on in-flight branches.
   scheme, `tests/fixtures/oraculum/production/code-2025.csv` and
   `manuscript.csv` are byte-identical, and
   `scripts/verify_against_baseline.py --config code-2025` still reports
-  `0.000e+00` on all 23 columns against the July 2025 baseline (real-data
+  `0.000e+00` on all 30 numeric columns (both output sets) against the July 2025 baseline (real-data
   proof, 28 Aug 2026: `categories: scheme=uso-10 n_categories=10`, 4,131
   reported, `PASS — new run equivalent to July 2025 baseline within
   tolerance`). Proved by a CLI end-to-end that collapses the oracle city's
@@ -58,7 +98,7 @@ section accumulates changes on in-flight branches.
   `delhi-psi preprocess` — 4,357 settlements, 595 barrier-flagged, all five
   layers pass the validation battery; `delhi-psi compute` — 4,131 reported,
   15 missing-population rows; `verify_against_baseline.py` — max abs
-  deviation `0.000e+00` on all 23 output columns, `PASS — new run equivalent
+  deviation `0.000e+00` on all 30 numeric output columns, `PASS — new run equivalent
   to July 2025 baseline within tolerance`). The `compute` stage now drops
   exact-duplicate service rows before validation, generalising
   `compute_psi.py`'s bank-only `drop_duplicates` to every service layer

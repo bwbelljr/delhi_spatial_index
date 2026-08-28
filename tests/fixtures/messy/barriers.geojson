@@ -1,0 +1,5 @@
+{
+ "crs_note": "coordinates are EPSG:7760 meters; loaders apply set_crs(7760)",
+ "features": [],
+ "type": "FeatureCollection"
+}
