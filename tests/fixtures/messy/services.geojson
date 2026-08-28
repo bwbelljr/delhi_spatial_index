@@ -1,0 +1,354 @@
+{
+ "crs_note": "coordinates are EPSG:7760 meters; loaders apply set_crs(7760)",
+ "features": [
+  {
+   "geometry": {
+    "coordinates": [
+     1001500,
+     1001500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "H",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1000400,
+     1000400
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "L",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1002800,
+     1000550
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "T",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1005500,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "M",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1006500,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "G",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1010900,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "O1+O2",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1020500,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "I",
+    "service": "clinic"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1000600,
+     1000200
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "L",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1007500,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "M",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1011400,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "O2",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1012300,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "N",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1001401.5,
+     1000999.5
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "S",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1002900,
+     1000450
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "T",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1006480,
+     1000480
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "G",
+    "service": "school"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1001600,
+     1001400
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "H",
+    "service": "bank"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1020600,
+     1000600
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "I",
+    "service": "bank"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1000200,
+     1000600
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "L",
+    "service": "police"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1010400,
+     1000500
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "O1",
+    "service": "police"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1005600,
+     1000600
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "M",
+    "service": "ration"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1001400.5,
+     1000999.5
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "S",
+    "service": "ration"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1001700,
+     1001300
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "H",
+    "service": "transport"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     1012500,
+     1000400
+    ],
+    "type": "Point"
+   },
+   "properties": {
+    "host": "N",
+    "service": "transport"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      1001500,
+      1000200
+     ],
+     [
+      1001500,
+      1002200
+     ]
+    ],
+    "type": "LineString"
+   },
+   "properties": {
+    "host": "H+L",
+    "service": "road"
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      1004800,
+      1000800
+     ],
+     [
+      1008200,
+      1000800
+     ]
+    ],
+    "type": "LineString"
+   },
+   "properties": {
+    "host": "M",
+    "service": "road"
+   },
+   "type": "Feature"
+  }
+ ],
+ "type": "FeatureCollection"
+}

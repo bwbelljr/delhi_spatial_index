@@ -9,6 +9,9 @@ re-apply the CRS on read.
 import json
 from pathlib import Path
 
+from scripts.check_oraculum_invariants import emit_checked_expected_values
+from tests.cities import ORACULUM
+
 BASE_X, BASE_Y = 1_000_000, 1_000_000
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "oraculum"
 
@@ -99,6 +102,12 @@ def main():
             {"id": eid, "population": pop, "clinics": clinics}))
     _dump(OUT / "divergence" / "exhibit.geojson", exhibit_feats)
     print(f"wrote fixtures to {OUT}")
+
+    # The CSV is part of the fixture, so the generator owns it too: the CI
+    # drift step globs generate_*_fixtures.py, which is what makes a
+    # reference change without a regenerated CSV fail the build. The output
+    # is byte-identical to what tests/reference_impl.py's __main__ wrote.
+    print(f"wrote {emit_checked_expected_values(ORACULUM, OUT / 'expected_values.csv')}")
 
 
 if __name__ == "__main__":

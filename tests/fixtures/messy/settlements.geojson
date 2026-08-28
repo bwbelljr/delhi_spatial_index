@@ -1,0 +1,440 @@
+{
+ "crs_note": "coordinates are EPSG:7760 meters; loaders apply set_crs(7760)",
+ "features": [
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1000400,
+       1002400
+      ],
+      [
+       1001600,
+       1002300
+      ],
+      [
+       1002200,
+       1001600
+      ],
+      [
+       1001900,
+       1001000
+      ],
+      [
+       1001100,
+       1001000
+      ],
+      [
+       1000900,
+       1002200
+      ],
+      [
+       1000400,
+       1002400
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "H",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.33,
+    "population": 110
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1000000,
+       1000000
+      ],
+      [
+       1002000,
+       1000000
+      ],
+      [
+       1002000,
+       1000800
+      ],
+      [
+       1000800,
+       1000800
+      ],
+      [
+       1000800,
+       1002000
+      ],
+      [
+       1000000,
+       1002000
+      ],
+      [
+       1000000,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "L",
+    "USO_FINAL": "Planned",
+    "area_km2": 2.56,
+    "population": 200
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1002000,
+       1000800
+      ],
+      [
+       1003000,
+       1000200
+      ],
+      [
+       1003000,
+       1000700
+      ],
+      [
+       1002000,
+       1000800
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "T",
+    "USO_FINAL": "Planned",
+    "area_km2": 0.25,
+    "population": 300
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       [
+        1005000,
+        1000000
+       ],
+       [
+        1006000,
+        1000000
+       ],
+       [
+        1006000,
+        1001000
+       ],
+       [
+        1005000,
+        1001000
+       ],
+       [
+        1005000,
+        1000000
+       ]
+      ]
+     ],
+     [
+      [
+       [
+        1007000,
+        1000000
+       ],
+       [
+        1008000,
+        1000000
+       ],
+       [
+        1008000,
+        1001000
+       ],
+       [
+        1007000,
+        1001000
+       ],
+       [
+        1007000,
+        1000000
+       ]
+      ]
+     ]
+    ],
+    "type": "MultiPolygon"
+   },
+   "properties": {
+    "USO_AREA_U": "M",
+    "USO_FINAL": "Planned",
+    "area_km2": 2.0,
+    "population": 400
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1006450,
+       1000450
+      ],
+      [
+       1006550,
+       1000450
+      ],
+      [
+       1006550,
+       1000550
+      ],
+      [
+       1006450,
+       1000550
+      ],
+      [
+       1006450,
+       1000450
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "G",
+    "USO_FINAL": "Planned",
+    "area_km2": 0.01,
+    "population": 50
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1010000,
+       1000000
+      ],
+      [
+       1011000,
+       1000000
+      ],
+      [
+       1011000,
+       1001000
+      ],
+      [
+       1010000,
+       1001000
+      ],
+      [
+       1010000,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "O1",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.0,
+    "population": 600
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1010800,
+       1000000
+      ],
+      [
+       1011800,
+       1000000
+      ],
+      [
+       1011800,
+       1001000
+      ],
+      [
+       1010800,
+       1001000
+      ],
+      [
+       1010800,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "O2",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.0,
+    "population": 700
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1020000,
+       1000000
+      ],
+      [
+       1021000,
+       1000000
+      ],
+      [
+       1021000,
+       1001000
+      ],
+      [
+       1020000,
+       1001000
+      ],
+      [
+       1020000,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "I",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.0,
+    "population": 800
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1011800,
+       1000000
+      ],
+      [
+       1012800,
+       1000000
+      ],
+      [
+       1012800,
+       1001000
+      ],
+      [
+       1011800,
+       1001000
+      ],
+      [
+       1011800,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "N",
+    "USO_FINAL": "RV",
+    "area_km2": 1.0,
+    "population": 900
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1009000,
+       1000000
+      ],
+      [
+       1010000,
+       1000000
+      ],
+      [
+       1010000,
+       1001000
+      ],
+      [
+       1009000,
+       1001000
+      ],
+      [
+       1009000,
+       1000000
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "U",
+    "USO_FINAL": "Planned",
+    "area_km2": 1.0,
+    "population": null
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       1001400,
+       1000999
+      ],
+      [
+       1001402,
+       1000999
+      ],
+      [
+       1001402,
+       1001000
+      ],
+      [
+       1001400,
+       1001000
+      ],
+      [
+       1001400,
+       1000999
+      ]
+     ]
+    ],
+    "type": "Polygon"
+   },
+   "properties": {
+    "USO_AREA_U": "S",
+    "USO_FINAL": "Planned",
+    "area_km2": 2e-06,
+    "population": 100
+   },
+   "type": "Feature"
+  }
+ ],
+ "type": "FeatureCollection"
+}

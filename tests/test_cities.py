@@ -19,9 +19,7 @@ from delhi_psi.categories import apply_mapping
 from delhi_psi.pipeline import attach_population, excluded_ids
 from tests.cities import CITIES, FIXTURES_ROOT, MESSY, ORACULUM
 
-# Task 3 (scripts/generate_messy_fixtures.py) widens this to CITIES. Until the
-# messy GeoJSON files exist, only Oraculum can be loaded from disk.
-FIXTURED = (ORACULUM,)
+FIXTURED = CITIES
 SCENARIO_CASES = [(city, scenario) for city in FIXTURED
                   for scenario in city.scenarios]
 
@@ -194,3 +192,45 @@ def test_render_oracle_maps_does_not_mutate_the_reference_scenario_table():
     assert MAP_SCENARIOS["rv_removed"] == (frozenset({"RV"}), True)
     assert all(MAP_SCENARIOS[name] == value
                for name, value in SCENARIOS.items())
+
+
+# --- 3C: the messy fixtures exist and are what the generator emits ------
+def test_messy_expected_values_csv_covers_the_scenario_grid():
+    import pandas as pd
+
+    df = pd.read_csv(MESSY.fixtures / "expected_values.csv")
+    assert set(df.columns) == {"rule", "scenario", "denom", "settlement",
+                               "metric", "value"}
+    assert set(df["rule"]) == {"ideal", "code"}
+    assert set(df["scenario"]) == {s.name for s in MESSY.scenarios}
+    assert set(df["denom"]) == {"pop", "popdensity"}
+    # `U` has no population row, so production drops it unconditionally and
+    # every messy scenario drops it on the reference side too.
+    assert "U" not in set(df["settlement"])
+    assert set(df[df["scenario"] == "nopop_only"]["settlement"]) == {
+        "H", "L", "T", "M", "G", "O1", "O2", "I", "N", "S"}
+    for scenario in ("excl_rv_post", "excl_rv_pre"):
+        assert set(df[df["scenario"] == scenario]["settlement"]) == {
+            "H", "L", "T", "M", "G", "O1", "O2", "I", "S"}, scenario
+    # norm_psi is the `code` rule-set's second normalization only.
+    assert ("norm_psi" in set(df[df["rule"] == "code"]["metric"]))
+    assert ("norm_psi" not in set(df[df["rule"] == "ideal"]["metric"]))
+
+
+def test_generators_write_only_under_tests_fixtures():
+    """CI spec § Robustness: the drift step globs generate_*_fixtures.py and
+    diffs tests/fixtures/. A generator that writes anywhere else escapes the
+    guard entirely."""
+    scripts_dir = Path(__file__).resolve().parent.parent / "scripts"
+    generators = sorted(scripts_dir.glob("generate_*_fixtures.py"))
+    assert {p.name for p in generators} == {
+        "generate_messy_fixtures.py", "generate_oraculum_fixtures.py",
+        "generate_production_fixtures.py"}
+    for path in generators:
+        source = path.read_text()
+        # Every output path is anchored on a fixtures directory — either the
+        # repo-relative literal or a City's own `fixtures` attribute.
+        assert "fixtures" in source, path.name
+        # ... and none of them may reach for the real data directory.
+        for banned in ("delhi_data", "DELHI_DATA_DIR", "data_dir"):
+            assert banned not in source, (path.name, banned)
