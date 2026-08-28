@@ -436,3 +436,206 @@ def test_math_layer_errors_exit_1(data_dir, tmp_path, monkeypatch, capsys, exc):
                "--data-dir", str(data_dir),
                "--out-dir", str(tmp_path / "boom")) == 1
     assert capsys.readouterr().err.strip() != ""
+
+
+# --- 3B: the vocabulary-change equivalence proof (spec 3B § 4) --------
+REFERENCE_CSV = (Path(__file__).resolve().parent / "fixtures" / "oraculum"
+                 / "expected_values.csv")
+
+# The fixture city's six source types collapsed into five categories, of
+# which one — `non-urban` — is what the run then excludes. RV and IND are
+# the two settlements today's raw `exclusion.types: [RV, IND]` drops.
+ORACLE_5 = {"Planned": "planned", "UC": "unauthorized",
+            "RUAC": "regularized", "JJC": "jjc", "RV": "non-urban",
+            "IND": "non-urban"}
+
+# exclusion.stage -> the reference scenario with the same dropped set.
+REFERENCE_SCENARIO = {"post_neighbors": "excl_contributing",
+                      "pre_neighbors": "excl_removed"}
+
+# CLI output column -> the same quantity in compute_oracle_frame's frame.
+# The fixture's clinic layer is written to Public Services/Health/Health.shp,
+# so the config service is `health` where the oracle frame says `clinic`.
+COLLAPSE_TO_ORACLE = {
+    "health_count": "clinic_count", "health_pcen": "clinic_pcen",
+    "health_idx": "clinic_idx",
+    "school_count": "school_count", "school_pcen": "school_pcen",
+    "school_idx": "school_idx",
+    "bank_count": "bank_count", "bank_pcen": "bank_pcen",
+    "bank_idx": "bank_idx",
+    "police_count": "police_count", "police_pcen": "police_pcen",
+    "police_idx": "police_idx",
+    "ration_count": "ration_count", "ration_pcen": "ration_pcen",
+    "ration_idx": "ration_idx",
+    "transport_count": "transport_count",
+    "transport_pcen": "transport_pcen", "transport_idx": "transport_idx",
+    "road_length": "road_length", "road_pcen": "road_pcen",
+    "road_idx": "road_idx",
+    "unnorm_psi": "unnorm_psi", "norm_psi": "norm_psi",
+    "population": "population", "area_km2": "area_km2",
+}
+
+# CLI output column -> expected_values.csv metric name (the REFERENCE's
+# names: psi_eq1 for unnorm_psi, road_length_km for road_length).
+COLLAPSE_TO_REFERENCE = {
+    "health_count": "clinic_count", "health_pcen": "clinic_pcen",
+    "health_idx": "clinic_idx",
+    "school_count": "school_count", "school_pcen": "school_pcen",
+    "school_idx": "school_idx",
+    "bank_count": "bank_count", "bank_pcen": "bank_pcen",
+    "bank_idx": "bank_idx",
+    "police_count": "police_count", "police_pcen": "police_pcen",
+    "police_idx": "police_idx",
+    "ration_count": "ration_count", "ration_pcen": "ration_pcen",
+    "ration_idx": "ration_idx",
+    "transport_count": "transport_count",
+    "transport_pcen": "transport_pcen", "transport_idx": "transport_idx",
+    "road_length": "road_length_km", "road_pcen": "road_pcen",
+    "road_idx": "road_idx",
+    "unnorm_psi": "psi_eq1", "norm_psi": "norm_psi",
+}
+
+
+def collapse_profile_path(directory, *, stage):
+    """A profile derived from `code-2025` that collapses the fixture's six
+    source types into five and excludes the CATEGORY `non-urban`.
+
+    Everything else is code-2025's: reference rule `code`, `swallowed`, the
+    second normalization on. Only the vocabulary changes — which is the
+    claim under test.
+    """
+    import yaml
+
+    from delhi_psi.config import PROFILES_DIR
+
+    raw = yaml.safe_load((PROFILES_DIR / "code-2025.yaml").read_text())
+    raw["profile"] = "oracle-5"
+    raw["categories"] = {"scheme": "oracle-5", "mapping": dict(ORACLE_5)}
+    raw["methodology"]["exclusion"]["types"] = ["non-urban"]
+    raw["methodology"]["exclusion"]["stage"] = stage
+    path = Path(directory) / f"oracle-5-{stage}.yaml"
+    path.write_text(yaml.safe_dump(raw, sort_keys=False))
+    return path
+
+
+@pytest.mark.parametrize("denom", ["pop", "popdensity"])
+@pytest.mark.parametrize("stage", ["post_neighbors", "pre_neighbors"])
+def test_five_way_collapse_reproduces_raw_type_exclusion(data_dir, tmp_path,
+                                                         stage, denom):
+    """Spec 3B § 4, the vocabulary-change equivalence proof.
+
+    A profile that collapses six source types into five and excludes the
+    CATEGORY `non-urban` must produce (a) exactly the numbers today's raw
+    `exclusion.types: [RV, IND]` produces, and (b) the independent reference
+    implementation's own `code` rows for the scenario with the same dropped
+    set. Together they are the proof that this layer changed the vocabulary
+    and nothing else.
+
+    Tolerance is the CSV round-trip's 1e-9 (the existing e2e's); 1e-12
+    applies only to in-memory comparisons.
+    """
+    from tests.oraculum_fixtures import compute_oracle_frame
+
+    profile = collapse_profile_path(tmp_path, stage=stage)
+    out = tmp_path / "collapse"
+    assert cli.main(["preprocess", "--config", str(profile),
+                     "--data-dir", str(data_dir), "--out-dir", str(out)]) == 0
+    assert cli.main(["compute", "--config", str(profile),
+                     "--data-dir", str(data_dir), "--out-dir", str(out)]) == 0
+
+    got = pd.read_csv(
+        out / f"delhi_psi_oracle-5_{denom}_2020.csv").set_index("USO_AREA_U")
+    assert set(got.index) == {"A", "B", "C", "D", "E"}
+    assert got["category"].to_dict() == {
+        "A": "planned", "B": "unauthorized", "C": "jjc", "D": "planned",
+        "E": "regularized"}
+
+    # (a) the same numbers as today's raw-string exclusion
+    direct = compute_oracle_frame("code-2025", types=("RV", "IND"),
+                                  stage=stage, denom=denom)
+    assert set(direct.index) == set(got.index)
+    for column, oracle_column in COLLAPSE_TO_ORACLE.items():
+        for sid in got.index:
+            assert got.loc[sid, column] == pytest.approx(
+                direct.loc[sid, oracle_column], abs=1e-9), (column, sid)
+
+    # (b) the independent reference implementation, rule `code`
+    expected = pd.read_csv(REFERENCE_CSV)
+    expected = expected[
+        (expected["rule"] == "code")
+        & (expected["scenario"] == REFERENCE_SCENARIO[stage])
+        & (expected["denom"] == denom)
+    ].pivot(index="settlement", columns="metric", values="value")
+    assert set(expected.index) == set(got.index)
+    for column, metric in COLLAPSE_TO_REFERENCE.items():
+        for sid in got.index:
+            assert got.loc[sid, column] == pytest.approx(
+                expected.loc[sid, metric], abs=1e-9), (column, sid)
+
+
+def test_unmapped_settlement_type_exits_1(data_dir, tmp_path, capsys):
+    """The shipped `code-2025` mapping is Delhi's `uso-10`; this city
+    carries `UC` and `IND`, which are deliberately NOT in it. Running the
+    SHIPPED profile straight at this city is therefore the proof that an
+    unmapped source type fails the run, naming every offender with its row
+    count (spec 3B §§ 2, 5).
+
+    `cli.main`, not `run`: the whole point is the shipped profile.
+    """
+    out = tmp_path / "unmapped"
+    assert cli.main(["preprocess", "--config", "code-2025",
+                     "--data-dir", str(data_dir), "--out-dir", str(out)]) == 0
+    assert cli.main(["compute", "--config", "code-2025",
+                     "--data-dir", str(data_dir), "--out-dir", str(out)]) == 1
+    err = capsys.readouterr().err
+    assert "validation failed" in err
+    assert "'IND' (1 row)" in err
+    assert "'UC' (1 row)" in err
+    assert "categories.mapping" in err
+
+
+def test_outputs_carry_the_category_column_and_the_scheme_stamp(data_dir,
+                                                                tmp_path,
+                                                                caplog):
+    """`category` on the CSV, the shapefile, the joblib and
+    missing_population.csv; the scheme/mapping stamp on the joblib, which is
+    the only format that can hold `attrs`. For CSV and shapefile the record
+    is the INFO line plus the column itself — the scheme is never a column.
+    """
+    import logging as _logging
+
+    from delhi_psi import io
+
+    out = tmp_path / "categories"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    caplog.clear()
+    with caplog.at_level(_logging.INFO, logger="delhi_psi.pipeline"):
+        assert run("compute", "--config", "code-2025",
+                   "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+
+    base = out / "delhi_psi_code-2025_pop_2020"
+    csv = pd.read_csv(base.with_suffix(".csv")).set_index("USO_AREA_U")
+    # RV is excluded (code-2025's exclusion.types), so it is not reported.
+    assert csv["category"].to_dict() == {
+        "A": "Planned", "B": "UC", "C": "JJC", "D": "Planned", "E": "RUAC",
+        "IND": "IND"}
+    assert "scheme" not in csv.columns, "the scheme is metadata, not a column"
+    assert "category" in gpd.read_file(base.with_suffix(".shp")).columns
+    assert "category" in pd.read_csv(out / "missing_population.csv").columns
+
+    frame = io.read_neighbors(base.with_suffix(".joblib"))
+    assert frame.attrs["categories"]["scheme"] == "oracle-6"
+    assert frame.attrs["categories"]["mapping"] == {
+        "Planned": "Planned", "UC": "UC", "JJC": "JJC", "RV": "RV",
+        "RUAC": "RUAC", "IND": "IND"}
+
+    # The NEIGHBOURS artifact stays category-free: it is built on the full
+    # universe and stamped with adjacency/barrier only, so a mapping change
+    # must never force an 11-minute re-`preprocess` (spec 3B § 3).
+    nbrs = io.read_neighbors(out / "colonies_neighbors.joblib")
+    assert "category" not in nbrs.columns
+    assert "categories" not in nbrs.attrs
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "categories: scheme=oracle-6 n_categories=6" in messages, messages
