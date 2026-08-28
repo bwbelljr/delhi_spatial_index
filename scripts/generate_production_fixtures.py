@@ -29,7 +29,7 @@ PRODUCTION_DIR = REPO / "tests" / "fixtures" / "oraculum" / "production"
 
 # Every profile with a committed production fixture. Adding a profile is one
 # YAML plus one entry here, then a regeneration commit (spec § 4).
-PROFILES = ("code-2025",)
+PROFILES = ("code-2025", "manuscript")
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
 SERVICES = POINT_SERVICES + ("road",)

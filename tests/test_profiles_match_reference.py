@@ -21,7 +21,7 @@ CSV = Path(__file__).resolve().parent / "fixtures" / "oraculum" / "expected_valu
 REFERENCE_DENOMS = ("pop", "popdensity")
 
 # profile -> the reference rule-set whose rows it must reproduce (spec § 4)
-PROFILE_RULES = {"code-2025": "code"}
+PROFILE_RULES = {"code-2025": "code", "manuscript": "ideal"}
 
 # production column -> reference metric
 METRIC_MAP = {

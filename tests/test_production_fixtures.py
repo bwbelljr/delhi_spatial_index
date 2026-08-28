@@ -12,7 +12,7 @@ from scripts.generate_production_fixtures import (
     PRODUCTION_DIR, SERVICES, emit_profile, metric_columns,
 )
 
-PROFILES = ["code-2025"]
+PROFILES = ["code-2025", "manuscript"]
 
 
 @pytest.mark.parametrize("profile", PROFILES)
