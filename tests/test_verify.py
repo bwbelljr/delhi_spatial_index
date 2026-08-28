@@ -1,7 +1,7 @@
 """Tests for the baseline comparison functions (synthetic data, no geo deps)."""
 import pandas as pd
 
-from scripts.verify_against_baseline import (
+from delhi_psi.verify import (
     compare_neighbor_frames,
     compare_numeric_frames,
 )
@@ -81,3 +81,15 @@ def test_missing_column_reported():
     new = _psi_frame().drop(columns=["norm_psi"])
     issues, _ = compare_numeric_frames(new, _psi_frame(), "USO_AREA_U", 1e-9, 1e-12)
     assert any("norm_psi" in i and "missing" in i for i in issues)
+
+
+def test_fresh_paths_come_from_the_config(tmp_path):
+    """--config locates the fresh files; the baseline paths stay the
+    script's own arguments (they exist only for code-2025)."""
+    from scripts.verify_against_baseline import fresh_paths
+
+    paths = fresh_paths("code-2025", verify_dir=tmp_path)
+    assert paths["neighbors"] == tmp_path / "colonies_neighbors.joblib"
+    assert paths["psi"]["pop"] == tmp_path / "delhi_psi_code-2025_pop_2020.csv"
+    assert paths["psi"]["popdensity"] == \
+        tmp_path / "delhi_psi_code-2025_popdensity_2020.csv"
