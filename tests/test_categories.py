@@ -86,6 +86,25 @@ def test_a_missing_type_column_is_named():
     assert "USO_FINAL" in str(excinfo.value)
 
 
+def test_null_source_types_are_reported_as_unmapped():
+    """Real USO layers can carry null USO_FINAL values (None and NaN).
+    They must be reported as unmapped, with both None and NaN collapsing
+    into a single diagnostic bucket."""
+    with pytest.raises(ValidationError) as excinfo:
+        apply_mapping(
+            pd.DataFrame({
+                "USO_AREA_U": ["s0", "s1", "s2"],
+                "USO_FINAL": ["Planned", None, float("nan")]
+            }),
+            type_col="USO_FINAL",
+            mapping={"Planned": "Planned"}
+        )
+    message = str(excinfo.value)
+    assert "nan (2 rows)" in message, \
+        "both None and NaN fold into one nan bucket with count 2"
+    assert "Planned" in message, "the message lists what the mapping covers"
+
+
 def test_categories_of_is_the_set_of_category_names():
     assert categories_of(USO_10) == frozenset(USO_10)
     assert categories_of(URBAN_5) == frozenset(
