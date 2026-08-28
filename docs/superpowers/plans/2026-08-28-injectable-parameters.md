@@ -29,7 +29,7 @@ State each of these to yourself before every task; they are every task's require
 - **`decay.distance` is REQUIRED — no default.** The repo's rule is "methodology has no defaults, never inherited" (`config.py` module docstring) and this cycle does not add an exception. The key is added as `distance: centroid` in exactly three places, and there is no fourth: `delhi_psi/profiles/code-2025.yaml`, `delhi_psi/profiles/manuscript.yaml`, and the `MINIMAL` profile string in `tests/test_config.py` (`test_defaults_equal_code_2025` compares `minimal.methodology == full.methodology`, so it requires `centroid` specifically).
 - **All new tests run under `uv run pytest -q -W error`,** and after **every** task the whole suite must be green under that exact command. The suite is **386 tests** at HEAD `6afc2c6`; it only ever grows.
 - **Named-file commits only.** Never `git add -A`, never `git commit -a` — every commit names its files (review agents may be running: memory note "Review agents: isolate worktree"). Branch: `del-18-knobs`, worktree `/home/bwbelljr2/delhi_spatial_index/.claude/worktrees/del-18`.
-- **Never write under `~/delhi_data`.** It is bisynced to the shared drive (memory note "delhi_data sync setup"), so a stray file there propagates. The data-gated runs in Task 5 read `--data-dir ~/delhi_data` and write only to `--out-dir` paths OUTSIDE it.
+- **Never write under `~/delhi_data`** — with ONE established exception: the verify output directory `~/delhi_data/phase3_verify` used by 3A–3C (controller ruling; it already exists on the bisynced share, holds the warm GPKG cache, and is not a baseline file). Task 5's real-data verify writes there and nowhere else under the data dir; the 10 km timing run writes to a tempdir.
 - Numeric tolerance: `abs=1e-12` for in-memory comparisons, `abs=1e-9` across a CSV round trip (the house precedent, `tests/test_oracle_e2e.py`), exact `==` only where this plan says a value is exact — every such value was verified by running it (see "Canonical facts").
 - Commit messages end with:
   `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
@@ -179,7 +179,6 @@ The independent side first: the variant table both sides read, the reference's n
 - Produces:
   - `tests.variants.VARIANTS: dict[str, dict[str, dict]]` — 8 keys: `band0_none`, `band_small`, `band_large`, `band_small_boundary`, `pow1`, `pow2`, `exp1`, `boundary`; each value has an optional `"adjacency"` block and a required `"decay"` block, in CONFIG vocabulary.
   - `tests.variants.BAND_RADII_KM: tuple[float, float, float]` = `(0.0, 0.25, 0.75)`
-  - `tests.variants.BAND_VARIANTS: tuple[str, str, str]` = `("band0_none", "band_small", "band_large")`
   - `tests.variants.EXPECTED_BAND_PAIRS: dict[str, dict[float, int]]`
   - `tests.variants.ADDED_BAND_PAIRS: dict[str, dict[float, set[tuple[str, str]]]]`
   - `tests.reference_impl.adjacency(settlements, rule, max_distance_km=None) -> dict[str, set[str]]` — new rule `"within_distance"`.
@@ -266,7 +265,6 @@ VARIANTS = {
 }
 
 BAND_RADII_KM = (0.0, 0.25, 0.75)
-BAND_VARIANTS = ("band0_none", "band_small", "band_large")
 
 # Undirected pair counts on adjacency()'s own output, BEFORE any barrier.
 EXPECTED_BAND_PAIRS = {
@@ -714,6 +712,27 @@ and, in place of today's two-line `contribution_weight`:
             return 1 / (1 + d_km) ** exponent
         return math.exp(-d_km / scale_km)
 ```
+
+(b′) **Deterministic summation order — REQUIRED (plan review R1, Critical).**
+`nbrs[i]` is a Python `set`; its iteration order depends on the per-process
+hash seed, and floating-point addition is not associative. With the band
+variants some settlements have 3–4 neighbours, and the `%.17g` CSV then
+differs by 1 ULP between processes (measured: three distinct byte outputs
+across 15 `PYTHONHASHSEED` values before the fix; identical after). Change
+the summation loop in `compute_city` from `for j in nbrs[i]:` to:
+
+```python
+            for j in sorted(nbrs[i]):
+```
+
+This is the ONLY change to the loop. Verified before planning: with
+`sorted()` in place, `python -m tests.reference_impl` leaves BOTH cities'
+committed `expected_values.csv` byte-identical under `PYTHONHASHSEED`
+0/4/7/11 (`git status --porcelain -- tests/fixtures/` empty each time), so
+the Global Constraint holds. Consequently the "Canonical facts" band
+values are the SORTED-order values; a value there may differ from an
+unsorted run in the last digit — every test in this plan compares band
+values with `pytest.approx(..., abs=1e-12)`, never `==`.
 
 (c) the variant table, immediately after `RULESETS`:
 
