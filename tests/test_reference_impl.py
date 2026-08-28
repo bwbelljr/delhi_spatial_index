@@ -29,7 +29,7 @@ W_25 = 1 / 2.5                    # decay at 1500 m
 
 
 @pytest.fixture(scope="module")
-def city():
+def settlements():
     return load_settlements()
 
 
@@ -50,28 +50,30 @@ CODE = {"A": {"B", "E"}, "B": {"C", "RV", "E"}, "C": {"B", "E", "IND"},
         "RV": {"B"}, "D": {"E"}, "E": {"B", "C", "IND"}, "IND": {"C", "E"}}
 
 
-def test_border_adjacency_severed_pairwise(city, barriers):
-    nbrs = apply_barrier(adjacency(city, "border"), city, barriers, "pair")
+def test_border_adjacency_severed_pairwise(settlements, barriers):
+    nbrs = apply_barrier(adjacency(settlements, "border"), settlements,
+                         barriers, "pair")
     assert nbrs == IDEAL
 
 
-def test_bbox_adjacency_with_global_barrier(city, barriers):
-    nbrs = apply_barrier(adjacency(city, "bbox"), city, barriers, "global")
+def test_bbox_adjacency_with_global_barrier(settlements, barriers):
+    nbrs = apply_barrier(adjacency(settlements, "bbox"), settlements,
+                         barriers, "global")
     assert nbrs == CODE
 
 
-def test_bbox_equals_border_pre_barrier_for_rectangles(city):
-    assert adjacency(city, "bbox") == adjacency(city, "border")
+def test_bbox_equals_border_pre_barrier_for_rectangles(settlements):
+    assert adjacency(settlements, "bbox") == adjacency(settlements, "border")
 
 
-def _city_df(city, services, barriers, rule, **overrides):
+def _city_df(settlements, services, barriers, rule, **overrides):
     kwargs = dict(RULESETS[rule], scenario="baseline", denom="pop")
     kwargs.update(overrides)
-    return compute_city(city, services, barriers, **kwargs)
+    return compute_city(settlements, services, barriers, **kwargs)
 
 
-def test_clinic_pcen_ideal_baseline_pop(city, services, barriers):
-    df = _city_df(city, services, barriers, "ideal")
+def test_clinic_pcen_ideal_baseline_pop(settlements, services, barriers):
+    df = _city_df(settlements, services, barriers, "ideal")
     exp = {
         "A": (2 + W_HALF + W_SQRT2) / 100,
         "B": 0.0175,
@@ -85,16 +87,16 @@ def test_clinic_pcen_ideal_baseline_pop(city, services, barriers):
         assert df.loc[sid, "clinic_pcen"] == pytest.approx(v, abs=1e-12), sid
 
 
-def test_clinic_pcen_code_rule_differences(city, services, barriers):
-    df = _city_df(city, services, barriers, "code")
+def test_clinic_pcen_code_rule_differences(settlements, services, barriers):
+    df = _city_df(settlements, services, barriers, "code")
     assert df.loc["B", "clinic_pcen"] == pytest.approx(0.0125, abs=1e-12)
     assert df.loc["E", "clinic_pcen"] == pytest.approx(0.005, abs=1e-12)
     assert df.loc["A", "clinic_pcen"] == pytest.approx(
         (2 + W_HALF + W_SQRT2) / 100, abs=1e-12)
 
 
-def test_school_pcen_ideal_and_unique_anchors(city, services, barriers):
-    df = _city_df(city, services, barriers, "ideal")
+def test_school_pcen_ideal_and_unique_anchors(settlements, services, barriers):
+    df = _city_df(settlements, services, barriers, "ideal")
     exp = {"A": SQ2 / 100, "B": 0.005, "C": (SQ2 - 1) / 400, "RV": 0.0,
            "D": 0.014, "E": (1 + (SQ2 - 1) + 0.4) / 300, "IND": 0.04}
     for sid, v in exp.items():
@@ -104,8 +106,8 @@ def test_school_pcen_ideal_and_unique_anchors(city, services, barriers):
     assert pcen.idxmin() == "RV" and (pcen == pcen.min()).sum() == 1
 
 
-def test_popdensity_denominator(city, services, barriers):
-    df = _city_df(city, services, barriers, "ideal", denom="popdensity")
+def test_popdensity_denominator(settlements, services, barriers):
+    df = _city_df(settlements, services, barriers, "ideal", denom="popdensity")
     # E: pop 300 / area 2.0 -> denominator 150
     assert df.loc["E", "clinic_pcen"] == pytest.approx(
         (1 + 2 * W_SQRT2 + W_HALF) / 150, abs=1e-12)
@@ -227,7 +229,7 @@ def test_expected_values_csv_is_regenerable(city, tmp_path):
 
 
 # --- 3C: the reference generalisations (spec § 3) ----------------------
-def test_compute_city_accepts_an_explicit_scenario_table(city, services,
+def test_compute_city_accepts_an_explicit_scenario_table(settlements, services,
                                                          barriers):
     """The drop mechanics are untouched; only where the table comes from
     moves. A caller-supplied table must NOT leak into the module global —
@@ -237,10 +239,10 @@ def test_compute_city_accepts_an_explicit_scenario_table(city, services,
 
     before = dict(SCENARIOS)
     table = {"nothing_dropped": (frozenset(), False)}
-    got = compute_city(city, services, barriers,
+    got = compute_city(settlements, services, barriers,
                        scenario="nothing_dropped", denom="pop",
                        scenarios=table, **RULESETS["ideal"])
-    expected = _city_df(city, services, barriers, "ideal")
+    expected = _city_df(settlements, services, barriers, "ideal")
     assert list(got.index) == list(expected.index)
     for sid in expected.index:
         assert got.loc[sid, "clinic_pcen"] == pytest.approx(
@@ -248,7 +250,7 @@ def test_compute_city_accepts_an_explicit_scenario_table(city, services,
     assert dict(SCENARIOS) == before, "the module table was mutated"
 
 
-def test_service_amounts_sums_every_road_row(city, services):
+def test_service_amounts_sums_every_road_row(settlements, services):
     """`_service_amounts` used the FIRST road row only. The messy city has
     two, so the sum is load-bearing; pinned here on Oraculum with a second
     row bolted on, so the pin does not depend on the messy fixtures."""
@@ -263,9 +265,11 @@ def test_service_amounts_sums_every_road_row(city, services):
     extra = LineString([(base - 250, base + 500), (base + 250, base + 500)])
     two_rows = gpd.GeoDataFrame(
         {"service": ["road", "road"]},
-        geometry=[services["road"].geometry.iloc[0], extra], crs=city.crs)
+        geometry=[services["road"].geometry.iloc[0], extra],
+        crs=settlements.crs)
 
-    amounts = _service_amounts(city, {**services, "road": two_rows})["road"]
+    amounts = _service_amounts(
+        settlements, {**services, "road": two_rows})["road"]
     assert amounts["A"] == pytest.approx(0.75, abs=1e-12)
     assert amounts["E"] == pytest.approx(0.75, abs=1e-12)
     assert amounts["D"] == pytest.approx(0.5, abs=1e-12), \

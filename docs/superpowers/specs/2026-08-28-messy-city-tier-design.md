@@ -281,7 +281,8 @@ bisynced to the shared drive. Output committed as
 `docs/data/layer_pathologies.md`: a prose header (run date, layer file,
 commit) followed by one fenced ```text block of `key: value` lines with
 fixed keys — `settlements`, `rectangles`, `multipolygons`, `isolated_bbox`,
-`no_population`, `area_km2_min`, `area_km2_median`, `area_km2_max`,
+`isolated_touch` (added by the Task-6 review ruling), `no_population`,
+`area_km2_min`, `area_km2_median`, `area_km2_max`,
 `overlapping_pairs`, and `multi_settlement_points_<service>` per point
 layer. `tests/test_layer_pathologies.py` is `skipif` without `~/delhi_data`,
 runs the script with a `tmp_path` cache, parses that block, and compares

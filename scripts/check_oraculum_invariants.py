@@ -62,8 +62,10 @@ def emit_checked_expected_values(city, out_path):
     anchor or flattens a min-max group is not a fixture, it is a silently
     degenerate oracle.
 
-    The reference import is local so `check` stays importable without
-    dragging in geopandas.
+    The reference import is local to avoid an import cycle:
+    `reference_impl` imports `cities`, and the fixture generators import
+    this module (`check`) before they import `reference_impl` themselves —
+    so `reference_impl` has to stay out of this module's top level.
     """
     from tests.reference_impl import emit_expected_values
 

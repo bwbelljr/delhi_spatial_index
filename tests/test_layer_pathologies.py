@@ -42,10 +42,14 @@ def test_isolated_bbox_is_at_most_isolated_touch_on_a_synthetic_frame():
 
     This L-shaped settlement and the square sitting in its notch make the
     inequality strict on purpose: the square lies inside the L's bounding
-    box (so it is the L's bbox-neighbour — but only in one direction, since
-    bbox adjacency here is a directed containment test) yet never reaches
-    the L's actual boundary (so it is nobody's touch-neighbour). The L ends
-    up bbox-isolated only; the square is isolated under both rules.
+    box, so the L is the square's bbox-neighbour (geom_SQ intersects
+    envelope_L) — but only in that direction, since bbox adjacency here is
+    a directed containment test: geom_L does not intersect envelope_SQ, so
+    the square is not the L's bbox-neighbour. Neither polygon reaches the
+    other's actual boundary, so neither is the other's touch-neighbour. The
+    L ends up bbox-isolated (it has no bbox-neighbour of its own) as well
+    as touch-isolated; the square keeps its one bbox-neighbour but is
+    isolated under the touch rule only.
     """
     l_shape = Polygon([(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
     notch_square = box(1.2, 1.2, 1.8, 1.8)

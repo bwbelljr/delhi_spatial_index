@@ -41,6 +41,9 @@ def frame(profile, scenario_name, denom):
 
 
 def nbrs(result, sid):
+    # column keeps its historical name "nbrs_bbox" under both adjacency
+    # rules (including `touch`), so reading it under the touch profile is
+    # correct.
     return set(result.loc[sid, "nbrs_bbox"])
 
 

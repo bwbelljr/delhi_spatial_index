@@ -10,9 +10,8 @@ counts (it skips when the data is not present).
 
 - **Run date:** 2026-08-28
 - **Layer:** `uso_update_sep2021/uso_update_sep2021.shp`
-- **Commit:** `92132c3` (fix round 1: `isolated_touch` added on top of this
-  commit, uncommitted at measurement time — see the commit that follows this
-  doc's update)
+- **Commit:** `181e92b` (the commit whose code emits all eleven pathology
+  keys, including `isolated_touch`)
 - **Command:** `uv run python scripts/measure_layer_pathologies.py --config code-2025`
 
 ```text
