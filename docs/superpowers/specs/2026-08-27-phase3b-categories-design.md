@@ -2,7 +2,7 @@
 
 Date: 2026-08-27
 Status: **approved by owner (2026-08-27)** — rev 2 after ultracode review
-(24 findings → 6 root causes fixed; see decision log)
+(24 findings → 6 root causes fixed; confirmation round: 5 fixed — rev 3)
 Branch: `del-17-categories` (off `origin/main` at 2b5d8ae)
 Parent: WORKPLAN.md Phase 3 item "Make settlement types configurable via a
 mapping layer" [DEL-17]; Phase 4 DEL-28/29/31/32 consume it. Builds on the
@@ -30,8 +30,8 @@ Decision log (brainstorm, 27 Aug 2026):
 
 The Delhi layer carries 10 `USO_FINAL` source types; the paper's analysis
 will use a small theory-first set (Phase 4 working candidate: planned /
-unauthorized / regularized-unauthorized / resettlement / JJC, non-urban
-dropped). Today the only place types touch the pipeline is `excluded_ids`,
+unauthorized / regularized (WORKPLAN: "regularized-unauthorized") /
+resettlement / JJC, non-urban dropped). Today the only place types touch the pipeline is `excluded_ids`,
 which matches raw strings. This cycle makes the collapse a config choice:
 a profile declares a **mapping** (source type → category) and expresses
 **exclusion** in category terms; outputs carry the category. Raj's decision
@@ -111,13 +111,20 @@ a scheme may be broader than one city.
 RUAC, IND`) is not covered by `uso-10`, and the shipped Delhi profiles are
 deliberately **not** padded with `UC`/`IND` (that would blunt the
 unmapped-type guard on real data). Tests that run the CLI or the oracle
-helpers on the fixture city therefore use a **test-only derived profile**:
-`tests/oraculum_fixtures.oracle_profile(base: str) -> Path` loads
-`profiles/<base>.yaml`, replaces the `categories` block with
-`scheme: oracle-6` and the identity over the fixture vocabulary, writes it
-under `tmp_path`, and returns the path (passed as `--config <path>`, which
-the CLI already accepts). Test-scaffold changes this implies are listed in
-§ 5; they change *wiring*, never an expected value.
+helpers on the fixture city therefore use a **test-only derived profile**,
+provided by two helpers in `tests/oraculum_fixtures.py`:
+- `oracle_config(base: str) -> Config` — `dataclasses.replace(load_config(base),
+  categories=CategoriesConfig(scheme="oracle-6", mapping=<identity over the
+  fixture vocabulary>))`. Purely in memory; no file, no pytest fixture
+  needed. Used by `methodology_with`, `compute_oracle_frame` and (through
+  it) `scripts/generate_production_fixtures.emit_profile` — which runs as a
+  plain script outside pytest, so it must not depend on `tmp_path`.
+- `oracle_profile_path(base: str, directory: Path) -> Path` — writes the
+  same derived profile as YAML into the caller's directory (pytest
+  `tmp_path` in `test_cli.py` / `test_oracle_e2e.py`) and returns the path
+  for `--config <path>`, which the CLI already accepts.
+Test-scaffold changes this implies are listed in § 5; they change
+*wiring*, never an expected value.
 
 Reserved for later, rejected at load with a message: `categories.default`
 (a catch-all category) — deliberately not offered; silence is the failure
@@ -146,18 +153,25 @@ The mapping **value** is threaded through every path, not only the CLI:
 - `compute_frames` gains keyword-only `mapping: Mapping[str, str] | None =
   None` and `scheme: str = "identity"`. `None` means `compute_frames`
   builds `{t: t for t in frame[type_col].unique()}` itself before calling
-  `apply_mapping` (existing oracle tests keep their call shape).
-- `tests.oraculum_fixtures.compute_oracle_frame(profile, …)` passes
-  `load_config(profile).categories.mapping` — i.e. the fixture path runs
-  under the profile's own mapping, so a collapsing profile's fixture
-  records the numbers the CLI actually produces. Under today's identity
-  profiles this is a no-op. (`methodology_with` is unchanged; the mapping
-  is a `Config`-level value, not a `MethodologyConfig` one.)
+  `apply_mapping` (existing oracle tests keep their call shape). After its
+  final `index_frames` call, `compute_frames` sets
+  `result.attrs["categories"] = {"scheme": scheme, "mapping": dict(mapping)}`
+  on the frame it returns (a test asserts it; callers that merge the
+  result further lose `attrs`, as pandas documents).
+- `tests.oraculum_fixtures.compute_oracle_frame(profile, …)` resolves
+  `cfg = oracle_config(profile)` first, then passes
+  `mapping=cfg.categories.mapping, scheme=cfg.categories.scheme` — i.e. the
+  fixture path runs under the (derived) profile's own mapping, so a
+  collapsing profile's fixture records the numbers the CLI actually
+  produces. Under today's identity profiles this is a no-op.
+  `methodology_with(profile, …)` likewise starts from `oracle_config(profile)`
+  (it only reads `.methodology`, so its result is unchanged).
 - `scripts/generate_production_fixtures.emit_profile` goes through
-  `compute_oracle_frame`, so it inherits this.
-- Because the oracle profiles carry the Delhi `uso-10` block, the oracle
-  helpers load the **derived** profile (`oracle_profile(base)`) — the
-  identity over the fixture vocabulary — never the shipped YAML directly.
+  `compute_oracle_frame`, so it inherits this with no `tmp_path` and no
+  threading changes; `tests/test_fixture_invariants.py`'s bare calls are
+  likewise unaffected.
+- The shipped YAMLs are never loaded *directly* against the oracle city
+  except by the one test that proves the unmapped-type guard.
 
 The neighbours artifact is unchanged and category-free — it is built on
 the full universe and stamped with adjacency/barrier only — so a mapping
@@ -245,11 +259,16 @@ one INFO log line (`categories: scheme=… n_categories=…`) and the
 
 ## 6. Documentation
 
+- Parent spec `2026-08-27-phase3-refactor-design.md` § 3: the
+  required-keys sentence becomes "**Required keys:** `profile`, the whole
+  `methodology` block and (from cycle 3B) the whole `categories` block";
+  the defaulted list is unchanged. One-line erratum, same PR.
 - `docs/methodology-config.md`: new section "Categories" — the two knobs
   (mapping vs exclusion) with **two** worked examples side by side: the
   oracle city's 6-type `oracle-5` (what the tests exercise) and Delhi's
   10-type `urban-5` candidate (`Planned→planned, UAC→unauthorized,
-  RUAC→regularized, JJR→resettlement, JJC→jjc, RV→non-urban,
+  RUAC→regularized` — the YAML token for WORKPLAN's
+  "regularized-unauthorized colonies" — `JJR→resettlement, JJC→jjc, RV→non-urban,
   Industrial→non-urban`, with `UV`, `SDA`, `Other` marked "Raj to decide —
   must be mapped or the run errors"), noting that `UC`/`IND` are the
   fixture's shorthand for `UAC`/`Industrial`; and the procedure for Raj's

@@ -156,8 +156,10 @@ tricks.
 ## 3. Config schema
 
 One YAML per profile. Loaded into frozen dataclasses. **Required keys:**
-`profile` and the whole `methodology` block (every methodology key must be
-written out — a profile is a complete statement of method, never inherited).
+`profile`, the whole `methodology` block and (from cycle 3B, spec
+`2026-08-27-phase3b-categories-design.md`) the whole `categories` block
+(every key must be written out — a profile is a complete statement of
+method, never inherited).
 **Defaulted keys:** everything else (`crs`, `paths`, `layers`, `services`,
 `validate`, `outputs`) defaults to the `code-2025` values shown below when
 omitted. Unknown keys, a missing required key, and out-of-enum values raise
