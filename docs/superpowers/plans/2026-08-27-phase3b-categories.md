@@ -1556,9 +1556,9 @@ temporarily change `COLLAPSE_TO_ORACLE`'s entry
 
 Run: `uv run pytest tests/test_cli.py -q -k five_way_collapse`
 Expected: **4 failed**, each at the comparison-(a) loop with an
-`assert got.loc[sid, "health_pcen"] == pytest.approx(expected.loc[sid, "school_pcen"], abs=1e-9)`
-mismatch (clinic and school PCENs differ on every settlement that has
-either service — e.g. A: clinic 0.03 vs school 0.0106…), NOT at the
+`assert got.loc[sid, column] == pytest.approx(direct.loc[sid, oracle_column], abs=1e-9)`
+mismatch for `column == "health_pcen"` (clinic and school PCENs differ on
+every settlement — e.g. A: clinic 0.029142… vs school 0.014142…), NOT at the
 index or category assertions. Then do the same to `COLLAPSE_TO_REFERENCE`
 (`"health_pcen": "clinic_pcen"` → `"health_pcen": "school_pcen"`) with
 `COLLAPSE_TO_ORACLE` restored, and confirm the failure moves to the
