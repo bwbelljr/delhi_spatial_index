@@ -1,7 +1,8 @@
 # Settlement-Category Mapping Layer — Design Spec (DEL-17; cycle 3B)
 
 Date: 2026-08-27
-Status: **draft for owner review** (pending ultracode review)
+Status: **approved by owner (2026-08-27)** — rev 2 after ultracode review
+(24 findings → 6 root causes fixed; see decision log)
 Branch: `del-17-categories` (off `origin/main` at 2b5d8ae)
 Parent: WORKPLAN.md Phase 3 item "Make settlement types configurable via a
 mapping layer" [DEL-17]; Phase 4 DEL-28/29/31/32 consume it. Builds on the
@@ -15,6 +16,15 @@ Decision log (brainstorm, 27 Aug 2026):
 - Unmapped source types are an **error**, never a warning or a fallback.
 - Mapping lives **inline in each profile** (`categories:` block), not in
   separate scheme files — a profile stays a complete statement of method.
+- Rev 2 (ultracode review): the shipped Delhi profiles stay pure — tests on
+  the oracle city use a **test-only derived profile** whose mapping is the
+  identity over the fixture vocabulary; the profile's mapping is **threaded
+  into the oracle/fixture path** (`compute_oracle_frame`, `emit_profile`) so
+  fixtures are generated under each profile's own mapping; duplicate YAML
+  keys are rejected by a checking loader (PyYAML keeps the last one
+  silently); the scheme stamp is applied by `compute` immediately before
+  `write_outputs` (pandas drops `attrs` across `merge`); `exclusion.types ⊆
+  categories` is checked at run time too, not only at load.
 
 ## Purpose
 
@@ -69,13 +79,24 @@ methodology:
 
 Load-time rules (`ConfigError` naming the key and the allowed values):
 - `categories.scheme`: non-empty string. `categories.mapping`: non-empty
-  map of string → string; duplicate source keys are impossible in YAML but
-  an empty or non-string value is rejected. Several sources mapping to one
-  category (X:1) is the point; a category name equal to a source name is
-  fine (identity).
+  map of string → string; an empty or non-string value is rejected.
+  **Duplicate source keys are rejected**: `load_config` parses profile YAML
+  with a `yaml.SafeLoader` subclass whose `construct_mapping` raises
+  `ConfigError` naming the repeated key (PyYAML's default keeps the last
+  occurrence silently — the exact silence this layer exists to prevent).
+  Several sources mapping to one category (X:1) is the point; a category
+  name equal to a source name is fine (identity).
+- Plumbing: `categories` joins `TOP_LEVEL_KEYS` and the `Config` dataclass
+  as `CategoriesConfig(scheme, mapping)`; `load_config` parses
+  `_categories(raw)` **before** `_methodology(raw, allowed_categories=…)`
+  so the cross-block check below has the category set in hand.
 - `methodology.exclusion.types`: every entry must be a **category** (a
   value of `mapping`); the error lists the categories the mapping
-  produces. `[]` is allowed.
+  produces. `[]` is allowed. The same check is repeated at **run time** in
+  the shared prelude (`ValidationError`), because in-memory callers
+  (`compute_frames`, the oracle helpers) build `MethodologyConfig`
+  directly and never pass through `load_config`; without it a category the
+  mapping no longer produces would exclude nothing, silently.
 - Both shipped profiles (`code-2025`, `manuscript`) gain the identity
   `uso-10` block above. `code-2025` keeps `exclusion.types: [RV]`,
   `manuscript` keeps `[]`; both are valid category names under identity.
@@ -85,6 +106,18 @@ present in the settlements frame with no entry in `mapping` fails the run,
 naming **every** unmapped type with its row count (one run diagnoses the
 whole layer). A mapping entry for a type absent from the data is fine —
 a scheme may be broader than one city.
+
+**The oracle city is not Delhi.** Its vocabulary (`Planned, UC, JJC, RV,
+RUAC, IND`) is not covered by `uso-10`, and the shipped Delhi profiles are
+deliberately **not** padded with `UC`/`IND` (that would blunt the
+unmapped-type guard on real data). Tests that run the CLI or the oracle
+helpers on the fixture city therefore use a **test-only derived profile**:
+`tests/oraculum_fixtures.oracle_profile(base: str) -> Path` loads
+`profiles/<base>.yaml`, replaces the `categories` block with
+`scheme: oracle-6` and the identity over the fixture vocabulary, writes it
+under `tmp_path`, and returns the path (passed as `--config <path>`, which
+the CLI already accepts). Test-scaffold changes this implies are listed in
+§ 5; they change *wiring*, never an expected value.
 
 Reserved for later, rejected at load with a message: `categories.default`
 (a catch-all category) — deliberately not offered; silence is the failure
@@ -101,13 +134,30 @@ added; raises `validate.ValidationError` listing unmapped types and counts.
 (used by config validation and tests).
 
 Where it runs: in the shared population/exclusion prelude
-(`pipeline._population_and_exclusion`), **before** `excluded_ids`, on the
-frame loaded from the neighbours artifact. `excluded_ids` matches
-`out_col` against `exclusion.types` instead of `type_col`. Because
-`compute` and `compute_frames` share the prelude, the oracle path and the
-CLI path cannot diverge. `compute_frames` gains a keyword-only
-`mapping: Mapping[str, str] | None = None`; `None` means identity over the
-types present (so existing oracle tests keep their call shape).
+(`pipeline._population_and_exclusion`), immediately **before**
+`excluded_ids` — on the settlements frame in `compute_frames`, on the
+neighbours frame in `compute`; both carry `type_col`, and `build_neighbors`
+neither adds nor removes rows, so the two agree. The prelude then checks
+`exclusion.types ⊆ categories_of(mapping)` (run-time rule above) and
+`excluded_ids` matches `out_col` against `exclusion.types` instead of
+`type_col`.
+
+The mapping **value** is threaded through every path, not only the CLI:
+- `compute_frames` gains keyword-only `mapping: Mapping[str, str] | None =
+  None` and `scheme: str = "identity"`. `None` means `compute_frames`
+  builds `{t: t for t in frame[type_col].unique()}` itself before calling
+  `apply_mapping` (existing oracle tests keep their call shape).
+- `tests.oraculum_fixtures.compute_oracle_frame(profile, …)` passes
+  `load_config(profile).categories.mapping` — i.e. the fixture path runs
+  under the profile's own mapping, so a collapsing profile's fixture
+  records the numbers the CLI actually produces. Under today's identity
+  profiles this is a no-op. (`methodology_with` is unchanged; the mapping
+  is a `Config`-level value, not a `MethodologyConfig` one.)
+- `scripts/generate_production_fixtures.emit_profile` goes through
+  `compute_oracle_frame`, so it inherits this.
+- Because the oracle profiles carry the Delhi `uso-10` block, the oracle
+  helpers load the **derived** profile (`oracle_profile(base)`) — the
+  identity over the fixture vocabulary — never the shipped YAML directly.
 
 The neighbours artifact is unchanged and category-free — it is built on
 the full universe and stamped with adjacency/barrier only — so a mapping
@@ -117,8 +167,14 @@ compute, as in 3A (`stage` × `absent_neighbor` untouched).
 Outputs: every PSI CSV / shapefile / joblib row carries `category`
 (string) alongside the raw `USO_FINAL`, which is kept as-is;
 `missing_population.csv` too. The column name is under the 10-character
-shapefile limit. The scheme name is written into the frame's `attrs`
-(joblib) and logged; it is not a column.
+shapefile limit. Provenance: `compute` sets
+`result.attrs["categories"] = {"scheme": …, "mapping": …}` on each result
+frame **immediately before `io.write_outputs`** (mirroring the neighbours
+stamp; pandas drops `attrs` across the merges inside `index_frames`, so
+stamping earlier would silently vanish). The joblib output carries it;
+CSV and shapefile cannot carry `attrs`, so for those formats the record is
+one INFO log line (`categories: scheme=… n_categories=…`) and the
+`category` column itself. The scheme is not a column.
 
 ## 4. Proofs and fixtures
 
@@ -129,38 +185,76 @@ shapefile limit. The scheme name is written into the frame's `attrs`
   real-data run under `code-2025` must still show 0.000e+00 on all 23
   columns.
 - **Reference implementation unchanged.** The reference has no category
-  concept; its scenarios drop settlements by id. `test_profiles_match_reference`
-  keeps passing because category exclusion resolves to the same ids.
+  concept; its scenarios drop settlements by **id** (`{"RV","IND"}`).
+  `test_profiles_match_reference` keeps passing because category exclusion
+  resolves to the same ids — which rests on two facts that must be written
+  down and pinned: (1) the oracle helpers pass `types=("RV","IND")`, which
+  after 3B are *category* names and select the right rows only because the
+  derived profile's mapping is the identity; (2) the fixture gives those
+  two settlements ids equal to their types. `ORACLE_SCENARIOS`' docstring
+  states (1); a fixture-invariant test pins `USO_AREA_U == USO_FINAL` for
+  exactly `{RV, IND}` and `categories_of(identity) == fixture vocabulary`.
+- **Fixtures regenerated under each profile's own mapping** (via
+  `compute_oracle_frame`); today's identity profiles make that a no-op, so
+  byte-identity holds — and a future collapsing profile's fixture is
+  honest.
 - **Vocabulary-change equivalence.** A CLI e2e on the oracle city with a
   5-way collapse (`Planned→planned, UC→unauthorized, RUAC→regularized,
-  JJC→jjc, RV→non-urban, IND→non-urban`) and `exclusion.types:
-  [non-urban]` must produce exactly the numbers of today's raw
-  `[RV, IND]` exclusion (the `excl_contributing` / `excl_removed` reference
-  blocks at 1e-12 depending on `stage`). This is the proof that the layer
-  only changed the vocabulary.
+  JJC→jjc, RV→non-urban, IND→non-urban`; scheme `oracle-5`) and
+  `exclusion.types: [non-urban]`, derived from `code-2025` (rule `code`,
+  `swallowed`, second normalization on), runs both stages and compares the
+  written CSV (a) to `compute_oracle_frame("code-2025", types=("RV","IND"),
+  stage=<stage>, denom=…)` — the direct "same numbers as today's raw
+  exclusion" claim — and (b) to reference block `code/excl_contributing`
+  (`post_neighbors`) or `code/excl_removed` (`pre_neighbors`), for both
+  denominators, at the CSV round-trip tolerance the existing e2e uses
+  (`abs=1e-9`), with the same `health→clinic` column rename. 1e-12 applies
+  only to in-memory comparisons. This is the proof that the layer only
+  changed the vocabulary.
 
 ## 5. Tests
 
 - `tests/test_categories.py`: identity is a no-op on values; X:1 collapse;
   unmapped type raises naming all offenders with counts; mapping broader
-  than the data passes; input frame not mutated.
+  than the data passes; input frame not mutated; `categories_of`.
 - `tests/test_config.py` additions: missing `categories:` rejected;
   `exclusion.types` entry that is not a category rejected with the allowed
-  list; `categories.default` rejected as reserved; both shipped profiles
-  load with the identity scheme.
+  list; duplicate mapping key rejected naming the key; `categories.default`
+  rejected as reserved; both shipped profiles load with the identity
+  scheme and `categories_of(mapping)` == the 10 Delhi types.
 - `tests/test_cli.py` additions: `category` column present in CSV, shp and
-  joblib outputs and in `missing_population.csv`; the 5-way collapse e2e
-  above; an unmapped type in the layer → exit 1 with the type named.
-- `tests/test_pipeline.py` additions: `compute_frames(mapping=None)`
-  equals `mapping=identity` at 1e-12 on every metric column.
-- Existing 246 tests carry over unchanged in expectation.
+  joblib outputs and in `missing_population.csv`; the reloaded joblib's
+  `attrs["categories"]["scheme"]` equals the profile's; the 5-way collapse
+  e2e above; an unmapped type in the layer → exit 1 with the type named
+  (run the shipped `code-2025` YAML directly on the oracle city — `UC`/`IND`
+  unmapped — which doubles as the proof that the guard works).
+- `tests/test_pipeline.py` additions: `compute_frames(mapping=None)` equals
+  an explicit identity mapping at 1e-12 on every metric column; an
+  `exclusion.types` entry outside `categories_of(mapping)` raises
+  `ValidationError` on the in-memory path.
+- `tests/test_fixture_invariants.py` addition: the id == type pin for
+  `{RV, IND}` and the fixture-vocabulary identity (§ 4).
+- **Carried-over tests whose *scaffolding* changes** (expectations do not;
+  § 8's stopping rule exempts exactly these): `tests/test_config.py`'s
+  `MINIMAL` gains the identity `uso-10` block; `tests/test_cli.py`'s
+  `data_dir`/`run` helpers and `tests/test_oracle_e2e.py` pass the derived
+  `oracle_profile("code-2025")` / `oracle_profile("manuscript")` path
+  instead of the shipped name; `tests/oraculum_fixtures.compute_oracle_frame`
+  loads the derived profile. Every assertion and tolerance in those files
+  stays as it is. Count: 246 carried over, all green, plus the additions.
 
 ## 6. Documentation
 
 - `docs/methodology-config.md`: new section "Categories" — the two knobs
-  (mapping vs exclusion) with the worked `urban-5` example, and the
-  procedure for Raj's decision (copy profile, write the mapping, set
-  `exclusion.types: [non-urban]`, regenerate fixtures, recalculate).
+  (mapping vs exclusion) with **two** worked examples side by side: the
+  oracle city's 6-type `oracle-5` (what the tests exercise) and Delhi's
+  10-type `urban-5` candidate (`Planned→planned, UAC→unauthorized,
+  RUAC→regularized, JJR→resettlement, JJC→jjc, RV→non-urban,
+  Industrial→non-urban`, with `UV`, `SDA`, `Other` marked "Raj to decide —
+  must be mapped or the run errors"), noting that `UC`/`IND` are the
+  fixture's shorthand for `UAC`/`Industrial`; and the procedure for Raj's
+  decision (copy profile, write the mapping, set `exclusion.types:
+  [non-urban]`, regenerate fixtures, recalculate).
 - `docs/data/uso_final_vocabulary.md`: § 1 above as a standalone artifact
   (counts, provenance of the 16→10 merge, the oracle fixture vocabulary).
 - CHANGELOG `[Unreleased]`; WORKPLAN DEL-17 tick; DEL-31 note ("one YAML").
@@ -176,4 +270,6 @@ scheme files shared across profiles (revisit when a second city exists).
 Same as the 3A spec: fix-forward/commit/push/merge yes once CI and § 4
 proofs are green; a confirmed Critical review finding governs over the
 plan. Stop and report if either shipped fixture or the real-data baseline
-deviates, or if a carried-over test needs its expected value changed.
+deviates, or if a carried-over test needs its **expected value** changed
+(the § 5 scaffolding changes — `MINIMAL`, the derived-profile wiring — are
+expected and exempt).
