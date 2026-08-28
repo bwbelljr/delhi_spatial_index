@@ -29,9 +29,11 @@ allowed values as an inline comment. The ones on the table with Raj:
 | `exclusion.absent_neighbor` | `swallowed` | `contributes` | memo § 5 / Open Decision A (DEL-13, DEL-21) — do dropped settlements still lend services? |
 | `decay.distance_unit` | `km` | (manuscript silent) | memo § 7 |
 
-Also in the block: `exclusion.types` (which `USO_FINAL` types are dropped;
-`[RV]` today), `exclusion.stage` (`post_neighbors` = today: neighbours are
-built on the full universe, exclusion happens at compute), `barrier.combine`.
+Also in the block: `exclusion.types` (which **categories** are dropped —
+category names, not raw `USO_FINAL` types; `[RV]` today, which is a category
+only because the shipped mapping is the identity — see § 2),
+`exclusion.stage` (`post_neighbors` = today: neighbours are built on the full
+universe, exclusion happens at compute), `barrier.combine`.
 
 **Reserved — the loader refuses these and tells you why:**
 `barrier.rule: partial_weighted` (needs a reference rule and a hand anchor
@@ -39,7 +41,108 @@ first — see memo § 2), `outputs.denominators: one` (reference does not model
 it), and the key `exclusion.minmax_universe` (Open Decision A.2 — no knob
 anywhere yet). If Raj chooses one of these, it is a 3C ticket, not a YAML edit.
 
-## 2. Procedure for a decision
+## 2. Categories — the settlement-type mapping
+
+Since cycle 3B (27 Aug 2026) a profile also states, in full, how the
+layer's **source types** collapse into the **categories** the analysis
+uses. `categories:` is required in every profile, like `methodology:`.
+
+Two knobs, and they do different jobs:
+
+| knob | job |
+|---|---|
+| `categories.mapping` | source type → category. 1:1 (identity) or X:1 (several sources into one category). This is the vocabulary. |
+| `methodology.exclusion.types` | which **categories** are dropped from the reported frame. Written in the mapping's category names, never in raw source types. |
+
+`categories.scheme` is a free-form name for the mapping. It is recorded in
+the joblib output's `attrs` and in one INFO line per run
+(`categories: scheme=… n_categories=…`); it is never a column. Every output
+— CSV, shapefile, joblib — and `missing_population.csv` carry a `category`
+column next to the raw `USO_FINAL`, which is kept as-is.
+
+**An unmapped source type fails the run.** If the layer carries a type with
+no entry in `mapping`, `compute` exits 1 and names every offender with its
+row count, so one run diagnoses the whole layer. There is deliberately no
+catch-all: `categories.default` is rejected at load. A mapping entry for a
+type that is *absent* from the data is fine — a scheme may be broader than
+one city. Duplicate keys in the YAML are also rejected (PyYAML keeps the
+last one silently, which is the same failure wearing a different hat).
+
+### Worked example 1 — the oracle city, six types into five
+
+This is what the test suite exercises
+(`tests/test_cli.py::test_five_way_collapse_reproduces_raw_type_exclusion`).
+The 7-settlement fixture city carries `Planned, UC, JJC, RV, RUAC, IND`
+(`UC` and `IND` are the fixture's shorthand for `UAC` and `Industrial`):
+
+```yaml
+categories:
+  scheme: oracle-5
+  mapping:
+    Planned: planned
+    UC: unauthorized
+    RUAC: regularized
+    JJC: jjc
+    RV: non-urban
+    IND: non-urban
+methodology:
+  exclusion:
+    types: [non-urban]
+```
+
+Six source types, five categories, and the run drops `non-urban` — which is
+exactly the two settlements the old raw `exclusion.types: [RV, IND]`
+dropped. The test proves those two runs are numerically identical, and that
+both match the independent reference implementation. That equivalence is
+the whole claim of this layer: **it changes the vocabulary, not the
+numbers.**
+
+### Worked example 2 — Delhi, ten types into the Phase 4 candidate
+
+The workshop's working candidate (WORKPLAN DEL-29): planned /
+unauthorized / regularized-unauthorized / resettlement / JJC, with the
+non-urban types dropped. In YAML, `regularized` is the token for WORKPLAN's
+"regularized-unauthorized colonies":
+
+```yaml
+categories:
+  scheme: urban-5
+  mapping:
+    Planned: planned
+    UAC: unauthorized
+    RUAC: regularized
+    JJR: resettlement
+    JJC: jjc
+    RV: non-urban
+    Industrial: non-urban
+    # UV: ?            # Raj to decide — must be mapped or the run errors
+    # SDA: ?           # Raj to decide — must be mapped or the run errors
+    # Other: ?         # Raj to decide — must be mapped or the run errors
+methodology:
+  exclusion:
+    types: [non-urban]
+```
+
+**This profile does not ship, and as written it would not run:** `UV` (138
+rows), `SDA` (86) and `Other` (33) are real types on the real layer with no
+entry, so `compute` would exit 1 naming all three. That is the design —
+they are open questions (DEL-29 explicitly flags SDA), and the pipeline
+refuses to guess. Counts and provenance for all ten types:
+`docs/data/uso_final_vocabulary.md`.
+
+### Procedure for Raj's decision (DEL-31)
+
+1. Copy `delhi_psi/profiles/code-2025.yaml` to
+   `delhi_psi/profiles/urban-5.yaml`, set `profile: urban-5`, and write the
+   agreed `categories:` block — every one of the 10 source types mapped.
+2. Set `methodology.exclusion.types: [non-urban]` (category names).
+3. Register the profile and regenerate the fixtures exactly as in § 3
+   below. `code-2025.csv` and `manuscript.csv` must not change; the new
+   `urban-5.csv` diff *is* the categorization decision on the oracle city.
+4. Run the suite, then the real data (§ 3 step 5). This is the DEL-32
+   recalculation; no code changes.
+
+## 3. Procedure for a decision
 
 Work on a branch; `main` requires the CI check.
 
@@ -90,7 +193,7 @@ Work on a branch; `main` requires the CI check.
    production default stays `code-2025` until Phase 4 recalculation
    (DEL-32) switches it deliberately.
 
-## 3. What each proof guards
+## 4. What each proof guards
 
 - `tests/test_production_fixtures.py` — every profile's numbers on the
   oracle city, byte-for-byte; the CI drift guard regenerates and diffs them
@@ -102,7 +205,7 @@ Work on a branch; `main` requires the CI check.
 - `scripts/verify_against_baseline.py --config code-2025` — real data ==
   July 2025 baseline, zero deviation.
 
-## 4. Things that are code, not config
+## 5. Things that are code, not config
 
 New *values* for a reference-pinned switch (anything not listed in the YAML
 comments) require, in order — this is the 3C cycle:
@@ -117,6 +220,3 @@ comments) require, in order — this is the 3C cycle:
    (`uv run python tests/reference_impl.py`);
 5. the production implementation in `delhi_psi/` if the branch does not
    already exist.
-
-Category mappings (`categories:` block, 10/8/5/4 settlement types) are
-cycle 3B (DEL-17).
