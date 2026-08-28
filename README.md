@@ -35,7 +35,9 @@ uv run python scripts/verify_against_baseline.py --config code-2025 \
 
 `--config` takes a shipped profile name or a path to a YAML file. Every
 methodology choice — adjacency rule, barrier rule, decay, roads formula,
-denominator, second normalization, exclusion semantics — is a config value;
-see `docs/superpowers/specs/2026-08-27-phase3-refactor-design.md` § 3.
+denominator, second normalization, exclusion semantics — is a config value.
+**To change one (or turn a methodology decision into a new profile), follow
+[`docs/methodology-config.md`](docs/methodology-config.md).** The schema
+rationale is in `docs/superpowers/specs/2026-08-27-phase3-refactor-design.md` § 3.
 
 Tests: `uv run pytest`
