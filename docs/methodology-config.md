@@ -136,11 +136,28 @@ refuses to guess. Counts and provenance for all ten types:
    `delhi_psi/profiles/urban-5.yaml`, set `profile: urban-5`, and write the
    agreed `categories:` block — every one of the 10 source types mapped.
 2. Set `methodology.exclusion.types: [non-urban]` (category names).
-3. Register the profile and regenerate the fixtures exactly as in § 3
-   below. `code-2025.csv` and `manuscript.csv` must not change; the new
-   `urban-5.csv` diff *is* the categorization decision on the oracle city.
-4. Run the suite, then the real data (§ 3 step 5). This is the DEL-32
-   recalculation; no code changes.
+3. **Do not add `urban-5` to `tests/test_cli.SHIPPED_PROFILES` or
+   `scripts/generate_production_fixtures.PROFILES`.** `compute_oracle_frame`
+   always resolves `oracle_config(profile)` — the derived helpers swap in
+   the oracle-6 identity mapping but keep `base`'s shipped
+   `methodology.exclusion.types` verbatim — and `emit_profile` supplies
+   `types` from `ORACLE_SCENARIOS`; `urban-5`'s `exclusion.types:
+   [non-urban]` is not a category the oracle-6 identity produces (its
+   vocabulary is `Planned, UC, JJC, RV, RUAC, IND`), so `oracle_config`/
+   `oracle_profile_path` fail to load it. Even for a profile whose
+   exclusion categories *did* exist in that vocabulary, the regenerated
+   `urban-5.csv` would still be byte-identical to `code-2025.csv` — the
+   production fixture pins METHODOLOGY only and is EXPECTED to be
+   unchanged by a mapping change, never the categorization decision.
+   Instead, prove the vocabulary claim with a `collapse_profile_path`-style
+   test in `tests/test_cli.py`: copy the pattern of
+   `test_five_way_collapse_reproduces_raw_type_exclusion`'s hand-written
+   `ORACLE_5` block, adapted to `urban-5`'s mapping and dropped category —
+   a new profile's mapping gets a sibling test, not a fixture diff.
+4. Run the suite, then the real data (§ 3 step 5) — `--config urban-5`
+   resolves the shipped YAML directly and needs none of the § 3 step 2
+   test-list registrations above. This is the DEL-32 recalculation; no
+   code changes.
 
 ## 3. Procedure for a decision
 

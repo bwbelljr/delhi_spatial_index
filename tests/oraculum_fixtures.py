@@ -73,6 +73,14 @@ def oracle_config(base):
     scripts/generate_production_fixtures.py reaches it through
     `compute_oracle_frame` and runs as a plain script outside pytest, where
     there is no `tmp_path`.
+
+    Precondition: `base`'s `exclusion.types` must be category names present
+    in the oracle vocabulary (`ORACLE_VOCABULARY`, since the swapped-in
+    mapping is its identity) — the shipped profiles satisfy this. A profile
+    whose `exclusion.types` names a category the oracle-6 identity does not
+    produce (e.g. a collapsing profile's `non-urban`) fails to load through
+    this helper with the "not categories produced by categories.mapping"
+    error.
     """
     from dataclasses import replace
 
@@ -85,7 +93,16 @@ def oracle_config(base):
 
 def oracle_profile_path(base, directory):
     """Write the same derived profile as YAML into `directory`; return the
-    path, for the tests that drive the real CLI with `--config <path>`."""
+    path, for the tests that drive the real CLI with `--config <path>`.
+
+    Precondition: `base`'s `exclusion.types` must be category names present
+    in the oracle vocabulary (`ORACLE_VOCABULARY`, since the swapped-in
+    mapping is its identity) — the shipped profiles satisfy this. A profile
+    whose `exclusion.types` names a category the oracle-6 identity does not
+    produce (e.g. a collapsing profile's `non-urban`) fails to load through
+    this helper with the "not categories produced by categories.mapping"
+    error.
+    """
     import yaml
 
     from delhi_psi.config import PROFILES_DIR

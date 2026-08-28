@@ -163,7 +163,11 @@ The mapping **value** is threaded through every path, not only the CLI:
   `mapping=cfg.categories.mapping, scheme=cfg.categories.scheme` — i.e. the
   fixture path runs under the (derived) profile's own mapping, so a
   collapsing profile's fixture records the numbers the CLI actually
-  produces. Under today's identity profiles this is a no-op.
+  produces. Under today's identity profiles this is a no-op. (rev 4
+  erratum, final review: the derived mapping is always the identity over
+  the fixture vocabulary, so the production fixture is methodology-only and
+  does not change with a mapping; vocabulary proofs live in `test_cli.py`'s
+  collapse test.)
   `methodology_with(profile, …)` likewise starts from `oracle_config(profile)`
   (it only reads `.methodology`, so its result is unchanged).
 - `scripts/generate_production_fixtures.emit_profile` goes through

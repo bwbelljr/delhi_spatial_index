@@ -483,6 +483,16 @@ def compute(cfg):
         exclusion_types=cfg.methodology.exclusion.types,
         mapping=cfg.categories.mapping)
 
+    # One INFO line per excluded category, even one that matched zero rows
+    # — the silent case this closes. `missing` is logged separately so a
+    # row dropped for both reasons is not double-counted into a category.
+    for category in cfg.methodology.exclusion.types:
+        rows = frame.loc[frame[CATEGORY_COL] == category, id_col]
+        log.info("excluded: category=%s rows=%d",
+                 category, len(set(rows) - set(missing)))
+    if missing:
+        log.info("excluded: missing_population rows=%d", len(missing))
+
     missing_path = out_dir / "missing_population.csv"
     frame[frame[id_col].isin(missing)].drop(
         columns=[c for c in io.SHAPEFILE_DROP_COLUMNS if c in frame.columns]

@@ -639,3 +639,70 @@ def test_outputs_carry_the_category_column_and_the_scheme_stamp(data_dir,
 
     messages = [record.getMessage() for record in caplog.records]
     assert "categories: scheme=oracle-6 n_categories=6" in messages, messages
+
+
+def test_oracle_profile_path_requires_exclusion_types_in_the_oracle_vocabulary(
+        tmp_path, monkeypatch):
+    """`oracle_profile_path`'s and `oracle_config`'s precondition (their
+    docstrings): `base`'s `exclusion.types` must already be category names
+    the oracle-6 identity mapping produces. `code-2025`'s shipped `[RV]`
+    satisfies it; swap it for a category that mapping does not produce (as
+    a real collapsing profile like `urban-5`'s `non-urban` would) and
+    `load_config` on the derived YAML fails loudly, naming the offender
+    (docs/methodology-config.md § 2, DEL-31 procedure step 3).
+    """
+    import yaml
+
+    from delhi_psi.config import ConfigError, PROFILES_DIR, load_config
+
+    raw = yaml.safe_load((PROFILES_DIR / "code-2025.yaml").read_text())
+    raw["methodology"]["exclusion"]["types"] = ["non-urban"]
+    fake_profiles = tmp_path / "profiles"
+    fake_profiles.mkdir()
+    (fake_profiles / "code-2025.yaml").write_text(yaml.safe_dump(raw))
+    monkeypatch.setattr("delhi_psi.config.PROFILES_DIR", fake_profiles)
+
+    derived = oracle_profile_path("code-2025", tmp_path)
+
+    with pytest.raises(ConfigError) as excinfo:
+        load_config(derived)
+    assert "non-urban" in str(excinfo.value)
+
+
+def test_excluded_rows_are_logged_per_category(data_dir, tmp_path, caplog):
+    """Spec fix R3: one INFO line per excluded category with its row count,
+    including a category that matches zero rows — the silent case this
+    closes. `phantom` is a `categories.mapping` entry for a source type
+    absent from the fixture (allowed by design, doc § 2); `RV` is the
+    fixture's one real excluded row.
+    """
+    import logging as _logging
+
+    import yaml
+
+    from delhi_psi.config import PROFILES_DIR
+
+    raw = yaml.safe_load((PROFILES_DIR / "code-2025.yaml").read_text())
+    raw["profile"] = "oracle-phantom"
+    raw["categories"] = {
+        "scheme": "oracle-phantom",
+        "mapping": {**{t: t for t in
+                       ("Planned", "UC", "JJC", "RV", "RUAC", "IND")},
+                   "Ghost": "phantom"},
+    }
+    raw["methodology"]["exclusion"]["types"] = ["RV", "phantom"]
+    profile = tmp_path / "oracle-phantom.yaml"
+    profile.write_text(yaml.safe_dump(raw, sort_keys=False))
+
+    out = tmp_path / "phantom"
+    assert cli.main(["preprocess", "--config", str(profile),
+                     "--data-dir", str(data_dir), "--out-dir", str(out)]) == 0
+    caplog.clear()
+    with caplog.at_level(_logging.INFO, logger="delhi_psi.pipeline"):
+        assert cli.main(["compute", "--config", str(profile),
+                         "--data-dir", str(data_dir),
+                         "--out-dir", str(out)]) == 0
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert "excluded: category=RV rows=1" in messages, messages
+    assert "excluded: category=phantom rows=0" in messages, messages
