@@ -28,14 +28,14 @@ section accumulates changes on in-flight branches.
   `manuscript.csv` are byte-identical, and
   `scripts/verify_against_baseline.py --config code-2025` still reports
   `0.000e+00` on all 23 columns against the July 2025 baseline (real-data
-  proof, 27 Aug 2026: `categories: scheme=uso-10 n_categories=10`, 4,131
+  proof, 28 Aug 2026: `categories: scheme=uso-10 n_categories=10`, 4,131
   reported, `PASS — new run equivalent to July 2025 baseline within
   tolerance`). Proved by a CLI end-to-end that collapses the oracle city's
   six types into five, excludes the category `non-urban`, and reproduces
   both today's raw `[RV, IND]` exclusion and the independent reference
   implementation's `code/excl_contributing` and `code/excl_removed` blocks
   for both stages and both denominators. Raj's Phase 4 decision (DEL-31) is
-  now one YAML file. Tests 246 → 278 (`test_categories`, the config and
+  now one YAML file. Tests 246 → 279 (`test_categories`, the config and
   pipeline cases, the collapse e2e, the unmapped-type guard, the fixture
   id == type pin). Docs: `docs/methodology-config.md` § 2,
   `docs/data/uso_final_vocabulary.md`. Spec:

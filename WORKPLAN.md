@@ -174,7 +174,7 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       `USO_FINAL` source types), so Raj's categorization decision (Phase 4)
       plugs in without code changes — and so the method ports to other cities
       [DEL-17]
-      — done 27 Aug 2026 (3B): profiles carry a required `categories:` block
+      — done 28 Aug 2026 (3B): profiles carry a required `categories:` block
       (`scheme` + source type → category mapping); `exclusion.types` is
       written in category names; every output carries a `category` column and
       the joblib the scheme stamp. An unmapped source type errors (no
