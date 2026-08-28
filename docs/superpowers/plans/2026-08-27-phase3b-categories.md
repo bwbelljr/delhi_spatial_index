@@ -1547,6 +1547,27 @@ Expected: **1 failed** — `KeyError: 'categories'` reading
 git checkout -- delhi_psi/pipeline.py
 ```
 
+**Mutation C — the numeric comparisons (a) and (b) are load-bearing.**
+Mutation A trips the settlement-set assertion first and never reaches the
+value loops (plan review R1). So, keeping the settlement set and the
+`category` dict untouched, mis-pair one column: in `tests/test_cli.py`
+temporarily change `COLLAPSE_TO_ORACLE`'s entry
+`"health_pcen": "clinic_pcen"` to `"health_pcen": "school_pcen"`.
+
+Run: `uv run pytest tests/test_cli.py -q -k five_way_collapse`
+Expected: **4 failed**, each at the comparison-(a) loop with an
+`assert got.loc[sid, "health_pcen"] == pytest.approx(expected.loc[sid, "school_pcen"], abs=1e-9)`
+mismatch (clinic and school PCENs differ on every settlement that has
+either service — e.g. A: clinic 0.03 vs school 0.0106…), NOT at the
+index or category assertions. Then do the same to `COLLAPSE_TO_REFERENCE`
+(`"health_pcen": "clinic_pcen"` → `"health_pcen": "school_pcen"`) with
+`COLLAPSE_TO_ORACLE` restored, and confirm the failure moves to the
+comparison-(b) loop. Revert:
+
+```bash
+git checkout -- tests/test_cli.py
+```
+
 - [ ] **Step 4: Run the whole suite**
 
 Run: `uv run pytest -q -W error`
