@@ -28,6 +28,19 @@ services:
           school: Public Services/School/schools7760.shp,
           transport: Public Services/Transport/Transport.shp}
   line:  {road: Public Services/Major Road/Road.shp}   # amount column: road_length
+categories:                         # source type -> category (spec 3B 2)
+  scheme: uso-10                    # free-form name; stamped into the joblib output
+  mapping:                          # IDENTITY: the 10 USO_FINAL types, uncollapsed
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
 methodology:
   adjacency: {rule: bbox}           # rule: bbox | touch
   barrier:
@@ -39,7 +52,7 @@ methodology:
   roads: decayed                    # decayed | eq4_own_only
   second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
   exclusion:
-    types: [RV]                     # raw USO_FINAL strings until 3B adds `categories:`
+    types: [RV]                     # CATEGORY names (values of categories.mapping)
     stage: post_neighbors           # post_neighbors | pre_neighbors
     absent_neighbor: swallowed      # swallowed | contributes
                                     # minmax_universe: reserved (spec 9)

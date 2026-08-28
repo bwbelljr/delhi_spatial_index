@@ -1,9 +1,10 @@
 """Config schema (spec § 3): one YAML per profile, frozen dataclasses.
 
-Required keys: `profile` and the whole `methodology` block — a profile is a
-complete statement of method, never inherited. Everything else defaults to
-the `code-2025` values. Unknown keys, missing required keys and out-of-enum
-values raise ConfigError naming the key and the allowed values.
+Required keys: `profile`, the whole `methodology` block and (from cycle 3B)
+the whole `categories` block — a profile is a complete statement of method,
+never inherited. Everything else defaults to the `code-2025` values.
+Unknown keys, missing required keys and out-of-enum values raise ConfigError
+naming the key and the allowed values.
 
 The reference-pinned enums are generated from ONE table, REFERENCE_KNOBS,
 which maps each config value to its `tests.reference_impl.compute_city` knob.
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import yaml
 
+from delhi_psi.categories import categories_of
 from delhi_psi.io import resolve_data_dir, out_dir_path
 
 PROFILES_DIR = Path(__file__).resolve().parent / "profiles"
@@ -105,6 +107,11 @@ RESERVED_KEYS = {
         "settlements only or all settlements. There is no knob for it in the "
         "reference implementation or in production. Unblock it by putting the "
         "question to Raj (DEL-13) and adding the reference rule.",
+    "categories.default":
+        "reserved: a catch-all category is deliberately NOT offered — an "
+        "unmapped source type must fail the run, because silence is the "
+        "failure mode this layer exists to prevent (spec 3B § 2). Map every "
+        "source type explicitly instead.",
 }
 
 
@@ -135,6 +142,12 @@ class PopulationSpec:
     id_col: str
     value_col: str
     missing: str = "drop"          # drop | error
+
+
+@dataclass(frozen=True)
+class CategoriesConfig:
+    scheme: str
+    mapping: dict                  # source type -> category name
 
 
 @dataclass(frozen=True)
@@ -202,6 +215,7 @@ class OutputsConfig:
 class Config:
     profile: str
     methodology: MethodologyConfig
+    categories: CategoriesConfig
     crs: CrsConfig
     paths: PathsConfig
     layers: LayersConfig
@@ -244,8 +258,8 @@ DEFAULT_OUTPUTS = {"denominators": ["pop", "popdensity"],
                    "formats": ["csv", "shp", "joblib"],
                    "name_template": "delhi_psi_{profile}_{denominator}_2020"}
 
-TOP_LEVEL_KEYS = ("profile", "crs", "paths", "layers", "services",
-                  "methodology", "validate", "outputs")
+TOP_LEVEL_KEYS = ("profile", "categories", "crs", "paths", "layers",
+                  "services", "methodology", "validate", "outputs")
 
 
 # --- validation helpers ------------------------------------------------
@@ -290,6 +304,29 @@ def _bool(key, value):
 
 
 # --- loader ------------------------------------------------------------
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader that refuses a repeated mapping key.
+
+    PyYAML's default keeps the LAST occurrence and says nothing, so a
+    profile with two `Planned:` lines under `categories.mapping` would map
+    half its layer by a rule nobody can see. That is the exact silence this
+    whole layer exists to prevent, so it is an error here — everywhere in
+    the profile, not only inside `categories`.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        seen = set()
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                mark = key_node.start_mark
+                raise ConfigError(
+                    f"duplicate key {key!r} at {mark.name}:{mark.line + 1}; "
+                    "PyYAML would silently keep the last occurrence")
+            seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def shipped_profiles():
     return sorted(p.stem for p in PROFILES_DIR.glob("*.yaml"))
 
@@ -308,7 +345,7 @@ def _profile_path(profile_or_path):
     return shipped
 
 
-def _methodology(raw):
+def _methodology(raw, *, allowed_categories):
     _reject_unknown(raw, {"adjacency", "barrier", "decay", "roads",
                           "second_normalization", "exclusion"}, "methodology")
 
@@ -354,6 +391,13 @@ def _methodology(raw):
             isinstance(item, str) for item in types):
         raise ConfigError("methodology.exclusion.types: expected a list of "
                           f"settlement-type strings, got {types!r}")
+    unknown = [item for item in types if item not in allowed_categories]
+    if unknown:
+        raise ConfigError(
+            f"methodology.exclusion.types: {unknown} are not categories "
+            "produced by categories.mapping — exclusion is written in "
+            "CATEGORY names, not source types; allowed values: "
+            f"{sorted(allowed_categories)}")
     exclusion = ExclusionConfig(
         types=tuple(types),
         stage=_coerce_enum("methodology.exclusion.stage",
@@ -374,6 +418,35 @@ def _methodology(raw):
             "methodology.second_normalization",
             _require(raw, "second_normalization", "methodology")),
         exclusion=exclusion)
+
+
+def _categories(raw):
+    """The `categories` block: a scheme name and a source type -> category
+    map. Several sources mapping to one category (X:1) is the point; a
+    category name equal to a source name is fine (identity)."""
+    _reject_unknown(raw, {"scheme", "mapping"}, "categories")
+
+    scheme = _require(raw, "scheme", "categories")
+    if not isinstance(scheme, str) or not scheme.strip():
+        raise ConfigError(
+            f"categories.scheme: {scheme!r} is not allowed; expected a "
+            "non-empty string naming the scheme (e.g. 'uso-10')")
+
+    mapping = _require(raw, "mapping", "categories")
+    if not isinstance(mapping, dict) or not mapping:
+        raise ConfigError(
+            "categories.mapping: expected a non-empty map of source type -> "
+            f"category, got {mapping!r}")
+    for source, category in mapping.items():
+        if not isinstance(source, str) or not source:
+            raise ConfigError(
+                f"categories.mapping: source type {source!r} is not "
+                "allowed; expected a non-empty string")
+        if not isinstance(category, str) or not category:
+            raise ConfigError(
+                f"categories.mapping[{source!r}]: {category!r} is not "
+                "allowed; expected a non-empty category name")
+    return CategoriesConfig(scheme=scheme, mapping=dict(mapping))
 
 
 def _layers(raw):
@@ -459,15 +532,23 @@ def load_config(profile_or_path, *, data_dir=None, out_dir=None):
     created here (the pipeline stages do that).
     """
     path = _profile_path(profile_or_path)
-    raw = yaml.safe_load(path.read_text()) or {}
+    # An open file handle, not read_text(): PyYAML then puts the file's path
+    # into every mark, so _UniqueKeyLoader's message names the file and line.
+    with path.open() as handle:
+        raw = yaml.load(handle, Loader=_UniqueKeyLoader) or {}
     if not isinstance(raw, dict):
         raise ConfigError(f"{path}: top level must be a mapping")
     _reject_unknown(raw, set(TOP_LEVEL_KEYS), "")
 
     profile = _require(raw, "profile", "")
+    # categories first: _methodology's exclusion check needs the category set.
+    categories = _categories(_require(raw, "categories", ""))
     return Config(
         profile=profile,
-        methodology=_methodology(_require(raw, "methodology", "")),
+        methodology=_methodology(
+            _require(raw, "methodology", ""),
+            allowed_categories=categories_of(categories.mapping)),
+        categories=categories,
         crs=_crs(raw.get("crs", {})),
         paths=_paths(raw.get("paths", {}), data_dir, out_dir, profile),
         layers=_layers(raw.get("layers", {})),
