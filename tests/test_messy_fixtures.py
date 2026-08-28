@@ -13,6 +13,7 @@ starts failing for any OTHER reason means adjacency, exclusion or counting
 changed silently — investigate, never re-record.
 """
 from functools import lru_cache
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -286,3 +287,28 @@ def test_all_seven_services_are_present_on_both_sides():
     for service in POINT_SERVICES:
         assert f"{service}_pcen" in got.columns, service
         assert got[f"{service}_count"].sum() > 0, service
+
+
+# --- the tier's documentation (spec § 6) -------------------------------
+DOC = Path(__file__).resolve().parent.parent / "docs" / "oracle" / "messy-city.md"
+
+
+def test_the_messy_city_doc_documents_every_settlement():
+    """Eleven settlements, each with a stated pathology and a stated pin. A
+    settlement the doc does not name is a case nobody can maintain."""
+    text = DOC.read_text()
+    city = MESSY.load_settlements()
+    for sid in city["USO_AREA_U"]:
+        assert f"`{sid}`" in text, sid
+    for pathology in ("MultiPolygon", "overlap", "isolated", "population",
+                      "sliver", "envelope"):
+        assert pathology.lower() in text.lower(), pathology
+    assert "## How to add a case" in text
+
+
+def test_methodology_config_section_4_says_the_proofs_run_on_both_cities():
+    config_doc = (Path(__file__).resolve().parent.parent / "docs"
+                  / "methodology-config.md").read_text()
+    section = config_doc.split("## 4. What each proof guards")[1].split("## 5.")[0]
+    assert "oraculum" in section.lower()
+    assert "messy" in section.lower()

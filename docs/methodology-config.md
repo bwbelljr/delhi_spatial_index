@@ -212,11 +212,19 @@ Work on a branch; `main` requires the CI check.
 
 ## 4. What each proof guards
 
-- `tests/test_production_fixtures.py` — every profile's numbers on the
-  oracle city, byte-for-byte; the CI drift guard regenerates and diffs them
+- Every proof below runs on **both** fixture cities (`tests/cities.py`):
+  **oraculum**, the small hand-ratified one, and **messy**, which carries the
+  real layer's pathologies (`docs/oracle/messy-city.md`).
+- `tests/test_production_fixtures.py` — every profile's numbers on each
+  fixture city, byte-for-byte; the CI drift guard regenerates and diffs them
   on every push, so an accidental edit cannot pass.
 - `tests/test_profiles_match_reference.py` — production == the independent
-  reference implementation at 1e-12 for the profiles in `PROFILE_RULES`.
+  reference implementation at 1e-12 for the profiles in `PROFILE_RULES`, on
+  every city × scenario × denominator.
+- `tests/test_messy_fixtures.py` — what production does on each real-layer
+  pathology today (bbox-invented neighbours, the overlap double count, the
+  no-population drop). A pin here flips when DEL-19/DEL-20 land; that is the
+  point.
 - `tests/test_manuscript_anchors.py` — `manuscript` == the hand-ratified
   worksheet (`docs/oracle/derivation-worksheet.md`).
 - `scripts/verify_against_baseline.py --config code-2025` — real data ==
