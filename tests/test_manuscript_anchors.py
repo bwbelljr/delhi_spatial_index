@@ -113,7 +113,13 @@ def test_school_pcen_irrational_anchors(baseline_pop, sid):
 
 
 def test_school_near_tie_between_a_and_d_survives(baseline_pop):
-    """Worksheet: 'the deliberate near-tie A vs D (0.014142 vs 0.014)'."""
+    """Worksheet: 'the deliberate near-tie A vs D (0.014142 vs 0.014)'.
+
+    The 0.000142136 gap below is NOT a verbatim worksheet quote: it is
+    derived from the two closed-form anchors the worksheet does print
+    (A and D's school PCENs), so it inherits their authority, not a
+    printed digit's.
+    """
     assert baseline_pop.loc["A", "school_pcen"] > \
         baseline_pop.loc["D", "school_pcen"]
     assert baseline_pop.loc["A", "school_pcen"] - \

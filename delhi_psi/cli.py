@@ -47,8 +47,15 @@ def main(argv=None):
     except ValidationError as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 1
-    except (FileNotFoundError, OSError) as exc:
+    except OSError as exc:          # FileNotFoundError is an OSError
         print(f"input/output error: {exc}", file=sys.stderr)
+        return 1
+    except (ValueError, KeyError) as exc:
+        # The math layer's own refusals (an unclassifiable service layer, an
+        # unknown stage or output format, a column the frame does not carry).
+        # Without this they escape as a traceback with exit code 1 anyway,
+        # but unlabelled.
+        print(f"pipeline error: {exc}", file=sys.stderr)
         return 1
     print(result)
     return 0

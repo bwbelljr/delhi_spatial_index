@@ -240,3 +240,177 @@ def test_duplicate_service_row_is_dropped_before_validation(data_dir, tmp_path):
     got = pd.read_csv(out / "delhi_psi_code-2025_pop_2020.csv").set_index("USO_AREA_U")
 
     pd.testing.assert_series_equal(got["bank_count"], baseline["bank_count"])
+
+
+# --- C1: the neighbours artifact is bound to the methodology that built it ---
+GEOM_COLS = ("geometry", "centroid")
+
+
+def _assert_neighbor_frames_equal(got, expected):
+    """Frame equality for the neighbours artifact: plain columns through
+    assert_frame_equal, the two geometry columns through shapely equality
+    (assert_frame_equal cannot compare geometries)."""
+    pd.testing.assert_frame_equal(
+        pd.DataFrame(got.drop(columns=list(GEOM_COLS))),
+        pd.DataFrame(expected.drop(columns=list(GEOM_COLS))))
+    for col in GEOM_COLS:
+        assert len(got[col]) == len(expected[col]), col
+        for left, right in zip(got[col], expected[col]):
+            assert left.equals(right), col
+
+
+def test_neighbors_artifact_carries_the_methodology_stamp(data_dir, tmp_path):
+    """preprocess stamps the artifact and pandas `attrs` survive joblib.
+
+    Without the round trip the stamp exists only in memory and compute's
+    guard can never fire.
+    """
+    from delhi_psi import io
+
+    out = tmp_path / "stamped"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    frame = io.read_neighbors(out / "colonies_neighbors.joblib")
+    assert frame.attrs["profile"] == "code-2025"
+    assert frame.attrs["methodology"] == {
+        "adjacency": {"rule": "bbox"},
+        "barrier": {"rule": "global_asymmetric", "combine": "any"},
+    }
+
+
+def test_compute_rejects_an_artifact_built_by_another_methodology(
+        data_dir, tmp_path, capsys):
+    """preprocess with code-2025 then compute with manuscript: the stored
+    neighbour lists were built with `bbox`/`global_asymmetric`, so every
+    number compute would produce is a lie about the configured method."""
+    import shutil
+
+    out = tmp_path / "mismatch"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    # Hand manuscript the code-2025 artifact under the name it looks for, so
+    # the STAMP is what fails, not the file lookup.
+    shutil.copy(out / "colonies_neighbors.joblib",
+                out / "colonies_neighbors_manuscript.joblib")
+
+    assert run("compute", "--config", "manuscript",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 1
+    err = capsys.readouterr().err
+    assert "adjacency" in err and "rule" in err
+    assert "bbox" in err and "touch" in err
+
+
+def test_compute_rejects_an_unstamped_artifact(data_dir, tmp_path, capsys):
+    """An artifact from before the stamp existed cannot be trusted either."""
+    from delhi_psi import io
+
+    out = tmp_path / "unstamped"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    path = out / "colonies_neighbors.joblib"
+    frame = io.read_neighbors(path)
+    frame.attrs.clear()
+    io.write_neighbors(frame, path)
+
+    assert run("compute", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 1
+    assert "no methodology stamp" in capsys.readouterr().err
+
+
+# --- I3: the dedup cache's hit branch ---------------------------------
+def test_second_preprocess_reuses_the_dedup_cache(data_dir, tmp_path, caplog):
+    import logging as _logging
+
+    from delhi_psi import io
+
+    out = tmp_path / "dedup_hit"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    cached = out / "settlements.dedup.gpkg"
+    first_mtime = cached.stat().st_mtime_ns
+    first = io.read_neighbors(out / "colonies_neighbors.joblib")
+
+    caplog.clear()
+    with caplog.at_level(_logging.INFO, logger="delhi_psi.pipeline"):
+        assert run("preprocess", "--config", "code-2025",
+                   "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("reusing dedup cache" in message
+               for message in messages), messages
+    assert cached.stat().st_mtime_ns == first_mtime
+    _assert_neighbor_frames_equal(
+        io.read_neighbors(out / "colonies_neighbors.joblib"), first)
+
+
+def test_touching_the_source_invalidates_the_dedup_cache(data_dir, tmp_path,
+                                                         caplog):
+    """The cache is keyed on the source's mtime+size, not on existence."""
+    import logging as _logging
+    import os
+    import shutil
+
+    root = tmp_path / "dedup_src"
+    shutil.copytree(data_dir, root)
+    out = tmp_path / "dedup_miss"
+    assert run("preprocess", "--config", "code-2025",
+               "--data-dir", str(root), "--out-dir", str(out)) == 0
+    cached = out / "settlements.dedup.gpkg"
+    before = cached.stat().st_mtime_ns
+
+    shp = root / "uso_update_sep2021" / "uso_update_sep2021.shp"
+    stat = shp.stat()
+    os.utime(shp, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+
+    caplog.clear()
+    with caplog.at_level(_logging.INFO, logger="delhi_psi.pipeline"):
+        assert run("preprocess", "--config", "code-2025",
+                   "--data-dir", str(root), "--out-dir", str(out)) == 0
+    reused = [message for message in
+              (record.getMessage() for record in caplog.records)
+              if "reusing dedup cache" in message
+              and "settlements.dedup.gpkg" in message]
+    assert reused == []
+    assert cached.stat().st_mtime_ns != before
+
+
+# --- I5: the manuscript profile, end to end through the CLI -----------
+def test_manuscript_profile_runs_end_to_end(data_dir, tmp_path):
+    """The path-based stages and the in-memory oracle share one population /
+    exclusion prelude, so the CLI's manuscript run reproduces the oracle."""
+    from tests.oraculum_fixtures import compute_oracle_frame
+
+    out = tmp_path / "manuscript"
+    assert run("preprocess", "--config", "manuscript",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    assert (out / "colonies_neighbors_manuscript.joblib").exists()
+    assert run("compute", "--config", "manuscript",
+               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+
+    got = pd.read_csv(
+        out / "delhi_psi_manuscript_pop_2020.csv").set_index("USO_AREA_U")
+    # second_normalization: false -> no norm_psi column
+    assert "unnorm_psi" in got.columns
+    assert "norm_psi" not in got.columns
+    # outputs.denominators is [pop] only
+    assert not (out / "delhi_psi_manuscript_popdensity_2020.csv").exists()
+
+    expected = compute_oracle_frame("manuscript", types=(),
+                                    stage="post_neighbors", denom="pop")
+    assert set(got.index) == set(expected.index)
+    for sid in expected.index:
+        assert got.loc[sid, "bank_pcen"] == pytest.approx(
+            expected.loc[sid, "bank_pcen"], abs=1e-12), sid
+
+
+# --- minor (c): the math layer's own exceptions map to exit 1 ---------
+@pytest.mark.parametrize("exc", [ValueError("bad amount column"),
+                                 KeyError("road_length")])
+def test_math_layer_errors_exit_1(data_dir, tmp_path, monkeypatch, capsys, exc):
+    def boom(cfg):
+        raise exc
+
+    monkeypatch.setitem(cli.STAGES, "compute", boom)
+    assert run("compute", "--config", "code-2025",
+               "--data-dir", str(data_dir),
+               "--out-dir", str(tmp_path / "boom")) == 1
+    assert capsys.readouterr().err.strip() != ""

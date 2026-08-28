@@ -5,7 +5,7 @@ The notebooks' eyeball checks become assertions that RAISE (DEL-25).
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely.geometry import LineString, Point, box
+from shapely.geometry import LineString, box
 
 from delhi_psi import validate
 

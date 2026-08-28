@@ -54,7 +54,12 @@ def test_defaults_equal_code_2025(tmp_path):
     assert minimal.services == full.services
     assert minimal.validate == full.validate
     assert minimal.outputs == full.outputs
-    assert minimal.paths.neighbors_artifact == full.paths.neighbors_artifact
+    # paths.neighbors_artifact is the one defaulted key that is NOT the
+    # code-2025 value: the default is profile-specific so two profiles cannot
+    # overwrite each other's artifact, while code-2025 pins the historic
+    # filename explicitly (the real-data proof depends on it).
+    assert minimal.paths.neighbors_artifact == "colonies_neighbors_minimal.joblib"
+    assert full.paths.neighbors_artifact == "colonies_neighbors.joblib"
     # methodology was written out in full, so it matches too
     assert minimal.methodology == full.methodology
 
@@ -209,3 +214,38 @@ def test_unknown_profile_name_lists_the_shipped_ones():
     with pytest.raises(ConfigError) as exc:
         load_config("no-such-profile")
     assert "code-2025" in str(exc.value) and "manuscript" in str(exc.value)
+
+
+# --- I2: no shipped profile pins out_dir to a literal path ------------
+@pytest.mark.parametrize("profile", ["code-2025", "manuscript"])
+def test_shipped_profiles_let_the_data_dir_drive_out_dir(tmp_path, monkeypatch,
+                                                         profile):
+    """A literal `out_dir:` in a shipped profile would silently ignore
+    --data-dir (and --out-dir would be the only way to redirect output)."""
+    monkeypatch.delenv("DELHI_DATA_DIR", raising=False)
+    assert load_config(profile, data_dir=str(tmp_path)).paths.out_dir == tmp_path
+
+
+# --- C1: the default artifact name is profile-specific ----------------
+def test_default_neighbors_artifact_name_is_profile_specific(tmp_path):
+    """Two profiles writing to one out_dir must not overwrite each other's
+    neighbour lists. code-2025 keeps the historic filename explicitly."""
+    assert load_config("manuscript", data_dir=str(tmp_path)) \
+        .paths.neighbors_artifact == "colonies_neighbors_manuscript.joblib"
+    assert load_config("code-2025", data_dir=str(tmp_path)) \
+        .paths.neighbors_artifact == "colonies_neighbors.joblib"
+
+
+# --- minor (b): crs and validate reject unknown keys like every block --
+@pytest.mark.parametrize("block,bogus,dotted", [
+    ("crs", "crs: {epsg: 7760, bogus: 1}", "crs.bogus"),
+    ("validate", "validate: {max_missing_population: 15, bogus: 1}",
+     "validate.bogus"),
+])
+def test_unknown_key_in_crs_or_validate_raises_config_error(tmp_path, block,
+                                                            bogus, dotted):
+    """Not a TypeError from the dataclass constructor — a ConfigError naming
+    the key, like every other block."""
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, MINIMAL + f"\n{bogus}\n"))
+    assert dotted in str(exc.value)

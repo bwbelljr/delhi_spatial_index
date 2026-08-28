@@ -30,9 +30,13 @@ BASELINE_PSI = {
 }
 
 
-def fresh_paths(config, *, verify_dir, data_dir=None, out_dir=None):
-    """Where the fresh run's files live, per the profile."""
-    cfg = load_config(config, data_dir=data_dir, out_dir=out_dir)
+def fresh_paths(config, *, verify_dir, data_dir=None):
+    """Where the fresh run's files live, per the profile.
+
+    No out_dir: every path below hangs off `verify_dir`, so the config's own
+    out_dir never reaches this function's result.
+    """
+    cfg = load_config(config, data_dir=data_dir)
     verify_dir = Path(verify_dir)
     return {
         "neighbors": verify_dir / cfg.paths.neighbors_artifact,

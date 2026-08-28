@@ -218,10 +218,13 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          feasible.~~ [DEL-23] — done 27 Aug 2026: 17 dead functions (684
          lines, incl. all `*_wards`/`*_buffer` variants) removed; warnings
          fixed under DEL-26; CI runs `pytest -W error`.
-      6. **`index.minmax` has no `hi == lo` guard** (deliberately, spec §
+      6. **`index.minmax` has no `hi == lo` guard** (deliberately, plan §
          Global Constraints), so a constant PCEN column divides 0/0 —
          latent on real layers, reachable via the population-drop path.
-         Routed to the 3C bug audit (not guarded in 3A).
+         The resulting NaN is not caught by `check_no_negative` and
+         `overall_psi`'s mean skips NaN, so `unnorm_psi` would silently
+         average fewer services instead of failing. Routed to the 3C bug
+         audit (not guarded in 3A).
 - [ ] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must

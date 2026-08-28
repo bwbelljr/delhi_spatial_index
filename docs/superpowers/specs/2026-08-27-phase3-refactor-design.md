@@ -169,6 +169,7 @@ crs: {epsg: 7760}
 paths:
   data_dir: ~/delhi_data            # overridable: --data-dir, DELHI_DATA_DIR
   out_dir: ~/delhi_data             # defaults to data_dir, as today; overridable: --out-dir
+                                    # (rev 4: omit in shipped profiles — a literal value would ignore --data-dir)
   neighbors_artifact: colonies_neighbors.joblib
 layers:
   settlements: {path: uso_update_sep2021/uso_update_sep2021.shp,

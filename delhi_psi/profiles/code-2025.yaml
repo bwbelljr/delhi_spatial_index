@@ -2,8 +2,13 @@ profile: code-2025
 crs: {epsg: 7760}
 paths:
   data_dir: ~/delhi_data            # overridable: --data-dir, DELHI_DATA_DIR
-  out_dir: ~/delhi_data             # defaults to data_dir, as today; overridable: --out-dir
-  neighbors_artifact: colonies_neighbors.joblib
+                                    # out_dir: omitted on purpose — it defaults
+                                    # to data_dir, as today; overridable with
+                                    # --out-dir. A literal value here would
+                                    # ignore --data-dir.
+  neighbors_artifact: colonies_neighbors.joblib   # pinned: the default is
+                                    # colonies_neighbors_{profile}.joblib, but
+                                    # the real-data proof compares this name
 layers:
   settlements: {path: uso_update_sep2021/uso_update_sep2021.shp,
                 id_col: USO_AREA_U, type_col: USO_FINAL}

@@ -174,3 +174,49 @@ def test_every_config_value_for_the_knob_is_one_compute_frames_accepts():
     allowed set."""
     assert load_config(PROFILE).layers.population.missing \
         in pipeline.MISSING_POPULATION
+
+
+# --- the pipeline seam's own surface ----------------------------------
+def _two_settlement_frame():
+    return pd.DataFrame({
+        "USO_AREA_U": ["A", "B"],
+        "nbrs_bbox": [["B"], ["A"]],
+        "nbrs_dist_bbox": [[("B", 1.0)], [("A", 1.0)]],
+    })
+
+
+def test_apply_exclusion_returns_only_the_universe_frame():
+    """One exclusion filter, one return value.
+
+    The second ('reported') frame it used to return had no caller —
+    `index_frames` re-derives the same filter from `dropped` after amounts —
+    so returning it invited two copies of the exclusion rule.
+    """
+    universe = pipeline.apply_exclusion(
+        _two_settlement_frame(), dropped=frozenset({"B"}),
+        stage="post_neighbors")
+
+    # post_neighbors: the excluded row stays in the amounts universe and in
+    # everyone's neighbour lists
+    assert list(universe["USO_AREA_U"]) == ["A", "B"]
+    assert list(universe.loc[universe["USO_AREA_U"] == "A", "nbrs_bbox"]) \
+        == [["B"]]
+
+
+def test_apply_exclusion_pre_neighbors_strips_the_excluded_ids():
+    universe = pipeline.apply_exclusion(
+        _two_settlement_frame(), dropped=frozenset({"B"}),
+        stage="pre_neighbors")
+
+    assert list(universe["USO_AREA_U"]) == ["A"]
+    assert list(universe["nbrs_bbox"]) == [[]]
+    assert list(universe["nbrs_dist_bbox"]) == [[]]
+
+
+def test_build_neighbors_has_no_epsg_code_parameter():
+    """It reprojects nothing — the caller hands it an already-projected
+    frame — so the parameter was dead and misleading."""
+    import inspect
+
+    assert "epsg_code" not in inspect.signature(
+        pipeline.build_neighbors).parameters

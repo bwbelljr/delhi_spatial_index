@@ -86,7 +86,13 @@ def test_missing_column_reported():
 def test_fresh_paths_come_from_the_config(tmp_path):
     """--config locates the fresh files; the baseline paths stay the
     script's own arguments (they exist only for code-2025)."""
+    import inspect
+
     from scripts.verify_against_baseline import fresh_paths
+
+    # `out_dir` was accepted and then ignored: every path below is built from
+    # verify_dir, so an out_dir argument could only mislead a caller.
+    assert "out_dir" not in inspect.signature(fresh_paths).parameters
 
     paths = fresh_paths("code-2025", verify_dir=tmp_path)
     assert paths["neighbors"] == tmp_path / "colonies_neighbors.joblib"

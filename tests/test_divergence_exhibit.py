@@ -84,11 +84,10 @@ def test_production_bbox_adjacency_on_exhibit(exhibit):
     review round 1 proved a bbox->geometry mutation in create_bbox_gdf
     survived the entire suite without this test.
     """
-    from delhi_psi import geometry, neighbors
+    from delhi_psi import neighbors
 
     gdf = exhibit.copy()
     gdf["barrier"] = False
-    bbox_gdf = geometry.bbox_frame(gdf)
     result = neighbors.apply_barrier(
         neighbors.adjacency(gdf, id_col="USO_AREA_U",
                             neighbor_col="nbrs_bbox", rule="bbox"),

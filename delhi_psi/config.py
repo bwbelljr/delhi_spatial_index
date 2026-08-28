@@ -118,7 +118,8 @@ class CrsConfig:
 class PathsConfig:
     data_dir: Path
     out_dir: Path
-    neighbors_artifact: str = "colonies_neighbors.joblib"
+    # Already rendered: `_paths` formats DEFAULT_PATHS' `{profile}` in.
+    neighbors_artifact: str
 
 
 @dataclass(frozen=True)
@@ -232,8 +233,12 @@ DEFAULT_SERVICES = {
     "line": {"road": "Public Services/Major Road/Road.shp"},
 }
 DEFAULT_CRS = {"epsg": 7760}
+# `neighbors_artifact` is rendered with the profile name at load time, so two
+# profiles pointed at one out_dir cannot overwrite each other's neighbour
+# lists. code-2025 pins the historic filename explicitly (the real-data proof
+# compares against it), which is why the default is not simply that name.
 DEFAULT_PATHS = {"data_dir": "~/delhi_data", "out_dir": None,
-                 "neighbors_artifact": "colonies_neighbors.joblib"}
+                 "neighbors_artifact": "colonies_neighbors_{profile}.joblib"}
 DEFAULT_VALIDATE = {"max_missing_population": 15}
 DEFAULT_OUTPUTS = {"denominators": ["pop", "popdensity"],
                    "formats": ["csv", "shp", "joblib"],
@@ -418,7 +423,19 @@ def _outputs(raw):
         name_template=merged["name_template"])
 
 
-def _paths(raw, cli_data_dir, cli_out_dir):
+def _crs(raw):
+    merged = {**DEFAULT_CRS, **raw}
+    _reject_unknown(merged, set(DEFAULT_CRS), "crs")
+    return CrsConfig(**merged)
+
+
+def _validate(raw):
+    merged = {**DEFAULT_VALIDATE, **raw}
+    _reject_unknown(merged, set(DEFAULT_VALIDATE), "validate")
+    return ValidateConfig(**merged)
+
+
+def _paths(raw, cli_data_dir, cli_out_dir, profile):
     merged = {**DEFAULT_PATHS, **raw}
     _reject_unknown(merged, set(DEFAULT_PATHS), "paths")
     yaml_data_dir = merged["data_dir"]
@@ -429,8 +446,9 @@ def _paths(raw, cli_data_dir, cli_out_dir):
     else:
         data_dir = resolve_data_dir(yaml_data_dir)
     out_dir = out_dir_path(cli_out_dir or merged["out_dir"], data_dir)
-    return PathsConfig(data_dir=data_dir, out_dir=out_dir,
-                       neighbors_artifact=merged["neighbors_artifact"])
+    return PathsConfig(
+        data_dir=data_dir, out_dir=out_dir,
+        neighbors_artifact=merged["neighbors_artifact"].format(profile=profile))
 
 
 def load_config(profile_or_path, *, data_dir=None, out_dir=None):
@@ -446,13 +464,13 @@ def load_config(profile_or_path, *, data_dir=None, out_dir=None):
         raise ConfigError(f"{path}: top level must be a mapping")
     _reject_unknown(raw, set(TOP_LEVEL_KEYS), "")
 
+    profile = _require(raw, "profile", "")
     return Config(
-        profile=_require(raw, "profile", ""),
+        profile=profile,
         methodology=_methodology(_require(raw, "methodology", "")),
-        crs=CrsConfig(**{**DEFAULT_CRS, **raw.get("crs", {})}),
-        paths=_paths(raw.get("paths", {}), data_dir, out_dir),
+        crs=_crs(raw.get("crs", {})),
+        paths=_paths(raw.get("paths", {}), data_dir, out_dir, profile),
         layers=_layers(raw.get("layers", {})),
         services=_services(raw.get("services", {})),
-        validate=ValidateConfig(
-            **{**DEFAULT_VALIDATE, **raw.get("validate", {})}),
+        validate=_validate(raw.get("validate", {})),
         outputs=_outputs(raw.get("outputs", {})))

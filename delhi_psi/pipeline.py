@@ -79,12 +79,12 @@ def excluded_ids(frame, *, types, id_col=ID_COL, type_col=TYPE_COL):
     return frozenset(frame.loc[frame[type_col].isin(list(types)), id_col])
 
 
-def build_neighbors(settlements, barriers, methodology, *, epsg_code=7760,
-                    id_col=ID_COL):
+def build_neighbors(settlements, barriers, methodology, *, id_col=ID_COL):
     """Barrier flags, combined flag, centroids, neighbour lists, distances.
 
     Always built on the FULL settlement universe — preprocess never excludes
-    (spec § 3).
+    (spec § 3). Reprojects nothing: the caller hands it frames already in the
+    target CRS, which is why there is no epsg_code parameter.
     """
     frame = geometry.barrier_flags(settlements, barriers, id_col=id_col)
     frame = neighbors.combine_barrier_flags(
@@ -105,10 +105,10 @@ def build_neighbors(settlements, barriers, methodology, *, epsg_code=7760,
 
 
 def apply_exclusion(neighbor_frame, *, dropped, stage, id_col=ID_COL):
-    """Return (universe, reported).
+    """Return the universe: the frame neighbour AMOUNTS are read from.
 
-    universe — the frame neighbour AMOUNTS are read from.
-    reported — the rows that get PCEN and index values.
+    Which rows are REPORTED is not decided here — `index_frames` drops
+    `dropped` after amounts, so the exclusion rule has exactly one home.
 
     post_neighbors: excluded rows leave the reported frame; their ids stay in
         other settlements' neighbour lists (today's production).
@@ -130,16 +130,15 @@ def apply_exclusion(neighbor_frame, *, dropped, stage, id_col=ID_COL):
             universe.at[idx, NBRS_DIST_COL] = [
                 (j, d) for j, d in row[NBRS_DIST_COL] if j not in dropped]
         universe = universe[~universe[id_col].isin(dropped)]
-    reported = universe[~universe[id_col].isin(dropped)] if dropped else universe
-    return universe, reported
+    return universe
 
 
 def index_frames(neighbor_frame, services, methodology, denominator, *,
                  dropped=frozenset(), epsg_code=7760, id_col=ID_COL):
     """Amounts, PCEN, min-max and the overall PSI for one denominator."""
     exclusion = methodology.exclusion
-    universe, _ = apply_exclusion(neighbor_frame, dropped=dropped,
-                                  stage=exclusion.stage, id_col=id_col)
+    universe = apply_exclusion(neighbor_frame, dropped=dropped,
+                               stage=exclusion.stage, id_col=id_col)
 
     # Own amounts are computed over the WHOLE universe, so excluded
     # settlements still have something to lend under absent_neighbor
@@ -174,6 +173,33 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
         out, second_normalization=methodology.second_normalization)
 
 
+def _population_and_exclusion(frame, population, *, id_col, type_col,
+                              population_id_col, population_value_col,
+                              missing_population, max_missing_population,
+                              exclusion_types):
+    """The prelude both entry points share: attach population, apply the
+    missing rule, and work out which ids are dropped.
+
+    Returns (frame with population, dropped ids, ids with no population).
+    `dropped` is the type exclusion UNION the unpriced rows — the same set in
+    `compute_frames` and `compute`, so the rule (and its message) lives once.
+    """
+    out, missing = attach_population(
+        frame, population, id_col=id_col,
+        population_id_col=population_id_col,
+        population_value_col=population_value_col)
+    if missing and missing_population == "error":
+        raise validate.ValidationError(
+            f"{len(missing)} settlements have no population row and "
+            f"layers.population.missing is 'error': {sorted(missing)[:10]}")
+    if max_missing_population is not None:
+        validate.check_missing_population(
+            len(missing), maximum=max_missing_population)
+    dropped = excluded_ids(out, types=exclusion_types, id_col=id_col,
+                           type_col=type_col) | set(missing)
+    return out, dropped, missing
+
+
 def compute_frames(settlements, barriers, services, population, methodology,
                    denominator, *, epsg_code=7760, id_col=ID_COL,
                    type_col=TYPE_COL, population_id_col="uso_area_u",
@@ -201,23 +227,19 @@ def compute_frames(settlements, barriers, services, population, methodology,
         raise ValueError(
             f"unknown missing_population {missing_population!r}; allowed "
             f"values: {list(MISSING_POPULATION)}")
-    frame, missing = attach_population(
-        settlements, population, id_col=id_col,
+    frame, dropped, _ = _population_and_exclusion(
+        settlements, population, id_col=id_col, type_col=type_col,
         population_id_col=population_id_col,
-        population_value_col=population_value_col)
-    if missing and missing_population == "error":
-        raise validate.ValidationError(
-            f"{len(missing)} settlements have no population row and "
-            "layers.population.missing is 'error': "
-            f"{sorted(missing)[:10]}")
-    if max_missing_population is not None:
-        validate.check_missing_population(
-            len(missing), maximum=max_missing_population)
+        population_value_col=population_value_col,
+        missing_population=missing_population,
+        max_missing_population=max_missing_population,
+        exclusion_types=methodology.exclusion.types)
 
+    # `dropped` is read off `frame`, not the neighbours frame: build_neighbors
+    # adds columns and never adds or removes a row, so the two give the same
+    # ids.
     neighbor_frame = build_neighbors(frame, barriers, methodology,
-                                     epsg_code=epsg_code, id_col=id_col)
-    dropped = excluded_ids(neighbor_frame, types=methodology.exclusion.types,
-                           id_col=id_col, type_col=type_col) | set(missing)
+                                     id_col=id_col)
     return index_frames(neighbor_frame, services, methodology, denominator,
                         dropped=dropped, epsg_code=epsg_code, id_col=id_col)
 
@@ -241,6 +263,47 @@ class ComputeResult:
 def output_basename(cfg, denominator):
     return cfg.outputs.name_template.format(profile=cfg.profile,
                                             denominator=str(denominator))
+
+
+def methodology_stamp(methodology):
+    """The methodology keys that SHAPE the stored neighbour lists.
+
+    Only these: adjacency decides who is a neighbour, the barrier rule and
+    `combine` decide who is severed. Everything else (decay, roads,
+    exclusion, normalization) is applied downstream in `compute`, so an
+    artifact stays valid across those.
+    """
+    combine = methodology.barrier.combine
+    return {
+        "adjacency": {"rule": str(methodology.adjacency.rule)},
+        "barrier": {
+            "rule": str(methodology.barrier.rule),
+            "combine": combine if isinstance(combine, str)
+            else [str(layer) for layer in combine],
+        },
+    }
+
+
+def check_methodology_stamp(frame, cfg):
+    """Refuse a neighbours artifact built by a different methodology.
+
+    Without this, `preprocess --config A` followed by `compute --config B`
+    silently reports B's numbers over A's neighbour lists.
+    """
+    stored = frame.attrs.get("methodology")
+    if not stored:
+        raise validate.ValidationError(
+            "neighbours artifact has no methodology stamp — re-run preprocess")
+    for block, keys in methodology_stamp(cfg.methodology).items():
+        for key, configured in keys.items():
+            found = stored.get(block, {}).get(key)
+            if found != configured:
+                raise validate.ValidationError(
+                    f"neighbours artifact was built with "
+                    f"methodology.{block}.{key}={found!r}, but this config "
+                    f"says {configured!r} — re-run preprocess "
+                    f"(artifact profile: {frame.attrs.get('profile')!r}, "
+                    f"config profile: {cfg.profile!r})")
 
 
 def _dedup_cached(gdf, cache_dir, name, source_path):
@@ -302,7 +365,6 @@ def preprocess(cfg):
     settlements = settlements.drop(columns=drop)
 
     frame = build_neighbors(settlements, barriers, cfg.methodology,
-                            epsg_code=epsg,
                             id_col=cfg.layers.settlements.id_col)
 
     if cfg.layers.ndmc_center:
@@ -314,6 +376,11 @@ def preprocess(cfg):
         frame = geometry.distance_to_point_km(
             frame, centre["geometry"].values[0], centroid_col=CENTROID_COL,
             out_col="ndmc_dist_km")
+
+    # Bind the artifact to the methodology that built it; pandas `attrs` are
+    # pickled with the frame, so the stamp survives the joblib round trip.
+    frame.attrs["profile"] = cfg.profile
+    frame.attrs["methodology"] = methodology_stamp(cfg.methodology)
 
     path = io.write_neighbors(frame, out_dir / cfg.paths.neighbors_artifact)
     return PreprocessResult(
@@ -331,6 +398,9 @@ def compute(cfg):
     id_col = cfg.layers.settlements.id_col
 
     neighbor_frame = io.read_neighbors(out_dir / cfg.paths.neighbors_artifact)
+    # Before any math: the stored neighbour lists must come from THIS
+    # methodology, or every number below describes a method nobody ran.
+    check_methodology_stamp(neighbor_frame, cfg)
     bounds = io.read_layer(data_dir / cfg.layers.bounds)
     population = io.read_population(data_dir / cfg.layers.population.path)
 
@@ -365,26 +435,19 @@ def compute(cfg):
             f"neighbors artifact is in {neighbor_frame.crs}, "
             f"config crs.epsg is {cfg.crs.epsg}")
 
-    frame, missing = attach_population(
+    frame, dropped, missing = _population_and_exclusion(
         neighbor_frame, population, id_col=id_col,
+        type_col=cfg.layers.settlements.type_col,
         population_id_col=cfg.layers.population.id_col,
-        population_value_col=cfg.layers.population.value_col)
-    if missing and cfg.layers.population.missing == "error":
-        raise validate.ValidationError(
-            f"{len(missing)} settlements have no population row and "
-            f"layers.population.missing is 'error': {sorted(missing)[:10]}")
-    validate.check_missing_population(
-        len(missing), maximum=cfg.validate.max_missing_population)
+        population_value_col=cfg.layers.population.value_col,
+        missing_population=cfg.layers.population.missing,
+        max_missing_population=cfg.validate.max_missing_population,
+        exclusion_types=cfg.methodology.exclusion.types)
 
     missing_path = out_dir / "missing_population.csv"
     frame[frame[id_col].isin(missing)].drop(
         columns=[c for c in io.SHAPEFILE_DROP_COLUMNS if c in frame.columns]
     ).to_csv(missing_path, index=False)
-
-    dropped = excluded_ids(frame, types=cfg.methodology.exclusion.types,
-                           id_col=id_col,
-                           type_col=cfg.layers.settlements.type_col) \
-        | set(missing)
 
     outputs = []
     n_reported = 0

@@ -217,4 +217,6 @@ def test_expected_values_csv_is_regenerable(tmp_path):
     """
     regen = tmp_path / "regen.csv"
     emit_expected_values(regen)
-    assert regen.read_text() == CSV.read_text()
+    # bytes, not text: read_text() would normalise nothing here but would
+    # hide a line-ending or encoding change in the committed CSV.
+    assert regen.read_bytes() == CSV.read_bytes()
