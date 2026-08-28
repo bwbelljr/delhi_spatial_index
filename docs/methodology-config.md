@@ -279,7 +279,9 @@ steps: no code fork, no branch.
 
 `delhi_psi/profiles/band-1km.yaml` — a copy of `code-2025` with **two**
 values changed (`adjacency.rule`, `adjacency.max_distance_km`) and the
-profile renamed. Nothing else moves, which is what makes the diff against
+profile renamed (and `paths.neighbors_artifact` left out so the artifact
+takes its default per-profile name instead of overwriting `code-2025`'s).
+No methodology value moves, which is what makes the diff against
 `code-2025`'s outputs attributable to the band alone:
 
 ```yaml
@@ -404,3 +406,15 @@ run it into a scratch `--out-dir`, never under the baseline data, and skip
 `compute` for a timing check. Each band needs its own `preprocess`: the
 neighbours artifact is stamped with `adjacency.max_distance_km`, and
 `compute` refuses an artifact built at a different radius.
+
+Measured on 28 Aug 2026 at commit `afec696` (`code-2025` with
+`adjacency: {rule: within_distance, max_distance_km: 10.0}`, scratch
+`--out-dir`, cold dedup cache, no `compute`): `preprocess` took
+**2,491 s (41.5 min)** wall-clock and produced **4,366,055 directed links**
+over 4,357 settlements — mean degree 1,002, maximum 1,779, and **no**
+isolated settlement (the `bbox` rule leaves 6, `touch` 20; see
+`docs/data/layer_pathologies.md`). The stamp on the artifact read
+`adjacency: {rule: within_distance, max_distance_km: 10.0}`. About a
+quarter of that time is the one-off settlement dedup that a warm cache
+skips; the rest is the per-link loops, so expect the cost to scale with
+the link count, i.e. roughly with the square of the radius.
