@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from tests.oraculum_fixtures import oracle_profile_path
 from tests.test_cli import data_dir  # noqa: F401  (module-scoped fixture)
 
 CSV = Path(__file__).resolve().parent / "fixtures" / "oraculum" / "expected_values.csv"
@@ -27,10 +28,14 @@ def _run(*args):
 
 def test_full_cli_chain_matches_excl_rv_only(data_dir, tmp_path):  # noqa: F811
     out_dir = tmp_path / "out"
-    _run("preprocess", "--config", "code-2025", "--data-dir", str(data_dir),
+    # The derived profile (spec 3B § 2): code-2025's method, with the
+    # identity mapping over THIS city's vocabulary. Every methodology value
+    # and every assertion below is code-2025's, unchanged.
+    profile = str(oracle_profile_path("code-2025", tmp_path))
+    _run("preprocess", "--config", profile, "--data-dir", str(data_dir),
          "--out-dir", str(out_dir))
     assert (out_dir / "colonies_neighbors.joblib").exists()
-    _run("compute", "--config", "code-2025", "--data-dir", str(data_dir),
+    _run("compute", "--config", profile, "--data-dir", str(data_dir),
          "--out-dir", str(out_dir))
 
     got = pd.read_csv(out_dir / "delhi_psi_code-2025_pop_2020.csv")

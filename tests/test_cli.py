@@ -7,6 +7,7 @@ ran the scripts in a subprocess, which is why the two shapefile warnings were
 invisible (spec § 6).
 """
 import warnings
+from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
@@ -14,9 +15,8 @@ import pytest
 from shapely.geometry import LineString, Point, box
 
 from delhi_psi import cli
-from delhi_psi.config import PROFILES_DIR
 from tests.oraculum_fixtures import (
-    EPSG, load_barriers, load_services, load_settlements,
+    EPSG, load_barriers, load_services, load_settlements, oracle_profile_path,
 )
 
 SERVICE_LAYOUT = {
@@ -90,8 +90,26 @@ def data_dir(tmp_path_factory):
     return root
 
 
+SHIPPED_PROFILES = ("code-2025", "manuscript")
+
+
 def run(*args):
-    return cli.main(list(args))
+    """`cli.main`, with a shipped profile NAME in `--config` swapped for the
+    DERIVED oracle profile (spec 3B § 2).
+
+    The oracle city's `UC`/`IND` are deliberately absent from the shipped
+    Delhi mappings, so the shipped profiles correctly refuse to run here.
+    The derived YAML is written into the run's own `--data-dir`. A test that
+    WANTS the shipped profile — the unmapped-type guard — calls `cli.main`
+    directly.
+    """
+    args = list(args)
+    if "--config" in args and "--data-dir" in args:
+        at = args.index("--config") + 1
+        if args[at] in SHIPPED_PROFILES:
+            directory = Path(args[args.index("--data-dir") + 1])
+            args[at] = str(oracle_profile_path(args[at], directory))
+    return cli.main(args)
 
 
 def test_preprocess_then_compute_by_profile_name(data_dir, tmp_path):
@@ -112,9 +130,13 @@ def test_preprocess_then_compute_by_profile_name(data_dir, tmp_path):
 
 
 def test_config_by_path_is_equivalent(data_dir, tmp_path):
+    """`--config <path>` still works — exercised with the derived profile,
+    which is the only complete profile this city can run (spec 3B § 2)."""
     out = tmp_path / "by_path"
-    assert run("preprocess", "--config", str(PROFILES_DIR / "code-2025.yaml"),
-               "--data-dir", str(data_dir), "--out-dir", str(out)) == 0
+    profile = oracle_profile_path("code-2025", tmp_path)
+    assert cli.main(["preprocess", "--config", str(profile),
+                     "--data-dir", str(data_dir),
+                     "--out-dir", str(out)]) == 0
     assert (out / "colonies_neighbors.joblib").exists()
 
 
