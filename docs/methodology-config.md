@@ -116,5 +116,7 @@ comments) require, in order — this is the 3C cycle:
 4. regenerate `tests/fixtures/oraculum/expected_values.csv`
    (`uv run python tests/reference_impl.py`);
 5. the production implementation in `delhi_psi/` if the branch does not
-   already exist. Category mappings (`categories:` block, 10/8/5/4
-settlement types) are cycle 3B (DEL-17).
+   already exist.
+
+Category mappings (`categories:` block, 10/8/5/4 settlement types) are
+cycle 3B (DEL-17).
