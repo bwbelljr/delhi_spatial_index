@@ -139,6 +139,45 @@ def methodology_with(profile, *, types=None, stage=None, city=ORACULUM):
     return replace(methodology, exclusion=exclusion)
 
 
+def variant_methodology(base, variant, *, city=ORACULUM, types=None,
+                        stage=None):
+    """`base`'s methodology with `tests/variants.py`'s `variant` applied.
+
+    Layered on `methodology_with`, so the SCENARIO travels with it: pass the
+    scenario's `types`/`stage`. Without that, `code-2025`'s own
+    `exclusion.types: [RV]` would drop RV (and messy's N) from the production
+    frame while the variants CSV keeps them — and RV is the settlement the
+    § 4.1 pins name.
+
+    A block the variant does not mention keeps `base`'s: today only the band
+    variants override `adjacency`, and every variant states each block it
+    does override IN FULL.
+    """
+    from dataclasses import replace
+
+    from delhi_psi.config import (
+        AdjacencyConfig, AdjacencyRule, DecayConfig, DecayDistance, DecayForm,
+    )
+    from tests.variants import VARIANTS
+
+    methodology = methodology_with(base, types=types, stage=stage, city=city)
+    spec = VARIANTS[variant]
+    if "adjacency" in spec:
+        block = spec["adjacency"]
+        methodology = replace(methodology, adjacency=AdjacencyConfig(
+            rule=AdjacencyRule(block["rule"]),
+            max_distance_km=block.get("max_distance_km")))
+    if "decay" in spec:
+        block = spec["decay"]
+        methodology = replace(methodology, decay=DecayConfig(
+            form=DecayForm(block["form"]),
+            distance_unit=block["distance_unit"],
+            distance=DecayDistance(block["distance"]),
+            exponent=block.get("exponent"),
+            scale_km=block.get("scale_km")))
+    return methodology
+
+
 def compute_oracle_frame(profile, *, types, stage, denom, city=ORACULUM):
     """compute_frames on the Oraculum city under the DERIVED profile's own
     category mapping, indexed by settlement id.

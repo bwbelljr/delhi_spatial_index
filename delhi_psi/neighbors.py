@@ -1,4 +1,6 @@
-"""Neighbour construction: adjacency rule, barrier rule, centroid distances.
+"""Neighbour construction: adjacency rules (`bbox`, `touch`,
+`within_distance`), barrier rule, and distances in two definitions
+(centroid and boundary).
 
 Pure functions with explicit keyword arguments — never imports
 delhi_psi.config. The `bbox` adjacency path and the `global_asymmetric`
@@ -78,19 +80,64 @@ def _adjacency_touch(polygon_gdf, id_col, neighbor_col):
     return out
 
 
-def adjacency(polygon_gdf, *, id_col="USO_AREA_U", neighbor_col="nbrs_bbox",
-              rule="bbox"):
-    """Directed neighbour lists under `rule` ("bbox" or "touch").
+def _adjacency_within_distance(polygon_gdf, id_col, neighbor_col,
+                               max_distance_km):
+    """Polygon-to-polygon band: j is a neighbour of i iff their shortest
+    distance is <= max_distance_km * 1000 metres (EPSG:7760 is metric).
 
-    The column keeps its historical name `nbrs_bbox` under both rules — it is
-    part of the July 2025 baseline's column contract (spec § 5).
+    `dwithin` is symmetric and matches every polygon with ITSELF at every
+    radius (distance 0), so the left join never yields a missing partner and
+    the self pair is the only one that has to be removed. Lists are written
+    in the frame's row order, like the other two rules.
     """
+    if max_distance_km is None:
+        raise ValueError(
+            "adjacency rule 'within_distance' requires max_distance_km")
+    joined_gdf = gpd.sjoin(polygon_gdf, polygon_gdf, how="left",
+                           predicate="dwithin",
+                           distance=max_distance_km * 1000)
+    id_col_left = id_col + "_left"
+    id_col_right = id_col + "_right"
+    joined_grouped = joined_gdf.groupby(id_col_left)
+
+    out = polygon_gdf.copy()
+    out[neighbor_col] = np.empty((len(out), 0)).tolist()
+
+    for group in tqdm(joined_grouped.groups):
+        group_list = list(joined_grouped.get_group(group)[id_col_right])
+        # a polygon is within any distance of itself
+        group_list.remove(group)
+        group_idx = row_index(out, id_col, group)
+        out.loc[group_idx, neighbor_col].extend(group_list)
+    return out
+
+
+def adjacency(polygon_gdf, *, id_col="USO_AREA_U", neighbor_col="nbrs_bbox",
+              rule="bbox", max_distance_km=None):
+    """Directed neighbour lists under `rule` ("bbox", "touch" or
+    "within_distance").
+
+    The column keeps its historical name `nbrs_bbox` under EVERY rule — it is
+    part of the July 2025 baseline's column contract (spec § 5).
+
+    max_distance_km is used by `within_distance` alone; passing it with any
+    other rule is an error, mirroring the config rule (`build_neighbors`
+    forwards the configured value unconditionally, and it is None there).
+    """
+    if rule != "within_distance" and max_distance_km is not None:
+        raise ValueError(
+            "max_distance_km is only used by adjacency rule "
+            f"'within_distance', not {rule!r}")
     if rule == "bbox":
         return _adjacency_bbox(polygon_gdf, id_col, neighbor_col)
     if rule == "touch":
         return _adjacency_touch(polygon_gdf, id_col, neighbor_col)
+    if rule == "within_distance":
+        return _adjacency_within_distance(polygon_gdf, id_col, neighbor_col,
+                                          max_distance_km)
     raise ValueError(
-        f"unknown adjacency rule {rule!r}; allowed values: ['bbox', 'touch']")
+        f"unknown adjacency rule {rule!r}; allowed values: "
+        "['bbox', 'touch', 'within_distance']")
 
 
 def apply_barrier(polygon_gdf, barrier_geoms, *, id_col="USO_AREA_U",
@@ -152,3 +199,26 @@ def centroid_distances(polygon_gdf, *, neighbor_col="nbrs_bbox",
             pbar.update(1)
 
     return gdf_copy
+
+
+def boundary_distances(polygon_gdf, *, neighbor_col="nbrs_bbox",
+                       nbr_dist_col="nbrs_dist_boundary",
+                       id_col="USO_AREA_U"):
+    """Add [(neighbor_id, distance_km), ...] per row, measured POLYGON TO
+    POLYGON — 0 for every touching or overlapping neighbour.
+
+    Same OUTPUT shape as `centroid_distances`, but built over an
+    id -> geometry dict made ONCE (the `_adjacency_touch` pattern), never the
+    per-neighbour boolean-mask lookup `centroid_distances` inherited from the
+    2025 script. On a MultiPolygon shapely's `distance` is the minimum over
+    the parts, which is the intended meaning.
+    """
+    out = polygon_gdf.copy()
+    out[nbr_dist_col] = np.empty((len(out), 0)).tolist()
+    geoms = {row[id_col]: row["geometry"] for _, row in out.iterrows()}
+    for idx, row in tqdm(out.iterrows(), total=len(out)):
+        geom = geoms[row[id_col]]
+        out.at[idx, nbr_dist_col] = [
+            (neighbor_id, geom.distance(geoms[neighbor_id]) / 1000)
+            for neighbor_id in row[neighbor_col]]
+    return out

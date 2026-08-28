@@ -17,6 +17,10 @@ ID_COL = "USO_AREA_U"
 TYPE_COL = "USO_FINAL"
 NBRS_COL = "nbrs_bbox"
 NBRS_DIST_COL = "nbrs_dist_bbox"
+# Compute-local: `index_frames` builds it, hands it to pcen and drops it
+# before returning, so io.SHAPEFILE_DROP_COLUMNS and the CSV/shapefile column
+# contract are untouched and one stored artifact serves every decay.* value.
+NBRS_DIST_BOUNDARY_COL = "nbrs_dist_boundary"
 CENTROID_COL = "centroid"
 CATEGORY_COL = categories.CATEGORY_COLUMN
 
@@ -97,8 +101,12 @@ def build_neighbors(settlements, barriers, methodology, *, id_col=ID_COL):
         frame, layers=tuple(barriers), combine=methodology.barrier.combine)
     frame[CENTROID_COL] = frame.centroid
 
-    frame = neighbors.adjacency(frame, id_col=id_col, neighbor_col=NBRS_COL,
-                                rule=methodology.adjacency.rule)
+    log.info("adjacency: rule=%s band_km=%s", methodology.adjacency.rule,
+             methodology.adjacency.max_distance_km)
+    frame = neighbors.adjacency(
+        frame, id_col=id_col, neighbor_col=NBRS_COL,
+        rule=methodology.adjacency.rule,
+        max_distance_km=methodology.adjacency.max_distance_km)
     barrier_geoms = [geom for gdf in barriers.values() for geom in gdf.geometry]
     frame = neighbors.apply_barrier(frame, barrier_geoms, id_col=id_col,
                                     neighbor_col=NBRS_COL,
@@ -146,6 +154,17 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
     universe = apply_exclusion(neighbor_frame, dropped=dropped,
                                stage=exclusion.stage, id_col=id_col)
 
+    # `boundary` needs polygon-to-polygon distances, which the stored
+    # artifact deliberately does not carry. Build them HERE, on the
+    # already exclusion-stripped lists (so nothing needs re-stripping), and
+    # drop the column before returning.
+    nbr_dist_col = NBRS_DIST_COL
+    if methodology.decay.distance == "boundary":
+        universe = neighbors.boundary_distances(
+            universe, neighbor_col=NBRS_COL,
+            nbr_dist_col=NBRS_DIST_BOUNDARY_COL, id_col=id_col)
+        nbr_dist_col = NBRS_DIST_BOUNDARY_COL
+
     # Own amounts are computed over the WHOLE universe, so excluded
     # settlements still have something to lend under absent_neighbor
     # "contributes". They are per-row independent, so computing them for rows
@@ -168,15 +187,20 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
                                  and methodology.roads == "eq4_own_only")
         out = index.service_index(
             out, amount_col, service=service, denominator=denominator,
-            nbr_dist_col=NBRS_DIST_COL, lookup_frame=amounts,
+            nbr_dist_col=nbr_dist_col, lookup_frame=amounts,
             absent_neighbor=exclusion.absent_neighbor,
             include_neighbors=include_neighbors,
             decay_form=methodology.decay.form,
             distance_unit=methodology.decay.distance_unit,
+            exponent=methodology.decay.exponent,
+            scale_km=methodology.decay.scale_km,
             id_col=id_col)
 
-    return index.overall_psi(
+    result = index.overall_psi(
         out, second_normalization=methodology.second_normalization)
+    if NBRS_DIST_BOUNDARY_COL in result.columns:
+        result = result.drop(columns=[NBRS_DIST_BOUNDARY_COL])
+    return result
 
 
 def _population_and_exclusion(frame, population, *, id_col, type_col,
@@ -313,7 +337,10 @@ def methodology_stamp(methodology):
     """
     combine = methodology.barrier.combine
     return {
-        "adjacency": {"rule": str(methodology.adjacency.rule)},
+        "adjacency": {
+            "rule": str(methodology.adjacency.rule),
+            "max_distance_km": methodology.adjacency.max_distance_km,
+        },
         "barrier": {
             "rule": str(methodology.barrier.rule),
             "combine": combine if isinstance(combine, str)
