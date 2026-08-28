@@ -13,9 +13,18 @@ categories:
     Industrial: Industrial
     Other: Other
 methodology:
-  adjacency: {rule: touch}
+  adjacency:
+    rule: touch                     # bbox | touch | within_distance
+                                    # max_distance_km: required iff rule is
+                                    # within_distance (>= 0 km, polygon-to-polygon)
   barrier: {rule: pairwise, combine: any}
-  decay: {form: inverse_linear, distance_unit: km}   # manuscript is silent on the unit (spec 8)
+  decay:
+    form: inverse_linear            # inverse_linear | none | inverse_power | exponential
+                                    # exponent: required iff form is inverse_power (> 0)
+                                    # scale_km:  required iff form is exponential (> 0)
+    distance: centroid              # centroid | boundary — the manuscript's d_ij,
+                                    # centroid-to-centroid as always
+    distance_unit: km               # manuscript is silent on the unit (spec 8)
   roads: eq4_own_only
   second_normalization: false                        # no norm_psi column
   exclusion: {types: [], stage: post_neighbors, absent_neighbor: contributes}

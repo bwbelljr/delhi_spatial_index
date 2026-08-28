@@ -86,6 +86,16 @@ def test_enums_cover_exactly_the_reference_table():
         assert {m.value for m in ENUMS[key]} == set(REFERENCE_KNOBS[key]), key
 
 
+# A conditional parameter the reference REQUIRES for one value of a knob.
+# The same constants the § 4.1 pins use — never fresh numbers.
+EXTRA_PARAMS = {
+    ("methodology.adjacency.rule", "within_distance"):
+        {"max_distance_km": 0.25},
+    ("methodology.decay.form", "inverse_power"): {"exponent": 2},
+    ("methodology.decay.form", "exponential"): {"scale_km": 1.0},
+}
+
+
 def test_every_mapped_knob_is_one_the_reference_actually_implements():
     """Drive compute_city once per mapped knob value; an unimplemented knob
     raises ValueError inside the reference, so this fails loudly."""
@@ -95,6 +105,8 @@ def test_every_mapped_knob_is_one_the_reference_actually_implements():
     knob_for_key = {
         "methodology.adjacency.rule": "adjacency_rule",
         "methodology.barrier.rule": "barrier_rule",
+        "methodology.decay.form": "decay_form",
+        "methodology.decay.distance": "decay_distance",
         "methodology.roads": "roads_formula",
         "methodology.second_normalization": "second_norm",
         "methodology.exclusion.absent_neighbor": "absent_neighbor_contribution",
@@ -104,6 +116,7 @@ def test_every_mapped_knob_is_one_the_reference_actually_implements():
         for config_value, reference_value in REFERENCE_KNOBS[key].items():
             kwargs = dict(base)
             kwargs[knob] = reference_value
+            kwargs.update(EXTRA_PARAMS.get((key, config_value), {}))
             frame = compute_city(city, services, barriers, **kwargs)
             assert len(frame) == 7, (key, config_value)
 

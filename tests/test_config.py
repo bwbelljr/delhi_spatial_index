@@ -13,6 +13,7 @@ from delhi_psi.config import (
     ENUMS, ENUM_KEYS, REFERENCE_KNOBS, RESERVED_KEYS, RESERVED_VALUES,
     Config, ConfigError, load_config, shipped_profiles,
 )
+from tests.variants import VARIANTS
 
 CATEGORIES_BLOCK = """categories:
   scheme: uso-10
@@ -33,7 +34,7 @@ MINIMAL = """profile: minimal
 """ + CATEGORIES_BLOCK + """methodology:
   adjacency: {rule: bbox}
   barrier: {rule: global_asymmetric, combine: any}
-  decay: {form: inverse_linear, distance_unit: km}
+  decay: {form: inverse_linear, distance: centroid, distance_unit: km}
   roads: decayed
   second_normalization: true
   exclusion: {types: [RV], stage: post_neighbors, absent_neighbor: swallowed}
@@ -371,3 +372,141 @@ def test_shipped_exclusion_types_are_categories(tmp_path):
         code.categories.mapping)
     manuscript = load_config("manuscript", data_dir=str(tmp_path))
     assert manuscript.methodology.exclusion.types == ()
+
+
+# --- 3D: the distance band and the decay forms (spec § 1, § 4.1 item 7) ---
+BAND = "  adjacency: {rule: within_distance, max_distance_km: 0.25}"
+
+
+def swap(line_start, replacement):
+    """MINIMAL with the one line that starts with `line_start` replaced."""
+    return "\n".join(replacement if line.startswith(line_start) else line
+                     for line in MINIMAL.splitlines()) + "\n"
+
+
+def test_within_distance_loads_with_its_radius(tmp_path):
+    cfg = load_config(write(tmp_path, swap("  adjacency:", BAND)),
+                      data_dir=str(tmp_path))
+    assert cfg.methodology.adjacency.rule == "within_distance"
+    assert cfg.methodology.adjacency.max_distance_km == 0.25
+
+
+@pytest.mark.parametrize("block,expected", [
+    ("  decay: {form: none, distance: centroid, distance_unit: km}",
+     (None, None)),
+    ("  decay: {form: inverse_power, exponent: 2, distance: centroid, "
+     "distance_unit: km}", (2, None)),
+    ("  decay: {form: exponential, scale_km: 1.0, distance: boundary, "
+     "distance_unit: km}", (None, 1.0)),
+])
+def test_every_decay_form_loads_with_exactly_its_own_parameter(tmp_path,
+                                                               block,
+                                                               expected):
+    cfg = load_config(write(tmp_path, swap("  decay:", block)),
+                      data_dir=str(tmp_path))
+    assert (cfg.methodology.decay.exponent,
+            cfg.methodology.decay.scale_km) == expected
+
+
+@pytest.mark.parametrize("key,line_start,bad", [
+    # a parameter the rule/form does not use is REJECTED, not ignored
+    ("methodology.adjacency.max_distance_km", "  adjacency:",
+     "  adjacency: {rule: bbox, max_distance_km: 1.0}"),
+    ("methodology.adjacency.max_distance_km", "  adjacency:",
+     "  adjacency: {rule: touch, max_distance_km: 1.0}"),
+    ("methodology.decay.exponent", "  decay:",
+     "  decay: {form: inverse_linear, exponent: 2, distance: centroid, "
+     "distance_unit: km}"),
+    ("methodology.decay.exponent", "  decay:",
+     "  decay: {form: exponential, scale_km: 1.0, exponent: 2, "
+     "distance: centroid, distance_unit: km}"),
+    ("methodology.decay.scale_km", "  decay:",
+     "  decay: {form: none, scale_km: 1.0, distance: centroid, "
+     "distance_unit: km}"),
+    # required and missing
+    ("methodology.adjacency.max_distance_km", "  adjacency:",
+     "  adjacency: {rule: within_distance}"),
+    ("methodology.decay.exponent", "  decay:",
+     "  decay: {form: inverse_power, distance: centroid, distance_unit: km}"),
+    ("methodology.decay.scale_km", "  decay:",
+     "  decay: {form: exponential, distance: centroid, distance_unit: km}"),
+    ("methodology.decay.distance", "  decay:",
+     "  decay: {form: inverse_linear, distance_unit: km}"),
+    # out of range, and booleans are not numbers
+    ("methodology.adjacency.max_distance_km", "  adjacency:",
+     "  adjacency: {rule: within_distance, max_distance_km: -1}"),
+    ("methodology.adjacency.max_distance_km", "  adjacency:",
+     "  adjacency: {rule: within_distance, max_distance_km: true}"),
+    ("methodology.decay.exponent", "  decay:",
+     "  decay: {form: inverse_power, exponent: 0, distance: centroid, "
+     "distance_unit: km}"),
+    ("methodology.decay.scale_km", "  decay:",
+     "  decay: {form: exponential, scale_km: 0, distance: centroid, "
+     "distance_unit: km}"),
+    ("methodology.decay.scale_km", "  decay:",
+     "  decay: {form: exponential, scale_km: true, distance: centroid, "
+     "distance_unit: km}"),
+])
+def test_conditional_parameters_are_rejected_naming_the_key(tmp_path, key,
+                                                            line_start, bad):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap(line_start, bad)))
+    assert key in str(exc.value)
+
+
+@pytest.mark.parametrize("key,line_start,bad", [
+    ("methodology.decay.form", "  decay:",
+     "  decay: {form: sideways, distance: centroid, distance_unit: km}"),
+    ("methodology.decay.distance", "  decay:",
+     "  decay: {form: inverse_linear, distance: as_the_crow_flies, "
+     "distance_unit: km}"),
+])
+def test_new_enums_name_the_key_and_the_allowed_values(tmp_path, key,
+                                                       line_start, bad):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap(line_start, bad)))
+    message = str(exc.value)
+    assert key in message
+    for allowed in REFERENCE_KNOBS[key]:
+        assert str(allowed) in message
+
+
+@pytest.mark.parametrize("profile", ["code-2025", "manuscript"])
+def test_shipped_profiles_name_the_centroid_distance_explicitly(profile,
+                                                                tmp_path):
+    """The one key both profiles gain. It names the definition they have
+    always used — the value is a record, not a change."""
+    cfg = load_config(profile, data_dir=str(tmp_path))
+    assert cfg.methodology.decay.distance == "centroid"
+    assert cfg.methodology.decay.form == "inverse_linear"
+    assert cfg.methodology.decay.exponent is None
+    assert cfg.methodology.decay.scale_km is None
+    assert cfg.methodology.adjacency.max_distance_km is None
+
+
+@pytest.mark.parametrize("variant", sorted(VARIANTS))
+def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
+    """tests/variants.py is written in CONFIG vocabulary, so every block in
+    it must load — and every enum value it names must be a member of the
+    matching REFERENCE_KNOBS entry. Without this the reference could be
+    pinned against values the loader would refuse."""
+    import yaml
+
+    enum_key = {("adjacency", "rule"): "methodology.adjacency.rule",
+                ("decay", "form"): "methodology.decay.form",
+                ("decay", "distance"): "methodology.decay.distance"}
+    for block, values in VARIANTS[variant].items():
+        for key, value in values.items():
+            if (block, key) in enum_key:
+                assert value in REFERENCE_KNOBS[enum_key[(block, key)]], \
+                    (variant, block, key)
+
+    raw = yaml.safe_load(MINIMAL)
+    for block, values in VARIANTS[variant].items():
+        raw["methodology"][block] = dict(values)
+    path = write(tmp_path, yaml.safe_dump(raw, sort_keys=False))
+    cfg = load_config(path, data_dir=str(tmp_path))
+    for block, values in VARIANTS[variant].items():
+        loaded = getattr(cfg.methodology, block)
+        for key, value in values.items():
+            assert getattr(loaded, key) == value, (variant, block, key)
