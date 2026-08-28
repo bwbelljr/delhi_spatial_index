@@ -134,7 +134,6 @@ def test_compute_refuses_an_artifact_built_at_another_band(data_dir,  # noqa: F8
                                                            tmp_path, capsys):
     """Build at 0.25 km, compute at 0.75 km: every number compute would
     produce describes a neighbourhood nobody built."""
-    import shutil
 
     small = dict(VARIANTS["band_small"], exclusion=BASELINE_EXCLUSION)
     large = dict(VARIANTS["band_large"], exclusion=BASELINE_EXCLUSION)

@@ -86,6 +86,15 @@ def test_enums_cover_exactly_the_reference_table():
         assert {m.value for m in ENUMS[key]} == set(REFERENCE_KNOBS[key]), key
 
 
+def test_production_decay_forms_are_exactly_the_config_table():
+    """`index.DECAY_FORMS` is a literal tuple; a form added there alone
+    would be silent (final review 3D, minor 2) — pin it to the table."""
+    from delhi_psi import index
+
+    assert set(index.DECAY_FORMS) == set(
+        REFERENCE_KNOBS["methodology.decay.form"])
+
+
 # A conditional parameter the reference REQUIRES for one value of a knob.
 # The same constants the § 4.1 pins use — never fresh numbers.
 EXTRA_PARAMS = {

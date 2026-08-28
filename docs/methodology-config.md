@@ -398,7 +398,8 @@ centroid-to-centroid numbers.
 A wide band multiplies the link count roughly with the swept area, so a
 10 km band has on the order of two orders of magnitude more directed links
 than `code-2025`'s `bbox` rule, whose mean degree on the real settlement
-layer (4,357 settlements) is about 7. The `dwithin` spatial join itself is a
+layer (4,357 settlements) is about 7 pre-barrier (4.9 after the barrier
+rule severs links). The `dwithin` spatial join itself is a
 single vectorized query and stays fast at any radius; the cost is
 downstream, in `apply_barrier` and `centroid_distances`, which are per-link
 Python loops. Budget tens of minutes for a `preprocess` at a 10 km band —
