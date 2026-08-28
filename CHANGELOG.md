@@ -41,7 +41,7 @@ section accumulates changes on in-flight branches.
   touched, Oraculum's `expected_values.csv` and both Oraculum production CSVs
   are byte-identical, and `scripts/verify_against_baseline.py --config
   code-2025` still reports `PASS — new run equivalent to July 2025 baseline
-  within tolerance` with max abs deviation `0.000e+00` on all 23 compared
+  within tolerance` with max abs deviation `0.000e+00` on all 30 compared numeric
   columns (real-data proof, 28 Aug 2026 04:27–04:31 CDT: `delhi-psi
   preprocess` — 4,357 settlements, 595 barrier-flagged; `delhi-psi compute`
   — category column identity True on 4,131 rows, `categories: scheme=uso-10
@@ -67,7 +67,7 @@ section accumulates changes on in-flight branches.
   scheme, `tests/fixtures/oraculum/production/code-2025.csv` and
   `manuscript.csv` are byte-identical, and
   `scripts/verify_against_baseline.py --config code-2025` still reports
-  `0.000e+00` on all 23 columns against the July 2025 baseline (real-data
+  `0.000e+00` on all 30 numeric columns (both output sets) against the July 2025 baseline (real-data
   proof, 28 Aug 2026: `categories: scheme=uso-10 n_categories=10`, 4,131
   reported, `PASS — new run equivalent to July 2025 baseline within
   tolerance`). Proved by a CLI end-to-end that collapses the oracle city's
@@ -98,7 +98,7 @@ section accumulates changes on in-flight branches.
   `delhi-psi preprocess` — 4,357 settlements, 595 barrier-flagged, all five
   layers pass the validation battery; `delhi-psi compute` — 4,131 reported,
   15 missing-population rows; `verify_against_baseline.py` — max abs
-  deviation `0.000e+00` on all 23 output columns, `PASS — new run equivalent
+  deviation `0.000e+00` on all 30 numeric output columns, `PASS — new run equivalent
   to July 2025 baseline within tolerance`). The `compute` stage now drops
   exact-duplicate service rows before validation, generalising
   `compute_psi.py`'s bank-only `drop_duplicates` to every service layer
