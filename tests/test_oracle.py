@@ -19,7 +19,7 @@ import pytest
 from delhi_psi.config import load_config
 from tests.oraculum_fixtures import (
     ORACLE_SCENARIOS, compute_oracle_frame, load_barriers, load_services,
-    load_settlements, run_production_chain,
+    load_settlements,
 )
 
 CSV = Path(__file__).resolve().parent / "fixtures" / "oraculum" / "expected_values.csv"
@@ -209,30 +209,3 @@ def test_reprojection_is_load_bearing():
         got = reprojected[reprojected["USO_AREA_U"] == sid]["clinic_pcen"].iloc[0]
         exp = baseline[baseline["USO_AREA_U"] == sid]["clinic_pcen"].iloc[0]
         assert got == pytest.approx(exp, abs=1e-12), sid
-
-
-# --- step-0 snapshot backend (retired in migration step 5) -------------
-# `scripts/generate_production_fixtures.py` still generates
-# tests/fixtures/oraculum/production/code-2025.csv through these two, so the
-# snapshot keeps being produced by the SAME wiring it was created with. They
-# are deleted in the task that swaps the generator to compute_frames and
-# proves a no-op diff. Do not delete them earlier.
-SCENARIO_WIRING = [
-    # (scenario, drop_pre, drop_post)
-    ("baseline", frozenset(), frozenset()),
-    ("excl_rv_only", frozenset(), frozenset({"RV"})),
-    ("excl_contributing", frozenset(), frozenset({"RV", "IND"})),
-    ("excl_removed", frozenset({"RV", "IND"}), frozenset()),
-    ("excl_ind_removed", frozenset({"IND"}), frozenset()),
-]
-
-
-def _production_frame(denom, drop_ids_post=frozenset(),
-                      drop_ids_pre=frozenset()):
-    city = load_settlements()
-    if drop_ids_pre:
-        city = city[~city["USO_AREA_U"].isin(drop_ids_pre)]
-    result = run_production_chain(
-        city, load_barriers(), load_services(), denom,
-        drop_ids_post=drop_ids_post)
-    return result.set_index("USO_AREA_U")

@@ -6,12 +6,11 @@ columns `profile,scenario,denom,settlement,metric,value`, sorted by
 Geometry, centroid and neighbor-list columns are never serialized — their
 reprs are not stable.
 
-STEP-0 BACKEND (spec § 5 step 0): the numbers come from
-`tests.test_oracle._production_frame`, i.e. today's pre-refactor wiring
-through `spatial_index_utils`. The committed output is the target the
-refactored pipeline must reproduce string-for-string. Migration step 5 swaps
-the backend to `delhi_psi.pipeline.compute_frames` and proves a no-op diff;
-nothing else about this file changes.
+The numbers come from delhi_psi.pipeline.compute_frames, driven by the
+profile's own methodology plus the § 7 scenario overrides. Migration step 0
+generated the code-2025 fixture from the pre-refactor wiring; that committed
+file is the refactor's correctness proof, so this generator must reproduce it
+byte for byte.
 
 Regenerate with:
     uv run python scripts/generate_production_fixtures.py
@@ -23,9 +22,14 @@ import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
 
-from tests.test_oracle import SCENARIO_WIRING, _production_frame
+from delhi_psi.config import load_config
+from tests.oraculum_fixtures import ORACLE_SCENARIOS, compute_oracle_frame
 
 PRODUCTION_DIR = REPO / "tests" / "fixtures" / "oraculum" / "production"
+
+# Every profile with a committed production fixture. Adding a profile is one
+# YAML plus one entry here, then a regeneration commit (spec § 4).
+PROFILES = ("code-2025",)
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
 SERVICES = POINT_SERVICES + ("road",)
@@ -65,16 +69,14 @@ def write_fixture(path, records):
 
 def emit_profile(profile, out_path):
     """Write `profile`'s production fixture to out_path; return out_path."""
-    if profile != "code-2025":
-        raise ValueError(
-            f"unknown profile {profile!r}: the step-0 backend only knows "
-            "'code-2025' (migration step 5 generalises this)")
-    columns = metric_columns(second_normalization=True)
+    methodology = load_config(profile).methodology
+    columns = metric_columns(
+        second_normalization=methodology.second_normalization)
     records = []
-    for scenario, drop_pre, drop_post in SCENARIO_WIRING:
+    for scenario, types, stage in ORACLE_SCENARIOS:
         for denom in DENOMS:
-            frame = _production_frame(denom, drop_ids_post=drop_post,
-                                      drop_ids_pre=drop_pre)
+            frame = compute_oracle_frame(profile, types=types, stage=stage,
+                                         denom=denom)
             records.extend(frame_records(profile, frame, scenario, denom,
                                          columns))
     write_fixture(out_path, records)
@@ -82,8 +84,9 @@ def emit_profile(profile, out_path):
 
 
 def main():
-    out_path = emit_profile("code-2025", PRODUCTION_DIR / "code-2025.csv")
-    print(f"wrote {out_path}")
+    for profile in PROFILES:
+        out_path = emit_profile(profile, PRODUCTION_DIR / f"{profile}.csv")
+        print(f"wrote {out_path}")
 
 
 if __name__ == "__main__":
