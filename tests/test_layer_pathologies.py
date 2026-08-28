@@ -1,9 +1,10 @@
 """The messy tier's real-data premises, from a reproducible source (§ 5).
 
 Data-gated: CI runs on a bare runner, so the two tests that actually run the
-measurement skip without ~/delhi_data. The three that do not need data — the
-committed document's shape, its provenance header, and where the dedup cache
-is allowed to go — always run.
+measurement skip without ~/delhi_data. The ones that do not need data — the
+committed document's shape, its provenance header, where the dedup cache is
+allowed to go, and the bbox/touch isolation relationship on a synthetic
+frame — always run.
 """
 import os
 import shutil
@@ -11,9 +12,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import geopandas as gpd
 import pytest
+from shapely.geometry import Polygon, box
 
-from scripts.measure_layer_pathologies import parse_block, resolve_cache_dir
+from scripts.measure_layer_pathologies import (count_isolated_bbox,
+                                               count_isolated_touch,
+                                               parse_block, resolve_cache_dir)
 
 REPO = Path(__file__).resolve().parent.parent
 DOC = REPO / "docs" / "data" / "layer_pathologies.md"
@@ -24,9 +29,32 @@ needs_data = pytest.mark.skipif(
     reason=f"real Delhi data not present at {DATA_DIR}")
 
 COUNT_KEYS = ("settlements", "rectangles", "multipolygons", "isolated_bbox",
-              "no_population", "overlapping_pairs")
+              "isolated_touch", "no_population", "overlapping_pairs")
 AREA_KEYS = ("area_km2_min", "area_km2_median", "area_km2_max")
 POINT_SERVICES = ("bank", "health", "police", "ration", "school", "transport")
+
+
+def test_isolated_bbox_is_at_most_isolated_touch_on_a_synthetic_frame():
+    """bbox-neighbours are a superset of touch-neighbours: a touch-neighbour
+    pair's polygons intersect, and each polygon lies inside its own bounding
+    box, so a touch-neighbour is always a bbox-neighbour too. That makes
+    isolated_bbox <= isolated_touch hold for ANY frame.
+
+    This L-shaped settlement and the square sitting in its notch make the
+    inequality strict on purpose: the square lies inside the L's bounding
+    box (so it is the L's bbox-neighbour — but only in one direction, since
+    bbox adjacency here is a directed containment test) yet never reaches
+    the L's actual boundary (so it is nobody's touch-neighbour). The L ends
+    up bbox-isolated only; the square is isolated under both rules.
+    """
+    l_shape = Polygon([(0, 0), (2, 0), (2, 1), (1, 1), (1, 2), (0, 2)])
+    notch_square = box(1.2, 1.2, 1.8, 1.8)
+    gdf = gpd.GeoDataFrame({"id": ["L", "SQ"]},
+                           geometry=[l_shape, notch_square], crs="EPSG:7760")
+    bbox_isolated = count_isolated_bbox(gdf, id_col="id")
+    touch_isolated = count_isolated_touch(gdf, id_col="id")
+    assert bbox_isolated <= touch_isolated
+    assert (bbox_isolated, touch_isolated) == (1, 2)
 
 
 @pytest.fixture(scope="module")

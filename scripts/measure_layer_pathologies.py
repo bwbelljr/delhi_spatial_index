@@ -64,11 +64,29 @@ def count_multipolygons(gdf):
     return int((gdf.geom_type == "MultiPolygon").sum())
 
 
+def count_isolated(gdf, *, id_col, rule):
+    """Settlements with an EMPTY neighbour list under `rule` ("bbox" or
+    "touch"). The column keeps its historical name `nbrs_bbox` under both
+    rules (delhi_psi.neighbors.adjacency's own contract)."""
+    frame = neighbors.adjacency(gdf, id_col=id_col, neighbor_col="nbrs_bbox",
+                                rule=rule)
+    return int(sum(1 for nbrs in frame["nbrs_bbox"] if len(nbrs) == 0))
+
+
 def count_isolated_bbox(gdf, *, id_col):
     """Settlements with an EMPTY neighbour list under the production rule."""
-    frame = neighbors.adjacency(gdf, id_col=id_col, neighbor_col="nbrs_bbox",
-                                rule="bbox")
-    return int(sum(1 for nbrs in frame["nbrs_bbox"] if len(nbrs) == 0))
+    return count_isolated(gdf, id_col=id_col, rule="bbox")
+
+
+def count_isolated_touch(gdf, *, id_col):
+    """Settlements with an EMPTY neighbour list under the `touch` rule.
+
+    bbox-neighbours are a superset of touch-neighbours (a touching pair's
+    polygons intersect, and a polygon is contained in its own bounding box,
+    so a touch-neighbour is always a bbox-neighbour too): isolated_bbox <=
+    isolated_touch always holds.
+    """
+    return count_isolated(gdf, id_col=id_col, rule="touch")
 
 
 def count_no_population(gdf, cfg):
@@ -117,6 +135,7 @@ def measure(cfg, cache_dir):
         "rectangles": count_rectangles(gdf),
         "multipolygons": count_multipolygons(gdf),
         "isolated_bbox": count_isolated_bbox(gdf, id_col=id_col),
+        "isolated_touch": count_isolated_touch(gdf, id_col=id_col),
         "no_population": count_no_population(gdf, cfg),
         "area_km2_min": f"{areas.min():.6g}",
         "area_km2_median": f"{areas.median():.6g}",

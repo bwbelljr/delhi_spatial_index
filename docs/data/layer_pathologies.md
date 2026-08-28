@@ -10,7 +10,9 @@ counts (it skips when the data is not present).
 
 - **Run date:** 2026-08-28
 - **Layer:** `uso_update_sep2021/uso_update_sep2021.shp`
-- **Commit:** `e14a87f`
+- **Commit:** `92132c3` (fix round 1: `isolated_touch` added on top of this
+  commit, uncommitted at measurement time — see the commit that follows this
+  doc's update)
 - **Command:** `uv run python scripts/measure_layer_pathologies.py --config code-2025`
 
 ```text
@@ -18,6 +20,7 @@ settlements: 4357
 rectangles: 0
 multipolygons: 556
 isolated_bbox: 6
+isolated_touch: 20
 no_population: 15
 area_km2_min: 2.30282e-09
 area_km2_median: 0.0506134
@@ -38,7 +41,13 @@ multi_settlement_points_transport: 41
   unable to tell `bbox` adjacency apart from polygon intersection, and the
   messy city's `H`/`L`/`T` the fix.
 - `isolated_bbox` — settlements with an EMPTY neighbour list under the
-  production rule; the messy city's `I`.
+  production `bbox` rule; the messy city's `I`.
+- `isolated_touch` — settlements with an EMPTY neighbour list under the
+  `touch` rule (border-sharing with positive length). bbox-neighbours are a
+  superset of touch-neighbours, so `isolated_bbox <= isolated_touch` always;
+  here 6 <= 20. Neither number matches WORKPLAN's earlier ad-hoc "~360 have
+  zero neighbours" — that figure predates this reproducible measurement and
+  should be read as superseded, not confirmed, by either count.
 - `no_population` — settlements the population join leaves without a value.
   Production drops them from the reported frame unconditionally; the messy
   city's `U`.
