@@ -97,17 +97,27 @@ def oracle_config(base, city=ORACULUM):
                                                mapping=city.mapping()))
 
 
-def oracle_profile_path(base, directory, city=ORACULUM):
-    """Write the same derived profile as YAML into `directory`; return the
-    path, for the tests that drive the real CLI with `--config <path>`.
+def oracle_profile_path(base, directory, city=ORACULUM, *,
+                        methodology_overrides=None, name=None):
+    """Write the derived profile as YAML into `directory`; return the path,
+    for the tests that drive the real CLI with `--config <path>`.
 
-    Precondition: `base`'s `exclusion.types` must be category names present
-    in the oracle vocabulary (`ORACLE_VOCABULARY`, since the swapped-in
-    mapping is its identity) — the shipped profiles satisfy this. A profile
-    whose `exclusion.types` names a category the oracle-6 identity does not
-    produce (e.g. a collapsing profile's `non-urban`) fails to load through
-    this helper with the "not categories produced by categories.mapping"
-    error.
+    `methodology_overrides` is a mapping of TOP-LEVEL methodology sub-blocks
+    (`adjacency`, `decay`, `exclusion`) that REPLACE `raw["methodology"]
+    [<block>]` wholesale — never a deep merge. A variant therefore always
+    states its full block and no key is ever inherited from the base
+    profile, which is what `tests/variants.py` is written for.
+
+    `name` distinguishes two derived profiles written into ONE directory;
+    without it the filename is the historic `<base>.oracle.yaml`.
+
+    Precondition: `base`'s `exclusion.types` (or the override's) must be
+    category names present in the oracle vocabulary (`ORACLE_VOCABULARY`,
+    since the swapped-in mapping is its identity) — the shipped profiles
+    satisfy this. A profile whose `exclusion.types` names a category the
+    oracle-6 identity does not produce (e.g. a collapsing profile's
+    `non-urban`) fails to load through this helper with the "not categories
+    produced by categories.mapping" error.
     """
     import yaml
 
@@ -115,7 +125,10 @@ def oracle_profile_path(base, directory, city=ORACULUM):
 
     raw = yaml.safe_load((PROFILES_DIR / f"{base}.yaml").read_text())
     raw["categories"] = {"scheme": city.scheme, "mapping": city.mapping()}
-    path = Path(directory) / f"{base}.oracle.yaml"
+    for block, values in (methodology_overrides or {}).items():
+        raw["methodology"][block] = dict(values)
+    stem = base if name is None else f"{base}.{name}"
+    path = Path(directory) / f"{stem}.oracle.yaml"
     path.write_text(yaml.safe_dump(raw, sort_keys=False))
     return path
 
