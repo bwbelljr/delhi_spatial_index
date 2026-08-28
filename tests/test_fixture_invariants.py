@@ -109,3 +109,27 @@ def test_empirical_pin_distances_are_km_tuples():
     dist = dict(result.loc["B", "nbrs_dist_bbox"])
     assert dist["E"] == pytest.approx(1.0, abs=1e-9)
     assert dist["RV"] == pytest.approx(1.0, abs=1e-9)
+
+
+# --- 3B: what makes category exclusion and the reference agree ---------
+def test_ids_equal_their_types_for_exactly_rv_and_ind(city):
+    """The reference implementation drops settlements by ID; production
+    drops them by CATEGORY. `types=("RV", "IND")` selects the same rows in
+    both only because these two settlements have an id equal to their type.
+    Pin it: change the fixture and every exclusion scenario silently means
+    something else (spec 3B § 4).
+    """
+    same = {sid for sid, row in city.iterrows() if sid == row["USO_FINAL"]}
+    assert same == {"RV", "IND"}
+
+
+def test_the_oracle_identity_mapping_is_the_fixture_vocabulary(city):
+    """The derived test profile's mapping is the identity over exactly the
+    types this city carries — no more (it would hide an unmapped type), no
+    fewer (the run would error)."""
+    from delhi_psi.categories import categories_of
+    from tests.oraculum_fixtures import ORACLE_VOCABULARY, oracle_mapping
+
+    assert set(city["USO_FINAL"]) == set(ORACLE_VOCABULARY)
+    assert set(oracle_mapping()) == set(ORACLE_VOCABULARY)
+    assert categories_of(oracle_mapping()) == frozenset(ORACLE_VOCABULARY)

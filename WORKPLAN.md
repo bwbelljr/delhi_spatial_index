@@ -169,11 +169,20 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       fed by `point_counts`/`road_lengths`; the `road_count → road_length`
       special case is gone (line services name their amount column
       `<service>_length`)
-- [ ] Make settlement types configurable via a mapping layer: run with 10, 8,
+- [x] Make settlement types configurable via a mapping layer: run with 10, 8,
       5, or 4 categories from a config (1:1 or X:1 mapping of the 10
       `USO_FINAL` source types), so Raj's categorization decision (Phase 4)
       plugs in without code changes — and so the method ports to other cities
       [DEL-17]
+      — done 28 Aug 2026 (3B): profiles carry a required `categories:` block
+      (`scheme` + source type → category mapping); `exclusion.types` is
+      written in category names; every output carries a `category` column and
+      the joblib the scheme stamp. An unmapped source type errors (no
+      catch-all, `categories.default` reserved). Both shipped profiles use
+      the identity `uso-10` scheme, so no number moved: fixtures
+      byte-identical, real-data baseline at 0.000e+00. Spec
+      `docs/superpowers/specs/2026-08-27-phase3b-categories-design.md`, plan
+      `docs/superpowers/plans/2026-08-27-phase3b-categories.md`
 - [~] Modular & extensible structure: distance thresholds, decay weights,
       service sets, adjacency/barrier rules, and category mappings injectable
       as parameters (feeds the Phase 6 sweeps) [DEL-18]
@@ -278,6 +287,12 @@ implementation lands here. Epic DEL-5.*
       juxtaposition**; remove the per-type data table (footnotes instead)
       [DEL-30]
 - [ ] **Bob:** encode the agreed mapping in the Phase 3 mapping layer [DEL-31]
+      — unblocked 27 Aug 2026 (3B): this is now **one YAML profile** —
+      copy `code-2025.yaml`, write the `categories.mapping` block, set
+      `exclusion.types: [non-urban]`, regenerate the fixtures. No code
+      change. Worked example and procedure: `docs/methodology-config.md`
+      § 2. Every one of the 10 source types must be mapped — `UV`, `SDA` and
+      `Other` are the open ones (DEL-29)
 - [ ] **Bob:** recalculate all indexes with non-urban categories dropped
       (supersedes the current "no RV" run — industrial areas go too) — gated
       on hand ratification, Decision A, the mapping, and the bug-audit

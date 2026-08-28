@@ -7,6 +7,40 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Phase 3B settlement-category mapping layer: a profile now declares
+  `categories: {scheme, mapping}` (source type → category, 1:1 or X:1) and
+  writes `methodology.exclusion.types` in **category** names; every output —
+  CSV, shapefile, joblib — and `missing_population.csv` carry a `category`
+  column beside the raw `USO_FINAL`, the joblib also carries the
+  scheme/mapping in `attrs`, and each run logs
+  `categories: scheme=… n_categories=…`. The mapping is applied in the one
+  population/exclusion prelude both entry points share, so `compute_frames`
+  and the CLI cannot diverge; `compute_frames` gains `mapping=`/`scheme=`
+  (`None` = the identity over the city's own types). An unmapped source type
+  is an **error**, never a warning and never a fallback: `compute` exits 1
+  naming every offending type with its row count, and `categories.default` is
+  rejected at load as reserved. `categories` is required in every profile,
+  duplicate YAML keys are now rejected naming key and line (PyYAML kept the
+  last one silently), and `exclusion.types ⊆ categories` is checked both at
+  load and at run time (in-memory callers never pass through `load_config`).
+  **No numbers changed**: both shipped profiles use the identity `uso-10`
+  scheme, `tests/fixtures/oraculum/production/code-2025.csv` and
+  `manuscript.csv` are byte-identical, and
+  `scripts/verify_against_baseline.py --config code-2025` still reports
+  `0.000e+00` on all 23 columns against the July 2025 baseline (real-data
+  proof, 28 Aug 2026: `categories: scheme=uso-10 n_categories=10`, 4,131
+  reported, `PASS — new run equivalent to July 2025 baseline within
+  tolerance`). Proved by a CLI end-to-end that collapses the oracle city's
+  six types into five, excludes the category `non-urban`, and reproduces
+  both today's raw `[RV, IND]` exclusion and the independent reference
+  implementation's `code/excl_contributing` and `code/excl_removed` blocks
+  for both stages and both denominators. Raj's Phase 4 decision (DEL-31) is
+  now one YAML file. Tests 246 → 279 (`test_categories`, the config and
+  pipeline cases, the collapse e2e, the unmapped-type guard, the fixture
+  id == type pin). Docs: `docs/methodology-config.md` § 2,
+  `docs/data/uso_final_vocabulary.md`. Spec:
+  `docs/superpowers/specs/2026-08-27-phase3b-categories-design.md`.
+  [DEL-17, DEL-18 (further partial)]
 - Phase 3A refactor: `spatial_index_utils.py` (822 lines) and the two driver
   scripts are gone; the pipeline is the installable `delhi_psi` package
   (`config`, `io`, `validate`, `geometry`, `neighbors`, `index`, `pipeline`,

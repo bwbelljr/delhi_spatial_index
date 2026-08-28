@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from delhi_psi import geometry, index, io, neighbors, validate
+from delhi_psi import categories, geometry, index, io, neighbors, validate
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +18,7 @@ TYPE_COL = "USO_FINAL"
 NBRS_COL = "nbrs_bbox"
 NBRS_DIST_COL = "nbrs_dist_bbox"
 CENTROID_COL = "centroid"
+CATEGORY_COL = categories.CATEGORY_COLUMN
 
 POINT_GEOMS = frozenset({"Point", "MultiPoint"})
 LINE_GEOMS = frozenset({"LineString", "MultiLineString", "LinearRing"})
@@ -72,11 +73,16 @@ def attach_population(settlements, population, *, id_col=ID_COL,
     return out, missing
 
 
-def excluded_ids(frame, *, types, id_col=ID_COL, type_col=TYPE_COL):
-    """Ids whose settlement type is in `types` (raw USO_FINAL strings)."""
+def excluded_ids(frame, *, types, id_col=ID_COL, category_col=CATEGORY_COL):
+    """Ids whose CATEGORY is in `types`.
+
+    From cycle 3B `methodology.exclusion.types` holds CATEGORY names — the
+    values of `categories.mapping` — and matches the mapped column the
+    prelude has just added, not the raw source-type column.
+    """
     if not types:
         return frozenset()
-    return frozenset(frame.loc[frame[type_col].isin(list(types)), id_col])
+    return frozenset(frame.loc[frame[category_col].isin(list(types)), id_col])
 
 
 def build_neighbors(settlements, barriers, methodology, *, id_col=ID_COL):
@@ -176,13 +182,18 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
 def _population_and_exclusion(frame, population, *, id_col, type_col,
                               population_id_col, population_value_col,
                               missing_population, max_missing_population,
-                              exclusion_types):
+                              exclusion_types, mapping,
+                              category_col=CATEGORY_COL):
     """The prelude both entry points share: attach population, apply the
-    missing rule, and work out which ids are dropped.
+    missing rule, map source types to categories, and work out which ids are
+    dropped.
 
-    Returns (frame with population, dropped ids, ids with no population).
-    `dropped` is the type exclusion UNION the unpriced rows — the same set in
-    `compute_frames` and `compute`, so the rule (and its message) lives once.
+    Returns (frame with population and `category`, dropped ids, ids with no
+    population). `dropped` is the CATEGORY exclusion UNION the unpriced
+    rows — the same set in `compute_frames` and `compute`, so the rule (and
+    its message) lives once. The mapping is applied here, immediately before
+    `excluded_ids`, which is why both entry points get the `category` column
+    and identical exclusion semantics from one place.
     """
     out, missing = attach_population(
         frame, population, id_col=id_col,
@@ -195,8 +206,21 @@ def _population_and_exclusion(frame, population, *, id_col, type_col,
     if max_missing_population is not None:
         validate.check_missing_population(
             len(missing), maximum=max_missing_population)
+    out = categories.apply_mapping(out, type_col=type_col, mapping=mapping,
+                                   out_col=category_col)
+    # The same subset rule load_config enforces, repeated at run time:
+    # in-memory callers build a MethodologyConfig directly and never pass
+    # through the loader, and a category the mapping does not produce would
+    # exclude nothing at all, silently.
+    allowed = categories.categories_of(mapping)
+    unknown = sorted(item for item in exclusion_types if item not in allowed)
+    if unknown:
+        raise validate.ValidationError(
+            f"methodology.exclusion.types {unknown} are not categories "
+            "produced by categories.mapping; it produces: "
+            f"{sorted(allowed)}")
     dropped = excluded_ids(out, types=exclusion_types, id_col=id_col,
-                           type_col=type_col) | set(missing)
+                           category_col=category_col) | set(missing)
     return out, dropped, missing
 
 
@@ -204,7 +228,8 @@ def compute_frames(settlements, barriers, services, population, methodology,
                    denominator, *, epsg_code=7760, id_col=ID_COL,
                    type_col=TYPE_COL, population_id_col="uso_area_u",
                    population_value_col="population",
-                   missing_population="drop", max_missing_population=None):
+                   missing_population="drop", max_missing_population=None,
+                   mapping=None, scheme="identity"):
     """The documented in-memory entry point (spec § 2).
 
     settlements: settlement polygons with `area_km2` (and `population` when
@@ -222,26 +247,39 @@ def compute_frames(settlements, barriers, services, population, methodology,
     denominator: "pop" | "popdensity" | "one".
     missing_population: "drop" | "error" — what to do about settlements with
         no population row (layers.population.missing).
+    mapping: {source type: category}, or None to build the identity over the
+        types this city carries. `scheme` names the mapping in the result's
+        `attrs` (and, through `compute`, in the joblib output).
     """
     if missing_population not in MISSING_POPULATION:
         raise ValueError(
             f"unknown missing_population {missing_population!r}; allowed "
             f"values: {list(MISSING_POPULATION)}")
+    if mapping is None:
+        # The identity over the types this city actually carries: existing
+        # in-memory callers keep their call shape and their numbers.
+        mapping = {t: t for t in settlements[type_col].unique()}
     frame, dropped, _ = _population_and_exclusion(
         settlements, population, id_col=id_col, type_col=type_col,
         population_id_col=population_id_col,
         population_value_col=population_value_col,
         missing_population=missing_population,
         max_missing_population=max_missing_population,
-        exclusion_types=methodology.exclusion.types)
+        exclusion_types=methodology.exclusion.types,
+        mapping=mapping)
 
     # `dropped` is read off `frame`, not the neighbours frame: build_neighbors
     # adds columns and never adds or removes a row, so the two give the same
     # ids.
     neighbor_frame = build_neighbors(frame, barriers, methodology,
                                      id_col=id_col)
-    return index_frames(neighbor_frame, services, methodology, denominator,
-                        dropped=dropped, epsg_code=epsg_code, id_col=id_col)
+    result = index_frames(neighbor_frame, services, methodology, denominator,
+                          dropped=dropped, epsg_code=epsg_code, id_col=id_col)
+    # After the last index_frames call, never before: pandas drops `attrs`
+    # across the merges inside it (a caller that merges this result further
+    # loses the stamp too, as pandas documents).
+    result.attrs["categories"] = {"scheme": scheme, "mapping": dict(mapping)}
+    return result
 
 
 @dataclass(frozen=True)
@@ -442,12 +480,31 @@ def compute(cfg):
         population_value_col=cfg.layers.population.value_col,
         missing_population=cfg.layers.population.missing,
         max_missing_population=cfg.validate.max_missing_population,
-        exclusion_types=cfg.methodology.exclusion.types)
+        exclusion_types=cfg.methodology.exclusion.types,
+        mapping=cfg.categories.mapping)
+
+    # One INFO line per excluded category, even one that matched zero rows
+    # — the silent case this closes. `missing` is logged separately so a
+    # row dropped for both reasons is not double-counted into a category.
+    for category in cfg.methodology.exclusion.types:
+        rows = frame.loc[frame[CATEGORY_COL] == category, id_col]
+        log.info("excluded: category=%s rows=%d",
+                 category, len(set(rows) - set(missing)))
+    if missing:
+        log.info("excluded: missing_population rows=%d", len(missing))
 
     missing_path = out_dir / "missing_population.csv"
     frame[frame[id_col].isin(missing)].drop(
         columns=[c for c in io.SHAPEFILE_DROP_COLUMNS if c in frame.columns]
     ).to_csv(missing_path, index=False)
+
+    # CSV and shapefile cannot carry `attrs`, so for those formats the
+    # record of which scheme produced these rows is this line plus the
+    # `category` column itself. The scheme is never a column.
+    stamp = {"scheme": cfg.categories.scheme,
+             "mapping": dict(cfg.categories.mapping)}
+    log.info("categories: scheme=%s n_categories=%d", cfg.categories.scheme,
+             len(categories.categories_of(cfg.categories.mapping)))
 
     outputs = []
     n_reported = 0
@@ -457,6 +514,9 @@ def compute(cfg):
                               epsg_code=cfg.crs.epsg, id_col=id_col)
         validate.check_no_negative(result)
         n_reported = len(result)
+        # Immediately before the write, mirroring the neighbours stamp:
+        # index_frames' merges drop `attrs`, so stamping earlier vanishes.
+        result.attrs["categories"] = stamp
         outputs.extend(io.write_outputs(
             result, out_dir, basename=output_basename(cfg, denominator),
             formats=cfg.outputs.formats))

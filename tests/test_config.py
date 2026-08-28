@@ -8,14 +8,29 @@ from pathlib import Path
 
 import pytest
 
+from delhi_psi.categories import categories_of
 from delhi_psi.config import (
     ENUMS, ENUM_KEYS, REFERENCE_KNOBS, RESERVED_KEYS, RESERVED_VALUES,
     Config, ConfigError, load_config, shipped_profiles,
 )
 
-MINIMAL = """
-profile: minimal
-methodology:
+CATEGORIES_BLOCK = """categories:
+  scheme: uso-10
+  mapping:
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
+"""
+
+MINIMAL = """profile: minimal
+""" + CATEGORIES_BLOCK + """methodology:
   adjacency: {rule: bbox}
   barrier: {rule: global_asymmetric, combine: any}
   decay: {form: inverse_linear, distance_unit: km}
@@ -23,6 +38,10 @@ methodology:
   second_normalization: true
   exclusion: {types: [RV], stage: post_neighbors, absent_neighbor: swallowed}
 """
+
+# The 10 Delhi source types, measured 27 Aug 2026 (spec 3B § 1).
+DELHI_TYPES = {"Planned", "UAC", "JJC", "RUAC", "RV", "UV", "SDA", "JJR",
+               "Industrial", "Other"}
 
 
 def write(tmp_path, text, name="p.yaml"):
@@ -249,3 +268,106 @@ def test_unknown_key_in_crs_or_validate_raises_config_error(tmp_path, block,
     with pytest.raises(ConfigError) as exc:
         load_config(write(tmp_path, MINIMAL + f"\n{bogus}\n"))
     assert dotted in str(exc.value)
+
+
+# --- 3B: the categories block (spec 3B §§ 2, 5) ------------------------
+def test_categories_block_is_required(tmp_path):
+    """A profile states its method completely — `categories` is required
+    from cycle 3B on, exactly like `methodology`."""
+    without = MINIMAL.replace(CATEGORIES_BLOCK, "")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, without))
+    assert "categories" in str(exc.value)
+
+
+def test_exclusion_type_that_is_not_a_category_is_rejected(tmp_path):
+    """`methodology.exclusion.types` holds CATEGORY names — the values of
+    the mapping — and the error lists the categories the mapping produces."""
+    text = MINIMAL.replace("types: [RV]", "types: [non-urban]")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    message = str(exc.value)
+    assert "methodology.exclusion.types" in message
+    assert "non-urban" in message
+    for category in sorted(DELHI_TYPES):
+        assert category in message, category
+
+
+def test_duplicate_mapping_key_is_rejected_naming_the_key(tmp_path):
+    """PyYAML's default loader keeps the LAST occurrence silently — half
+    the layer would be mapped by a rule nobody can see."""
+    text = MINIMAL.replace("    JJC: JJC\n", "    JJC: JJC\n    JJC: Other\n")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    message = str(exc.value)
+    assert "duplicate key" in message
+    assert "JJC" in message
+
+
+def test_duplicate_key_anywhere_in_the_profile_is_rejected(tmp_path):
+    """The checking loader is not scoped to `categories` — a repeated
+    `profile:` is the same silent overwrite."""
+    text = MINIMAL + "\nprofile: second\n"
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    message = str(exc.value)
+    assert "duplicate key" in message
+    assert "profile" in message
+
+
+def test_categories_default_is_reserved(tmp_path):
+    """A catch-all category is deliberately not offered: it is a KNOWN
+    optional key, so it takes the reserved path, never the unknown-key
+    path."""
+    text = MINIMAL.replace("  scheme: uso-10\n",
+                           "  scheme: uso-10\n  default: Other\n")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    message = str(exc.value)
+    assert "unknown key" not in message
+    assert message.endswith(RESERVED_KEYS["categories.default"])
+
+
+@pytest.mark.parametrize("bad,fragment", [
+    ("    JJC:\n", "JJC"),          # empty value -> None
+    ("    JJC: 7\n", "7"),          # non-string value
+])
+def test_non_string_mapping_values_are_rejected(tmp_path, bad, fragment):
+    text = MINIMAL.replace("    JJC: JJC\n", bad)
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    message = str(exc.value)
+    assert "categories.mapping" in message
+    assert fragment in message
+
+
+@pytest.mark.parametrize("bad", ["  scheme: ''\n", "  scheme:\n"])
+def test_scheme_must_be_a_non_empty_string(tmp_path, bad):
+    text = MINIMAL.replace("  scheme: uso-10\n", bad)
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    assert "categories.scheme" in str(exc.value)
+
+
+@pytest.mark.parametrize("profile", ["code-2025", "manuscript"])
+def test_shipped_profiles_map_the_ten_delhi_types_to_themselves(profile,
+                                                                tmp_path):
+    """Both shipped profiles use the identity scheme — which is what makes
+    'this cycle changes no numbers' true."""
+    cfg = load_config(profile, data_dir=str(tmp_path))
+    assert cfg.categories.scheme == "uso-10"
+    assert set(cfg.categories.mapping) == DELHI_TYPES
+    assert categories_of(cfg.categories.mapping) == frozenset(DELHI_TYPES)
+    assert all(source == category
+               for source, category in cfg.categories.mapping.items())
+
+
+def test_shipped_exclusion_types_are_categories(tmp_path):
+    """`code-2025` keeps [RV], `manuscript` keeps [] — both valid category
+    names under the identity mapping."""
+    code = load_config("code-2025", data_dir=str(tmp_path))
+    assert code.methodology.exclusion.types == ("RV",)
+    assert set(code.methodology.exclusion.types) <= categories_of(
+        code.categories.mapping)
+    manuscript = load_config("manuscript", data_dir=str(tmp_path))
+    assert manuscript.methodology.exclusion.types == ()

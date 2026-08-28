@@ -220,3 +220,64 @@ def test_build_neighbors_has_no_epsg_code_parameter():
 
     assert "epsg_code" not in inspect.signature(
         pipeline.build_neighbors).parameters
+
+
+# --- 3B: the category mapping on the in-memory path (spec 3B §§ 3, 5) ---
+def test_mapping_none_equals_an_explicit_identity_mapping():
+    """`mapping=None` builds the identity over the types the city actually
+    carries, so every existing in-memory caller keeps its call shape AND
+    its numbers."""
+    city = load_settlements()
+    identity = {t: t for t in city["USO_FINAL"].unique()}
+    implicit = _compute(city, None).set_index("USO_AREA_U")
+    explicit = compute_frames(
+        city, {"canal": load_barriers()}, load_services(), None,
+        _methodology(), "pop", mapping=identity,
+        scheme="explicit-identity").set_index("USO_AREA_U")
+
+    assert set(implicit.index) == set(explicit.index)
+    metrics = [c for c in implicit.columns
+               if str(c).endswith(("_count", "_pcen", "_idx", "_length"))
+               or c in ("unnorm_psi", "norm_psi", "population", "area_km2")]
+    assert "unnorm_psi" in metrics and "clinic_pcen" in metrics
+    for column in metrics:
+        for sid in implicit.index:
+            assert implicit.loc[sid, column] == pytest.approx(
+                explicit.loc[sid, column], abs=1e-12), (column, sid)
+
+
+def test_compute_frames_stamps_the_scheme_and_mapping_on_its_result():
+    """pandas drops `attrs` across the merges inside index_frames, so the
+    stamp has to go on the frame compute_frames actually returns."""
+    mapping = {"Planned": "Planned", "UC": "UC", "JJC": "JJC", "RV": "RV",
+               "RUAC": "RUAC", "IND": "IND"}
+    result = compute_frames(
+        load_settlements(), {"canal": load_barriers()}, load_services(),
+        None, _methodology(), "pop", mapping=mapping, scheme="oracle-6")
+    assert result.attrs["categories"] == {"scheme": "oracle-6",
+                                          "mapping": mapping}
+
+
+def test_compute_frames_defaults_the_scheme_to_identity():
+    result = _compute(load_settlements(), None)
+    assert result.attrs["categories"]["scheme"] == "identity"
+    assert result.attrs["categories"]["mapping"] == {
+        "Planned": "Planned", "UC": "UC", "JJC": "JJC", "RV": "RV",
+        "RUAC": "RUAC", "IND": "IND"}
+
+
+def test_exclusion_type_outside_the_mapping_raises_on_the_in_memory_path():
+    """The LOAD-time check cannot see this call: compute_frames and the
+    oracle helpers build a MethodologyConfig directly and never pass through
+    load_config. Without the run-time repeat, a category the mapping no
+    longer produces would exclude nothing — silently."""
+    city = load_settlements()
+    methodology = methodology_with(PROFILE, types=("non-urban",),
+                                   stage="post_neighbors")
+    with pytest.raises(validate.ValidationError) as excinfo:
+        compute_frames(city, {"canal": load_barriers()}, load_services(),
+                       None, methodology, "pop",
+                       mapping={t: t for t in city["USO_FINAL"].unique()})
+    message = str(excinfo.value)
+    assert "non-urban" in message
+    assert "RV" in message, "the message lists the categories the mapping produces"

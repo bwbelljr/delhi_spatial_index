@@ -1,4 +1,17 @@
 profile: manuscript
+categories:
+  scheme: uso-10
+  mapping:                          # identity, as code-2025 (spec 3B 2)
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
 methodology:
   adjacency: {rule: touch}
   barrier: {rule: pairwise, combine: any}
