@@ -35,14 +35,17 @@ approval) always precedes it.
 
 **Repo-specific guidance for this project (delhi_spatial_index)**
 
-- Typical `smoke:` — `uv run pytest` (the mythical-city oracle suite, once
-  Phase 2 exists, is the canonical fast gate: it proves the index math).
-- Typical `run:` — the full pipeline + baseline verification (e.g.
-  `scripts/preprocess.py` → `scripts/compute_psi.py` →
-  `scripts/verify_against_baseline.py`). **Full runs are long** (the
-  neighbors computation iterates over 4,352 colonies) — budget for it, run
-  it in the background, and never schedule more full runs than the phase
-  actually needs.
+- Typical `smoke:` — `uv run pytest -q -W error` (the mythical-city oracle
+  suite is the canonical fast gate: it proves the index math).
+- Typical `run:` — the full pipeline + baseline verification via the
+  `delhi-psi` CLI: `delhi-psi preprocess --config code-2025 --data-dir
+  ~/delhi_data --out-dir <dir>` → `delhi-psi compute --config code-2025
+  --data-dir ~/delhi_data --out-dir <dir>` → `uv run python
+  scripts/verify_against_baseline.py --config code-2025 --data-dir
+  ~/delhi_data --verify-dir <dir>`. **Full runs are long** (the neighbors
+  computation iterates over 4,352 colonies) — budget for it, run it in the
+  background, and never schedule more full runs than the phase actually
+  needs.
 - The July 2025 outputs in the data directory are a **read-only baseline**:
   no pipeline invocation may write into the baseline files; verification
   runs write to a separate output directory.

@@ -4,3 +4,5 @@ Barrier_Clip/*
 *.data/*
 .venv/
 __pycache__/
+.superpowers/
+.claude/worktrees/

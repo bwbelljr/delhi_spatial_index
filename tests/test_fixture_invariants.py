@@ -12,7 +12,7 @@ import pytest
 from shapely.geometry import box
 
 from tests.oraculum_fixtures import (
-    load_settlements, load_barriers, load_services, run_production_chain,
+    compute_oracle_frame, load_barriers, load_services, load_settlements,
 )
 
 BASE = 1_000_000
@@ -97,17 +97,15 @@ def test_service_points_inside_their_hosts(city):
 
 def test_empirical_pin_code_rule_neighbors():
     """THE GATE: production code must reproduce the spec's directed table."""
-    result = run_production_chain(
-        load_settlements(), load_barriers(), load_services(), "pop")
-    got = {row["USO_AREA_U"]: set(row["nbrs_bbox"])
-           for _, row in result.iterrows()}
+    result = compute_oracle_frame("code-2025", types=(), stage="post_neighbors",
+                                  denom="pop")
+    got = {sid: set(row["nbrs_bbox"]) for sid, row in result.iterrows()}
     assert got == CODE_DIRECTED
 
 
 def test_empirical_pin_distances_are_km_tuples():
-    result = run_production_chain(
-        load_settlements(), load_barriers(), load_services(), "pop")
-    row = result[result["USO_AREA_U"] == "B"].iloc[0]
-    dist = dict(row["nbrs_dist_bbox"])
+    result = compute_oracle_frame("code-2025", types=(), stage="post_neighbors",
+                                  denom="pop")
+    dist = dict(result.loc["B", "nbrs_dist_bbox"])
     assert dist["E"] == pytest.approx(1.0, abs=1e-9)
     assert dist["RV"] == pytest.approx(1.0, abs=1e-9)

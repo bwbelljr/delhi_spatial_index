@@ -7,6 +7,40 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Phase 3A refactor: `spatial_index_utils.py` (822 lines) and the two driver
+  scripts are gone; the pipeline is the installable `delhi_psi` package
+  (`config`, `io`, `validate`, `geometry`, `neighbors`, `index`, `pipeline`,
+  `cli`, `verify`) built with hatchling, with a `delhi-psi
+  {preprocess,compute} --config <profile>` CLI. Every methodology choice —
+  adjacency rule, barrier rule and layer combination, decay, roads formula,
+  denominator, second normalization, exclusion `stage` × `absent_neighbor` —
+  is a validated config value; two profiles ship (`code-2025` = today's
+  behaviour, `manuscript` = the paper's rule-set). **No numbers changed**:
+  `tests/fixtures/oraculum/production/code-2025.csv` was snapshotted from the
+  pre-refactor code before any module moved and is reproduced byte-for-byte by
+  the refactored pipeline, and
+  `scripts/verify_against_baseline.py --config code-2025` reports zero
+  deviation from the July 2025 baseline (real-data proof, 27 Aug 2026:
+  `delhi-psi preprocess` — 4,357 settlements, 595 barrier-flagged, all five
+  layers pass the validation battery; `delhi-psi compute` — 4,131 reported,
+  15 missing-population rows; `verify_against_baseline.py` — max abs
+  deviation `0.000e+00` on all 23 output columns, `PASS — new run equivalent
+  to July 2025 baseline within tolerance`). The `compute` stage now drops
+  exact-duplicate service rows before validation, generalising
+  `compute_psi.py`'s bank-only `drop_duplicates` to every service layer
+  (only `bank` has duplicate rows on the real layers, 1,240 of 10,637). The
+  silent `except: pass` in `calc_pcen_mobile` is now an explicit lookup
+  miss, which is what makes `absent_neighbor: contributes` implementable
+  (DEL-21). Root `conftest.py` and every `sys.path.insert` are gone
+  (`tests/__init__.py` plus the editable install do that job); `pyyaml`
+  moved to the runtime dependencies and `uv.lock` was regenerated. Notebook
+  eyeball checks became raising assertions in `delhi_psi.validate` (DEL-25).
+  Tests 77 → 230, including `test_config`, `test_profiles_match_reference`
+  (both profiles × every scenario × both reference denominators),
+  `test_manuscript_anchors` (the hand-ratified worksheet values),
+  `test_production_fixtures`, `test_cli`, `test_validate`. Spec:
+  `docs/superpowers/specs/2026-08-27-phase3-refactor-design.md`.
+  [DEL-15, DEL-16, DEL-18 (partial), DEL-21, DEL-22, DEL-25]
 - Dead code: removed 17 functions with no callers (transitively) from
   `spatial_index_utils.py` — 684 lines, 44% of the module — including every
   `*_wards` / `*_buffer` variant, the unused `generate_colonies_with_exclusions`

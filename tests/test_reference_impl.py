@@ -7,7 +7,6 @@ double-derived by the spec's ultracode review; the derivation worksheet
 
 import itertools
 import math
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -205,8 +204,7 @@ def test_recorded_ties_are_ground_truth():
 
 
 def test_invariants_guard_csv_wide():
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-    from check_oraculum_invariants import check
+    from scripts.check_oraculum_invariants import check
     assert check() == []
 
 
@@ -219,4 +217,6 @@ def test_expected_values_csv_is_regenerable(tmp_path):
     """
     regen = tmp_path / "regen.csv"
     emit_expected_values(regen)
-    assert regen.read_text() == CSV.read_text()
+    # bytes, not text: read_text() would normalise nothing here but would
+    # hide a line-ending or encoding change in the committed CSV.
+    assert regen.read_bytes() == CSV.read_bytes()

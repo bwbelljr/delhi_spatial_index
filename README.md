@@ -6,10 +6,14 @@ This repository includes code to generate a spatial index of services for Delhi,
 
 ## Repository layout
 
-* `spatial_index_utils.py` - library with all spatial index functions
-* `scripts/preprocess.py` - pre-processing pipeline (validation, deduplication, reprojection, barriers, neighbors)
-* `scripts/compute_psi.py` - PSI calculation pipeline
+* `delhi_psi/` - the installable package: `config` (profiles and validation),
+  `geometry`, `neighbors`, `index` (the math, as pure functions with keyword
+  knobs), `io`, `validate`, `pipeline` (the stages), `cli`, `verify`
+* `delhi_psi/profiles/` - one YAML per methodology profile (`code-2025` is
+  today's production behaviour; `manuscript` is the paper's rule-set)
 * `scripts/verify_against_baseline.py` - compares a fresh run to the July 2025 baseline outputs
+* `scripts/generate_oraculum_fixtures.py`, `scripts/generate_production_fixtures.py` - regenerate the committed test fixtures
+* `scripts/render_oracle_maps.py`, `scripts/check_oraculum_invariants.py` - oracle dev tools
 * `archive/master-2021/` - snapshot of the original 2020-2021 code, including variant analyses (ward-level index, buffer-based PSI, exclusions). See `archive/master-2021/ARCHIVE_README.md`.
 
 ## Setup
@@ -23,11 +27,15 @@ This repository includes code to generate a spatial index of services for Delhi,
 ## Running the pipeline
 
 ```bash
-uv run python scripts/preprocess.py --data-dir ~/delhi_data --out-dir ~/delhi_data/phase1_verify
-uv run python scripts/compute_psi.py --data-dir ~/delhi_data \
-    --neighbors-file ~/delhi_data/phase1_verify/colonies_bbox_nbrs_aug2026.joblib \
-    --out-dir ~/delhi_data/phase1_verify
-uv run python scripts/verify_against_baseline.py --data-dir ~/delhi_data
+uv run delhi-psi preprocess --config code-2025 --data-dir ~/delhi_data --out-dir ~/delhi_data/phase3_verify
+uv run delhi-psi compute    --config code-2025 --data-dir ~/delhi_data --out-dir ~/delhi_data/phase3_verify
+uv run python scripts/verify_against_baseline.py --config code-2025 \
+    --data-dir ~/delhi_data --verify-dir ~/delhi_data/phase3_verify
 ```
+
+`--config` takes a shipped profile name or a path to a YAML file. Every
+methodology choice — adjacency rule, barrier rule, decay, roads formula,
+denominator, second normalization, exclusion semantics — is a config value;
+see `docs/superpowers/specs/2026-08-27-phase3-refactor-design.md` § 3.
 
 Tests: `uv run pytest`

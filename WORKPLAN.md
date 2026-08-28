@@ -12,11 +12,12 @@ and the April 2026 paper draft. Owners: **Bob** (code/index), **Raj**
 (categorization/framing). Paper manuscript lives on Overleaf.
 
 Repo state (updated 23 Aug 2026, after Phases 1–2): `main` is the default
-branch. The pipeline is three plain scripts on uv + `pyproject.toml`
-(`scripts/preprocess.py` → `scripts/compute_psi.py` →
-`scripts/verify_against_baseline.py`) around `spatial_index_utils.py`; the
+branch. The pipeline is the installable delhi_psi package on uv +
+pyproject.toml (delhi-psi preprocess → delhi-psi compute, plus
+scripts/verify_against_baseline.py), config-driven via
+delhi_psi/profiles/*.yaml; the
 notebooks are gone (history in git and `archive/master-2021/`). The Oraculum
-oracle lives in `tests/` (65 tests green) with its docs under `docs/oracle/`.
+oracle lives in `tests/` (230 tests green) with its docs under `docs/oracle/`.
 The full input dataset (276 MB) lives locally at `~/delhi_data` and is
 two-way synced hourly with the shared drive (`Spatial_Index_GIS/delhi_data/`).
 Each phase runs brainstorm → approved spec → `/ship` (`.claude/commands/ship.md`)
@@ -32,7 +33,7 @@ name each item's ticket; keep the two in sync when either changes.
 | 0 Environment & data | done | data synced, `gh` working |
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
 | 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
-| 3 Refactor & bug audit | **next** — unblocked | evidence-backed bug list below |
+| 3 Refactor & bug audit | **in progress** — cycle 3A done (PR pending) | delhi_psi package; code-2025 reproduces the step-0 snapshot byte-for-byte and the July 2025 baseline at zero deviation |
 | 4 Categorization | waiting on Raj | — |
 | 5–7 | not started | — |
 
@@ -46,7 +47,8 @@ Open items by owner:
   Raj's answers become config values, not rewrites.
 - **Raj:** memo decisions — tagged DECISION/CONFIRM/FYI in
   `suggested-fixes-memo.md`; the two blocking ones are exclusion semantics
-  (Open Decision A) and roads Eq. 4. Open Decision B; Phase 4 categorization.
+  (Open Decision A) and roads Eq. 4 (Open Decision C — B is the
+  data-release posture); Phase 4 categorization.
 - **Deferred by decision:** Dependabot alerts (absorbed into Phase 3's
   dependency work; the four Dependabot PRs #1–#4 were closed as superseded
   by Phase 1's modernization); `pandas<3` uncap (Phase 3, now that the
@@ -150,22 +152,36 @@ session → spec → `/ship`, like Phases 1–2. Items marked "needs Raj" can be
 specified and the messy-city tier built before his answers arrive; the
 fixes themselves wait for the memo decisions. Epic DEL-4.*
 
-- [ ] Brainstorm → owner-approved spec → implementation plan for this phase
+- [x] Brainstorm → owner-approved spec → implementation plan for this phase
       (the spec decides package layout, config schema, and which bug-audit
       items are in scope before Raj answers; may split Phase 3 into more than
       one `/ship` cycle) [DEL-15]
-- [ ] One canonical implementation: collapse duplicated/near-duplicate logic
+      — done 27 Aug 2026: spec
+      `docs/superpowers/specs/2026-08-27-phase3-refactor-design.md`, plan
+      `docs/superpowers/plans/2026-08-27-phase3a-refactor.md`; Phase 3
+      split into cycles 3A (this one), 3B (DEL-17) and 3C (DEL-24/19/20)
+- [x] One canonical implementation: collapse duplicated/near-duplicate logic
       in `spatial_index_utils.py` (e.g. the `*_wards` / `*_buffer` variants of
       `calc_all_services` / `create_service_index`) into single configurable
       functions [DEL-16]
+      — done 27 Aug 2026 (3A): `create_service_index` /
+      `create_service_length_index` collapsed into `index.service_index`
+      fed by `point_counts`/`road_lengths`; the `road_count → road_length`
+      special case is gone (line services name their amount column
+      `<service>_length`)
 - [ ] Make settlement types configurable via a mapping layer: run with 10, 8,
       5, or 4 categories from a config (1:1 or X:1 mapping of the 10
       `USO_FINAL` source types), so Raj's categorization decision (Phase 4)
       plugs in without code changes — and so the method ports to other cities
       [DEL-17]
-- [ ] Modular & extensible structure: distance thresholds, decay weights,
+- [~] Modular & extensible structure: distance thresholds, decay weights,
       service sets, adjacency/barrier rules, and category mappings injectable
       as parameters (feeds the Phase 6 sweeps) [DEL-18]
+      — PARTIAL (3A, 27 Aug 2026): adjacency/barrier rules, service sets,
+      denominators, exclusion and units are config. Distance thresholds
+      (DEL-36) and alternative decay weights (DEL-37) are NOT — the schema
+      leaves room (`adjacency` and `decay` are mappings, not bare strings)
+      and Phase 6 adds the values with their reference rules
 - [ ] Bug audit — the Phase 2 oracle turned this from a vague mandate into a
       prioritized, evidence-backed list (all six divergences are documented in
       `docs/oracle/exclusion-semantics-memo.md` and pinned by tests):
@@ -180,20 +196,35 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          health 18, police 2). A containment rule does NOT fix this — it needs
          a decision on how overlapping colonies share a point. Needs Raj.
          [DEL-20]
-      3. **Silent `except: pass` in `calc_pcen_mobile`** — swallows missing
-         neighbors, making exclusion semantics (a) unimplementable
-         (WORKPLAN Open Decision A is half-answered by this). [DEL-21]
-      4. Barrier rule is global + asymmetric vs. the manuscript's pair
-         severing; roads carry neighbor decay Eq. 4 does not have; `norm_psi`
-         is a second normalization absent from Eq. 1; popdensity has no
-         manuscript equation. Each: fix to match the paper, or ratify and
-         write into the methods (with Raj). [DEL-22]
+      3. ~~**Silent `except: pass` in `calc_pcen_mobile`** — swallows
+         missing neighbors, making exclusion semantics (a) unimplementable
+         (WORKPLAN Open Decision A is half-answered by this).~~ [DEL-21] —
+         done 27 Aug 2026 (3A): replaced by an explicit lookup;
+         `exclusion.absent_neighbor: contributes` reads amounts from the
+         pre-exclusion frame, so semantics (a) is now implementable.
+      4. ~~Barrier rule is global + asymmetric vs. the manuscript's pair
+         severing; roads carry neighbor decay Eq. 4 does not have;
+         `norm_psi` is a second normalization absent from Eq. 1;
+         popdensity has no manuscript equation.~~ [DEL-22] — done 27 Aug
+         2026 (3A): all four are config switches with both values
+         implemented and reference-pinned (`barrier.rule`, `roads`,
+         `second_normalization`, `outputs.denominators`), and the
+         `manuscript` profile runs the paper's rule-set end to end. The
+         fix-or-ratify CALL is still Raj's (DEL-13); whichever he picks is
+         a profile edit, not a code change.
       5. ~~Dead code: function(s) defined but never called; also the pandas
          `FutureWarning`s (dtype-incompatible setitem in
          `spatial_index_utils.py` ~L835/L1212) so a `-W error` CI run becomes
          feasible.~~ [DEL-23] — done 27 Aug 2026: 17 dead functions (684
          lines, incl. all `*_wards`/`*_buffer` variants) removed; warnings
          fixed under DEL-26; CI runs `pytest -W error`.
+      6. **`index.minmax` has no `hi == lo` guard** (deliberately, plan §
+         Global Constraints), so a constant PCEN column divides 0/0 —
+         latent on real layers, reachable via the population-drop path.
+         The resulting NaN is not caught by `check_no_negative` and
+         `overall_psi`'s mean skips NaN, so `unnorm_psi` would silently
+         average fewer services instead of failing. Routed to the 3C bug
+         audit (not guarded in 3A).
 - [ ] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must
@@ -204,18 +235,25 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       zero neighbors), a settlement with no population row (15 real ones),
       and an area-extreme sliver (real areas span 2.3e-9 → 29 km²). This tier
       is what would PROVE any fix to items 1 and 2 above. [DEL-24]
-- [~] Retire the notebooks entirely (decided): notebooks already removed
+- [x] Retire the notebooks entirely (decided): notebooks already removed
       in Phase 1 (logic lives in `scripts/`); remaining work is the package
       pipeline stages with logged validation (the notebooks' eyeball checks
       become assertions) and a figures command that renders to files [DEL-25]
+      — done 27 Aug 2026 (3A): `delhi-psi {preprocess,compute}` are the
+      pipeline stages, `delhi_psi.validate` turns the eyeball checks into
+      raising assertions, `logging` replaced `print`. The figures command
+      is Phase 4 (DEL-33).
 - [x] Lift the `pandas<3` cap in `pyproject.toml` now that the oracle can
       validate the major-version jump; sweep any remaining Dependabot alerts
       at the same time (deferred here by decision — do not fix piecemeal)
       [DEL-26] — done 27 Aug 2026: pandas 3.0.5, 5 dtype fixes, 280 legacy
       alerts dismissed
 - [x] Add GitHub Actions CI running `uv run pytest` on every push/PR
-      (decided in meta-planning "once the suite exists" — it now does; no
-      `.github/workflows/` yet) [DEL-27]
+      (decided in meta-planning "once the suite exists") [DEL-27] — done
+      25 Aug 2026, PR #7: `.github/workflows/ci.yml` (locked sync, the
+      oracle suite under `-W error`, fixture-drift guard); spec
+      `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`. Owner
+      follow-up: make `test` a required check in branch protection.
 
 **Definition of done:** oracle suite still passes; one code path per concept;
 settlement categories, services, and distance parameters are config, not code.
@@ -225,7 +263,7 @@ settlement categories, services, and distance parameters are config, not code.
 *The big analytical piece. Workshop consensus: ~10 Delhi-specific types are
 too much detail — collapse into a small set of portable, theory-first
 categories. Raj's conceptual work proceeds in parallel with Phases 1–3;
-implementation lands here. Epic DEL-5.* — **done 25 Aug 2026, PR #7**: `.github/workflows/ci.yml` (locked sync, 77 tests, fixture-drift guard); spec `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`. Owner follow-up: make `test` a required check in branch protection.
+implementation lands here. Epic DEL-5.*
 - [ ] **Raj:** drop all non-urban categories (rural villages, industrial
       areas) from the entire analysis — figures and calculations; move their
       mention to footnotes. It's an urban project. [DEL-28]

@@ -1,7 +1,7 @@
-"""Tests for scripts/common.py path resolution."""
+"""Tests for delhi_psi.io path resolution (was scripts/common.py)."""
 from pathlib import Path
 
-from scripts.common import resolve_data_dir, resolve_out_dir
+from delhi_psi.io import resolve_data_dir, resolve_out_dir
 
 
 def test_flag_beats_env_and_default(monkeypatch, tmp_path):
