@@ -125,8 +125,9 @@ diff against the `code-2025` outputs by type. Mechanics:
    `*.dedup.gpkg` + `.stamp` caches, and both output CSVs). Read-only.
 2. The script creates `<work-dir>/roads-own-only/`, copies the artifact in
    under the name the derived profile will look for
-   (`colonies_neighbors_roads-own-only.joblib`) and the dedup caches, and
-   writes `roads-own-only.yaml`: `code-2025.yaml` loaded with PyYAML,
+   (`colonies_neighbors_roads-own-only.joblib`) — the artifact ALONE:
+   `pipeline.compute` never reads the `*.dedup.gpkg` caches, only
+   `preprocess` does — and writes `roads-own-only.yaml`: `code-2025.yaml` loaded with PyYAML,
    `profile` set to `roads-own-only`, `methodology.roads` set to
    `eq4_own_only`, `paths.neighbors_artifact` deleted (so the per-profile
    default applies), `paths.out_dir` deleted. Every other key byte-equal.
@@ -281,15 +282,29 @@ written for Raj:
 1. If `unnorm_psi` matches: the paper already reports Eq. 1 as written;
    `second_normalization: false` costs nothing and removes a column the
    methods never mention. Bob's recommendation stands.
-2. If the popdensity denominator matches (the axis label says it will):
+2. **If `norm_psi` matches (and `unnorm_psi` does not): Bob's proposed
+   default of `second_normalization: false` is withdrawn** — the paper's
+   headline figure reports the second-normalised column. The doc then
+   states the real choice for Raj, symmetric to item 3: keep `norm_psi` as
+   the reported PSI and add the second min-max to the methods (one
+   sentence after Eq. 1: "the mean is then min-max scaled across
+   settlements"), or switch the figures to Eq. 1 as written and let every
+   bar move. Both columns stay in the config either way. *The plan-review
+   round of 5 Sep 2026 already ran this comparison on the baseline files
+   and found `norm_psi` × popdensity matching 8 of 8 bars (max gap 0.0006)
+   against 1 of 8 for `unnorm_psi`; the script's job is to make that
+   reproducible and drift-tested, not to discover it.*
+3. If the popdensity denominator matches (the axis label says it will):
    **Bob's proposed default of dropping popdensity from the reported results
    is withdrawn** — the paper's headline figure is the popdensity variant.
    The doc then states the real choice for Raj: keep popdensity as the
    reported denominator and add its equation to the methods (Eq. 3 with
    Population_i/Area_i), or switch the figures to the per-population Eq. 3
    the manuscript prints. Both denominators stay in the config either way.
-3. Whichever way it comes out, the decision log's § 7–8 and DEL-52 are
-   updated by the final task with the measured answer.
+4. Whichever way it comes out, the decision log's § 7–8 and DEL-52 are
+   updated by the final task with the measured answer. Items 2 and 3 are
+   independent: the finding names the column AND the denominator, and the
+   doc's consequences section has one paragraph for each.
 
 If NO candidate matches at least 6 of 8 bars, the doc says so, prints the
 four candidate tables in full, and the finding is "the figure was not
@@ -298,10 +313,38 @@ not guessed around.
 
 ## 3. Shared contract for scripts and docs
 
-- CLI shape, all four: `--config` (default `code-2025`), `--data-dir`
-  (read-only), `--work-dir` (scratch; default a fresh temp dir; refused
-  inside the data dir — the existing guard, now in `_measure_common`), plus
-  the script-specific `--verify-dir` / `--baseline-dir` / `--all-candidates`.
+- CLI shape, the three new scripts: `--config` (default `code-2025`),
+  `--data-dir` (read-only), `--work-dir` (scratch; default a fresh temp
+  dir; refused inside the data dir — the existing guard, now in
+  `_measure_common`), plus the script-specific `--verify-dir` /
+  `--baseline-dir` / `--all-candidates`. `measure_layer_pathologies.py`
+  keeps its historic `--cache-dir` name and documented command line.
+- **The settlement dedup cache and geometry types.** `_dedup_cached`
+  returns the in-memory frame on a cold cache but re-reads its own
+  GeoPackage on a warm one, and GeoPackage stores the layer as
+  MultiPolygon, so a warm cache upcasts every Polygon (the raw layer has
+  3,801 Polygon + 556 MultiPolygon; after a round trip all 4,357 read as
+  MultiPolygon). Any count that inspects `geom_type` — today only
+  `multipolygons` in the pathology script — is therefore only valid on a
+  COLD cache. Rule: `measure_layer_pathologies.py` always runs cold (its
+  default; the run step never points it at a staged cache), and
+  `_measure_common.load_settlements` says so in its docstring. The other
+  scripts' predicates (`intersects`, intersection length, `touch`
+  adjacency, barrier flags) are type-agnostic and may share a warm cache.
+- **One cache per machine, not one per test.** The three data-gated
+  doc-drift tests for the new docs read the cache directory from the
+  environment variable `DELHI_PSI_MEASURE_CACHE` (default: a fresh temp
+  dir, i.e. cold, ~4.5 min of dedup each); the run step exports it to the
+  staged work dir so the dedup and the O(n²) `touch` adjacency happen once.
+  The pathology drift test keeps its own cold `fresh` fixture (previous
+  bullet). The run step's full-suite invocation is therefore budgeted at
+  15–20 minutes with the cache exported, and is run in the background with
+  its output captured — never under a 10-minute foreground timeout.
+- **`road_inside` ⇔ `road_length > 0`.** When `--verify-dir` is given the
+  roads script asserts (raises, not warns) that the set of settlements it
+  classifies `road_inside` equals the set with `road_length > 0` in the
+  `code-2025` output CSV; a unit test exercises the assertion on a
+  hand-built frame, and the real-data run exercises it on the layer.
 - Output: provenance lines (`layer:`, `work-dir:`, and for DEL-49/52 the
   input directories) then one or more fenced ```` ```text ```` blocks.
   Multi-block scripts label them: the first line inside each fence is
@@ -330,10 +373,13 @@ Fixture-level (fast, run in CI):
   byte-equal after a dump/load round trip), and `pipeline.methodology_stamp`
   is asserted not to contain `roads`. The compute itself is exercised on the
   ORACLE city: run (b) end-to-end on the Oraculum fixture through the same
-  code path and assert `road_idx` under own-only equals the reference
-  implementation's `ideal` roads column (A 0.0075, E 0.0025, others 0 —
-  `suggested-fixes-memo.md` § 3) — the one-factor machinery proven on the
-  city where the answer is known by hand.
+  code path and assert the roads columns under own-only equal the
+  reference implementation's `ideal` values from
+  `tests/fixtures/oraculum/expected_values.csv` (rule `ideal`, scenario
+  `baseline`, denominator `pop`: `road_pcen` A 0.0075, E 0.0025, others 0;
+  `road_idx` A 1.0, E 1/3, others 0 — the memo § 3 quoted the PCEN values
+  as if they were the index; the plan pins both columns) — the one-factor
+  machinery proven on the city where the answer is known by hand.
 - DEL-51: `inventory_barriers.inventory(layers)` on the Oraculum canal
   fixture returns count 1, the right length, the right flagged settlements
   (A and D). The `.shp.xml` reader is tested on a three-line XML string.
@@ -440,3 +486,14 @@ is drafted AFTER the merge from the final docs and is never sent.
    axis label is not one.
 9. **`FIGURE_4_BARS` lives in the script**, not a data file — eight numbers
    with a provenance comment, tested for shape.
+10. **Plan review R1 (5 Sep 2026) rulings.** (a) The reviewers measured
+    DEL-52 on the baseline: `norm_psi` × popdensity matches 8/8 bars —
+    § 2.4 gained the `norm_psi` branch so the write-up cannot force-fit
+    the `unnorm_psi` template. (b) A warm GeoPackage dedup cache upcasts
+    Polygon → MultiPolygon: the pathology script runs cold, always (§ 3).
+    (c) One shared cache via `DELHI_PSI_MEASURE_CACHE` for the new drift
+    tests, and the run step's suite runs in the background (§ 3). (d) The
+    `road_inside` ⇔ `road_length > 0` assertion is a stated requirement
+    with a test (§ 3). (e) `compute` does not need the dedup caches; the
+    roads script stages the artifact alone (§ 2.1 (b)). (f) The Oraculum
+    roads anchors are `road_pcen` values; both columns pinned (§ 4).
