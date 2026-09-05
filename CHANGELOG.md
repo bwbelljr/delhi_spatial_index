@@ -7,6 +7,26 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Raj's methodology decisions from the 28 Aug 2026 call recorded (docs
+  only, no code or profile change): new decision log
+  `docs/decisions/2026-08-28-raj-methodology-decisions.md` with transcript
+  timestamps, the config value each decision lands as, and Bob's rulings on
+  the sub-questions; WORKPLAN Open Decisions A and C closed (A → semantics
+  (a), min-max over reported types; adjacency → `touch`; roads →
+  `eq4_own_only`; barrier → partial weighting, which is the reserved
+  `partial_weighted` value and becomes cycle 3E, DEL-48; overlap services
+  count for each owner, plus Bob's neighbour-lending rule on DEL-20);
+  Phase 4 rewritten — no category collapse (DEL-29 parked), drop `RV,
+  Industrial, Other`, DEL-31 shrinks to the ratified profile; new items
+  DEL-48–53 (partial barriers, JJC roads measurement, corner-only pairs,
+  barrier provenance, `norm_psi`/popdensity, media reclassification run);
+  DEL-46 reproducibility appendix planned rather than optional.
+  `docs/methodology-config.md` § 1 gains a "ratified" column and § 2 marks
+  the collapse recipe as parked; `docs/oracle/suggested-fixes-memo.md`
+  carries Raj's answer under each item. Recorded caveat: the call's roads
+  premise was inverted (the code decays roads, the paper does not), so the
+  roads decision changes the published numbers; its effect is measured
+  first (DEL-49) and Raj is told.
 - Phase 3D injectable parameters (DEL-18): the last two methodological
   choices that were still code are config values. `methodology.adjacency.rule`
   gains **`within_distance`** with a required `max_distance_km` — a

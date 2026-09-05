@@ -9,7 +9,11 @@ relevant decision agrees. Numbering follows the six divergences in the
 oracle spec (`docs/superpowers/specs/2026-08-17-phase2-oracle-design.md`,
 "The two rule-sets").*
 
-**Status: DRAFT — Bob's position, not yet discussed with Raj.**
+**Status: ANSWERED — discussed with Raj on the 28 Aug 2026 call.** The
+text below is Bob's position as sent on 24 Aug 2026, unchanged; each item
+now opens with a **`Raj (28 Aug 2026):`** line giving his answer. The
+authoritative record, with transcript timestamps and the rulings on
+sub-questions, is `docs/decisions/2026-08-28-raj-methodology-decisions.md`.
 
 **How to read the `Raj:` line under each heading.**
 - **DECISION** — Raj has to choose; Bob has no default or the default is
@@ -33,7 +37,14 @@ version the published figures used.
 
 ## 2. Barrier rule — global/asymmetric → pairwise/edge-based  **(lead item)**
 
-> **Raj: DECISION ×2 + CONFIRM.** (i) Confirm the paper means pairwise
+> **Raj (28 Aug 2026): AGREED, including the partial-barrier weighting** —
+> "if there's like 30% left, let's not make it a binary thing … they can
+> get around the canal … let's just do that the way you have it." Linear
+> weight. He asked where the barrier layers came from (city data or drawn
+> by hand) — DEL-51. Implementation is cycle 3E (DEL-48); Oraculum's canal
+> will be redrawn to cover the full A–D edge so the worksheet holds.
+>
+> *Original ask —* **Raj: DECISION ×2 + CONFIRM.** (i) Confirm the paper means pairwise
 > severing (a barrier only separates the two settlements it runs between),
 > not the code's "flagged settlement is invisible to all neighbors".
 > (ii) *Decide* whether partial barriers should weight contributions by the
@@ -136,7 +147,12 @@ lands. Test: `test_border_adjacency_severed_pairwise`.
 
 ## 1. Adjacency — bounding box → shared border
 
-> **Raj: CONFIRM.** The paper says "sharing a border"; the code uses
+> **Raj (28 Aug 2026): CONFIRMED** — the paper means shared border
+> ("Yeah. Correct."). `adjacency.rule: touch` in the ratified profile.
+> The corner-contact sub-question is empirical: Bob counts corner-only
+> pairs on the real layer first (DEL-50).
+>
+> *Original ask —* **Raj: CONFIRM.** The paper says "sharing a border"; the code uses
 > bounding boxes and invents neighbors citywide. Bob will fix to true
 > shared-border adjacency unless told otherwise. One sub-question to
 > *confirm*: settlements touching only at a corner point are **not**
@@ -167,7 +183,17 @@ fix or a methods change).
 
 ## 3. Roads — neighbor decay absent from Eq. 4
 
-> **Raj: DECISION.** Eq. 4 has no neighbor term; the code decays roads
+> **Raj (28 Aug 2026): Eq. 4 as written — no neighbour term.** His
+> argument is mobility: an ambulance cannot use a road in the next colony;
+> "if you don't have a road to the settlement, you don't have a road."
+> **Caveat:** on the call Bob stated the code's behaviour backwards (as
+> having no neighbour term), and Raj's "let's just keep it at that" was
+> said on that premise. The decision is recorded as final on its merits
+> (`roads: eq4_own_only`), Raj is being told of the inversion, and the
+> effect on JJCs is measured before the recalculation (DEL-49). Raj writes
+> the footnote.
+>
+> *Original ask —* **Raj: DECISION.** Eq. 4 has no neighbor term; the code decays roads
 > like clinics. Which one is intended? Bob has **no default**. See the
 > question below — the answer decides whether the code or the equation
 > changes.
@@ -203,7 +229,10 @@ the methods text. No default — this is genuinely a modelling choice.
 
 ## 4. `norm_psi` — second min-max pass absent from Eq. 1
 
-> **Raj: DECISION (small).** Do the paper's figures/tables report the
+> **Raj (28 Aug 2026): does not know** ("This, 4 and 5, I don't know").
+> Fallback as proposed: Bob determines empirically, Raj confirms (DEL-52).
+>
+> *Original ask —* **Raj: DECISION (small).** Do the paper's figures/tables report the
 > Eq. 1 mean directly, or the code's second min-max of that mean
 > (`norm_psi`)? If Raj knows, one line answers it; otherwise Bob
 > determines it empirically and Raj confirms.
@@ -216,7 +245,11 @@ in one sentence. **Tickets.** DEL-22, DEL-13, DEL-32.
 
 ## Popdensity denominator — no manuscript equation
 
-> **Raj: DECISION (small).** Keep the population-density variant (then
+> **Raj (28 Aug 2026): not discussed.** Bob's proposed default for the
+> batched reply: drop from the reported results, keep the config value
+> (DEL-52).
+>
+> *Original ask —* **Raj: DECISION (small).** Keep the population-density variant (then
 > add its equation to the paper) or drop it from reported results? Either
 > is fine for the code.
 
@@ -229,7 +262,16 @@ not a fix. **Tickets.** DEL-22, DEL-13.
 
 ## 5. Silent `except: pass` in `calc_pcen_mobile`
 
-> **Raj: DECISION — the main one.** When rural villages (and later
+> **Raj (28 Aug 2026): semantics (a) — dropped types still lend services**
+> ("just because we made an analytical decision about a categorization, it
+> doesn't make sense to remove the physical elements"); they get no PSI of
+> their own. **Min-max over the reported settlements only** ("the minimum
+> has to be the ones which are in contention"). The dropped types are RV,
+> Industrial and Other. Config: `exclusion.absent_neighbor: contributes`,
+> `exclusion.types: [RV, Industrial, Other]`; the code fix landed in 3A
+> (DEL-21).
+>
+> *Original ask —* **Raj: DECISION — the main one.** When rural villages (and later
 > industrial areas) are excluded, do their services still count for
 > neighbors (a) or vanish (b)? And should min/max be taken over the
 > reported settlements only (current) or over all? See
@@ -261,7 +303,17 @@ needed regardless.
 
 ## 6. Service-point membership and overlapping colonies
 
-> **Raj: CONFIRM + one question.** *Confirm* the preference order below
+> **Raj (28 Aug 2026): count the overlap for every colony containing it**
+> ("if it's a boundary to you, it doesn't matter if it's a boundary to
+> somebody else"). Provenance of the overlaps: he does not know. So the
+> preference order below is **overturned**: no layer cleaning, no
+> single-assignment rule; today's behaviour is ratified. **Bob's addition
+> (5 Sep 2026, to confirm with Raj):** a neighbour lends only the services
+> not already inside the receiving settlement, so an overlap service is not
+> counted a second time through the neighbour term — code, cycle 3E
+> (DEL-20).
+>
+> *Original ask —* **Raj: CONFIRM + one question.** *Confirm* the preference order below
 > (clean the overlapping colony polygons first; single-assignment rule as
 > fallback). *Question:* does Raj know the provenance of the 4,050
 > overlapping colony pairs — digitization artefacts, or genuinely
@@ -293,7 +345,11 @@ should include an overlapping pair and a sliver gap so the fix is testable).
 
 ## 7. Distance unit and decay form — possibly unstated in the manuscript
 
-> **Raj: FYI.** The manuscript never states that d is in kilometres.
+> **Raj (28 Aug 2026):** keep 1/(1+d) in km for now; the decay form is a
+> Phase 6 sweep (DEL-37), with a steer toward forms that spread the weights
+> "up from zero". The km sentence goes on his methods list.
+>
+> *Original ask —* **Raj: FYI.** The manuscript never states that d is in kilometres.
 > No decision — just a sentence to add next to Eq. 3. Flagging so it
 > isn't missed.
 
