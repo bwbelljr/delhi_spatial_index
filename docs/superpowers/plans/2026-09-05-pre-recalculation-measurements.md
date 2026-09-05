@@ -14,13 +14,15 @@
 
 - **No `delhi_psi/` behaviour change.** All new code is `scripts/` + `tests/` + `docs/`. No new shipped profile, no fixture change, no expected-value change.
 - **READ-ONLY over the data directory.** `~/delhi_data` is bisynced to the shared drive; nothing is ever written there. Scratch goes under `--work-dir`, which every script refuses to place inside the data directory.
-- **CLI shape, all four scripts:** `--config` (default `code-2025`), `--data-dir`, `--work-dir`, plus the script-specific `--verify-dir` / `--baseline-dir` / `--all-candidates`.
+- **CLI shape, the THREE NEW scripts:** `--config` (default `code-2025`), `--data-dir`, `--work-dir`, plus the script-specific `--verify-dir` / `--baseline-dir` / `--all-candidates`. `measure_layer_pathologies.py` keeps its historic `--cache-dir` flag name and its documented command line (spec § 3); the guard behind both names is the same `resolve_work_dir`.
+- **A warm dedup cache upcasts Polygon → MultiPolygon.** `pipeline._dedup_cached` returns the in-memory frame on a COLD cache but re-reads its own GeoPackage on a WARM one, and a GeoPackage layer has a single geometry type: the raw layer's 3,801 Polygon + 556 MultiPolygon all come back as MultiPolygon after a round trip. So any count that inspects `geom_type` — today only `multipolygons` in the pathology block — is valid ONLY on a cold cache. Rule (spec § 3): `measure_layer_pathologies.py` always runs cold (its default fresh temp `--cache-dir`; the run step never points it at a staged cache), and `_measure_common.load_settlements` says so in its docstring. The other scripts' predicates (`intersects`, intersection length, `touch` adjacency, barrier flags) are type-agnostic and may share a warm cache.
 - **Every script exposes** `measure(...)` (or `inventory(...)`) returning an ordered dict, a `render`, and `main(argv=None)`. A script with ONE block returns a flat ordered dict and renders it unlabeled (the pathology script's shape). A script with MORE THAN ONE block returns an ordered dict of *block name → block dict* and renders each with `name=`. "Ordered dict" means a plain `dict` (insertion-ordered since 3.7) — never `collections.OrderedDict`.
 - **Tests call the functions, not `main`** — with exactly one argparse smoke test per script. The one other place a script is invoked as a whole is the data-gated doc-drift test, which runs it as a subprocess and compares its stdout with the committed block: that comparison is spec § 4's requirement ("it equals the script's output on this machine"), and it is the shape `tests/test_layer_pathologies.py` already uses.
 - **Imports:** the repo root is on `sys.path` (editable install), so `from scripts._measure_common import ...` works both under pytest and when a script is run as `uv run python scripts/<name>.py`. Tests import scripts as `from scripts.<name> import ...` — the mechanism `tests/test_layer_pathologies.py` already uses.
 - **Block format:** a fence line ` ```text `, an optional first line `block: <name>`, then `key: value` lines, then ` ``` `. Integers are bare; floats are pre-formatted strings (`%.6g` for means/lengths, `%.4f` for gaps) so the drift comparison is exact.
 - **Every test step names the exact pytest command and the expected RED reason, then GREEN.** Run tests with `uv run pytest -q -W error`.
-- **Before the final commit of EVERY task, run the full suite in the FOREGROUND:** `uv run pytest -q -W error` (about 6.5 minutes). Never background it; never commit on an unseen result.
+- **One cache per machine, not one per test: `DELHI_PSI_MEASURE_CACHE`.** A cold settlement dedup on the real layer costs ≈ 4.5 minutes (measured 5 Sep 2026: 267 s), and the `touch` adjacency behind it is a second O(n²) pass. The two real-data doc-drift tests that need the settlement universe — `tests/test_inventory_barriers.py` and `tests/test_measure_roads_access.py` — therefore take their `--work-dir` from the environment variable `DELHI_PSI_MEASURE_CACHE` and **skip unless it is set**, with the reason `"set DELHI_PSI_MEASURE_CACHE to run the real-data drift check"`. `needs_data` alone is NOT enough for those two: this machine has the data, so a plain `needs_data` gate would make every implementer's per-task full-suite run pay for two cold dedups. `tests/test_measure_psi_columns.py`'s drift test reads CSVs only (seconds, no settlement layer) and keeps the plain `needs_data` gate; `tests/test_layer_pathologies.py` keeps its own COLD `fresh` fixture (previous bullet — its `multipolygons` key demands cold). Only Task 6 exports the variable.
+- **Before the final commit of EVERY task, run the full suite in the FOREGROUND:** `uv run pytest -q -W error` (about 6.5 minutes). Never background it; never commit on an unseen result. **Tasks 1–5 only** — Task 6 exports `DELHI_PSI_MEASURE_CACHE`, which wakes the two real-data drift tests and pushes the suite to 15–20 minutes; that one run is backgrounded to a log file and the log is read (Task 6 Steps 8–9), because 15–20 minutes exceeds a foreground command's timeout.
 - **One commit per task**, message prefix `feat(measure):` / `test(measure):` / `docs(measure):`, ending with exactly these two trailer lines:
 
   ```
@@ -79,7 +81,7 @@ WORKPLAN.md, CHANGELOG.md                                MOD              (Task 
   - `scripts._measure_common.load_settlements(cfg, cache_dir) -> GeoDataFrame`
   - `scripts._measure_common.render(report, *, name=None) -> str`
   - `scripts._measure_common.parse_block(text, *, name=None) -> dict[str, str]`
-  - `tests.test_measure_common.DATA_DIR: Path`, `tests.test_measure_common.needs_data` (pytest marker), `tests.test_measure_common.prose_numbers(text) -> set[str]`, `tests.test_measure_common.assert_prose_numbers_come_from_the_blocks(text, blocks) -> None`
+  - `tests.test_measure_common.DATA_DIR: Path`, `tests.test_measure_common.needs_data` (pytest marker), `tests.test_measure_common.MEASURE_CACHE: str | None`, `tests.test_measure_common.needs_measure_cache` (pytest marker), `tests.test_measure_common.prose_numbers(text) -> set[str]`, `tests.test_measure_common.assert_prose_numbers_come_from_the_blocks(text, blocks) -> None`
 
 - [ ] **Step 1: Write the failing test file**
 
@@ -89,9 +91,9 @@ Create `tests/test_measure_common.py`:
 """The shared plumbing every measurement script imports (spec § 1).
 
 Nothing here needs the real data: the guard, the renderer and the parser are
-pure. `DATA_DIR`/`needs_data`/`prose_numbers` live here because the four
-doc-drift test modules all need them and this is the module they all already
-import from.
+pure. `DATA_DIR`/`needs_data`/`MEASURE_CACHE`/`needs_measure_cache`/
+`prose_numbers` live here because the four doc-drift test modules all need
+them and this is the module they all already import from.
 """
 import os
 import re
@@ -109,6 +111,21 @@ DATA_DIR = Path(os.environ.get("DELHI_DATA_DIR", "~/delhi_data")).expanduser()
 needs_data = pytest.mark.skipif(
     not DATA_DIR.exists(),
     reason=f"real Delhi data not present at {DATA_DIR}")
+
+# One settlement dedup per MACHINE, not one per test. A cold dedup of the real
+# 4,357-polygon layer costs ~4.5 min (267 s, measured 5 Sep 2026) and the
+# `touch` adjacency behind it is a second O(n^2) pass, so the two real-data
+# drift tests that need the settlement universe (barriers, roads) share ONE
+# staged work dir named by this variable and skip when it is unset. They are
+# not gated on `needs_data` alone: this machine HAS the data, and a
+# data-only gate would make every per-task suite run pay for two cold dedups.
+# The run step (task 6) is the only place that exports it. The psi_columns
+# drift test reads CSVs only and keeps the plain `needs_data` gate.
+MEASURE_CACHE = os.environ.get("DELHI_PSI_MEASURE_CACHE")
+
+needs_measure_cache = pytest.mark.skipif(
+    not MEASURE_CACHE,
+    reason="set DELHI_PSI_MEASURE_CACHE to run the real-data drift check")
 
 
 def prose_numbers(text):
@@ -264,6 +281,17 @@ def resolve_work_dir(cli_value=None, *, data_dir=None,
 def load_settlements(cfg, cache_dir):
     """Read, deduplicate and reproject exactly as `pipeline.preprocess` does,
     so every count below describes the universe the pipeline actually scores.
+
+    WARM CACHE UPCASTS Polygon -> MultiPolygon. `pipeline._dedup_cached`
+    returns the in-memory frame on a COLD cache but re-reads its own
+    GeoPackage on a WARM one, and a GeoPackage layer carries a single
+    geometry type: the raw layer's 3,801 Polygon + 556 MultiPolygon all come
+    back as MultiPolygon after that round trip. So a caller that inspects
+    `geom_type` — today only `count_multipolygons` in
+    measure_layer_pathologies.py — MUST pass a cold `cache_dir` (a fresh
+    directory), or its answer is 4,357 instead of 556. Every other predicate
+    these scripts use (`intersects`, intersection length, `touch` adjacency,
+    barrier flags) is type-agnostic and may share a warm cache.
     """
     source = cfg.paths.data_dir / cfg.layers.settlements.path
     gdf = io.read_layer(source)
@@ -644,7 +672,7 @@ EOF
 - Create: `docs/data/barriers.md`
 
 **Interfaces:**
-- Consumes: `scripts._measure_common.{load_settlements, render, resolve_work_dir}` and, in the test, `parse_block` (Task 1); `delhi_psi.geometry.{barrier_flags, reproject}`; `delhi_psi.neighbors.combine_barrier_flags`; `delhi_psi.io.read_layer`; `delhi_psi.pipeline.ID_COL`.
+- Consumes: `scripts._measure_common.{load_settlements, render, resolve_work_dir}` and, in the test, `parse_block` (Task 1); `tests.test_measure_common.{DATA_DIR, MEASURE_CACHE, needs_measure_cache, assert_prose_numbers_come_from_the_blocks}` (Task 1); `delhi_psi.geometry.{barrier_flags, reproject}`; `delhi_psi.neighbors.combine_barrier_flags`; `delhi_psi.io.read_layer`; `delhi_psi.pipeline.ID_COL`.
 - Produces:
   - `scripts.inventory_barriers.metadata_dates(text) -> dict[str, str]`
   - `scripts.inventory_barriers.sidecar_facts(path) -> dict[str, str]`
@@ -664,7 +692,10 @@ Create `tests/test_inventory_barriers.py`:
 
 Fixture-level tests run everywhere. The doc-drift tests wake up when the run
 step pastes the measured blocks into docs/data/barriers.md; until then they
-skip with a reason that says so.
+skip with a reason that says so. The REAL-DATA drift test needs one more
+thing: DELHI_PSI_MEASURE_CACHE, the shared warm work dir the run step
+exports, without which it skips rather than paying ~4.5 min for a cold
+settlement dedup in every implementer's suite run.
 """
 import subprocess
 import sys
@@ -679,9 +710,9 @@ from scripts.inventory_barriers import (attributes, barrier_flagged,
                                         inventory, layer_facts, main,
                                         metadata_dates)
 from tests.cities import ORACULUM
-from tests.test_measure_common import (DATA_DIR,
+from tests.test_measure_common import (DATA_DIR, MEASURE_CACHE,
                                        assert_prose_numbers_come_from_the_blocks,
-                                       needs_data)
+                                       needs_measure_cache)
 
 REPO = Path(__file__).resolve().parent.parent
 DOC = REPO / "docs" / "data" / "barriers.md"
@@ -794,13 +825,21 @@ def test_the_doc_records_its_provenance_and_quotes_only_block_numbers():
     assert_prose_numbers_come_from_the_blocks(text, committed_blocks())
 
 
-@needs_data
-def test_a_fresh_run_reproduces_the_committed_blocks(tmp_path):
+@needs_measure_cache
+def test_a_fresh_run_reproduces_the_committed_blocks():
+    """The real-data drift check. It runs the script over the 4,357-polygon
+    layer, so it needs a settlement dedup — ~4.5 min cold. It therefore takes
+    its work dir from DELHI_PSI_MEASURE_CACHE (one warm cache per machine,
+    shared with the roads drift test) and SKIPS when that is unset, rather
+    than gating on `needs_data` alone and charging every per-task suite run
+    for a cold dedup on a machine that has the data. The run step exports it.
+    A warm cache is safe here: nothing in this script inspects `geom_type`.
+    """
     layers, attributes_block = committed_blocks()
     proc = subprocess.run(
         [sys.executable, "scripts/inventory_barriers.py",
          "--config", "code-2025", "--data-dir", str(DATA_DIR),
-         "--all-candidates", "--work-dir", str(tmp_path / "work")],
+         "--all-candidates", "--work-dir", MEASURE_CACHE],
         cwd=REPO, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-4000:]
     assert parse_block(proc.stdout, name="layers") == layers
@@ -837,7 +876,7 @@ READ-ONLY over --data-dir. Scratch (the settlement dedup cache) goes under
 --work-dir, which is never inside the data directory.
 
     uv run python scripts/inventory_barriers.py --config code-2025 \
-        --all-candidates --work-dir ~/measure_work/barriers
+        --all-candidates --work-dir ~/measure_work/cache
 
 Prints provenance lines, then two fenced blocks: `layers` (the drift-tested
 counts, lengths, dates and flagged settlements) and `attributes` (each
@@ -1019,8 +1058,8 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `uv run pytest -q -W error tests/test_inventory_barriers.py`
-Expected: PASS — the fixture and sidecar tests green; the three doc tests SKIP with "carries no measured block yet" (the document has no block until Task 6). Confirm the skip reasons with `-rs`.
+Run: `uv run pytest -q -W error tests/test_inventory_barriers.py -rs`
+Expected: PASS — the fixture and sidecar tests green; the two committed-document tests SKIP with "carries no measured block yet" (the document has no block until Task 6), and the real-data drift test SKIPS with "set DELHI_PSI_MEASURE_CACHE to run the real-data drift check". Confirm both skip reasons in the `-rs` summary. **No real-data run happens in this task** — that skip is the point of the env-var gate.
 
 - [ ] **Step 5: Write the document skeleton with the provenance prose**
 
@@ -1083,7 +1122,7 @@ exist.)*
 - [ ] **Step 6: Run the test file again**
 
 Run: `uv run pytest -q -W error tests/test_inventory_barriers.py -rs`
-Expected: PASS, with the three doc tests still SKIPPED for the stated reason (the doc now exists but carries no block).
+Expected: PASS, with the two committed-document tests still SKIPPED for the stated reason (the doc now exists but carries no block) and the real-data drift test still SKIPPED for the missing `DELHI_PSI_MEASURE_CACHE`.
 
 - [ ] **Step 7: Run the full suite in the FOREGROUND**
 
@@ -1122,7 +1161,7 @@ EOF
 - Create: `docs/data/psi_columns.md`
 
 **Interfaces:**
-- Consumes: `scripts._measure_common.{render, resolve_work_dir}` and, in the test, `parse_block` (Task 1).
+- Consumes: `scripts._measure_common.{render, resolve_work_dir}` and, in the test, `parse_block` (Task 1); `tests.test_measure_common.{DATA_DIR, needs_data, assert_prose_numbers_come_from_the_blocks}` (Task 1); `delhi_psi.config.load_config`; `delhi_psi.pipeline.TYPE_COL`.
 - Produces:
   - `scripts.measure_psi_columns.FIGURE_4_BARS: dict[str, float]` (eight types), `FIGURE_TOLERANCE = 0.002`, `MATCH_FLOOR = 6`
   - `scripts.measure_psi_columns.type_means(frame, *, column, type_col="USO_FINAL") -> dict[str, float]`
@@ -1292,6 +1331,10 @@ def test_the_doc_records_its_provenance_and_quotes_only_block_numbers():
 
 @needs_data
 def test_a_fresh_run_reproduces_the_committed_block(tmp_path):
+    """This one keeps the PLAIN `needs_data` gate — no DELHI_PSI_MEASURE_CACHE
+    marker. The script reads two CSVs and never touches the settlement layer,
+    so there is no dedup and no O(n^2) pass: it costs seconds, and it is
+    honest for it to run in every implementer's suite run on this machine."""
     committed = committed_block()
     proc = subprocess.run(
         [sys.executable, "scripts/measure_psi_columns.py",
@@ -1570,10 +1613,62 @@ the worst absolute miss.
 `verify_maxdiff_*` keys are the cross-check: the same per-type means computed
 from the refactored `code-2025` run must equal the baseline's to 1e-9, or the
 script fails rather than reporting.
+
+## What follows from the answer
+
+**Two independent axes.** The finding names a COLUMN and a DENOMINATOR, and
+they are answered separately: `best_candidate` is a pair, and either half can
+land where Bob's proposed default did not. One paragraph each, below. Neither
+paragraph decides anything — the decision is Raj's; this document supplies the
+numbers he asked for (decision log §§ 7–8).
+
+### The column axis — `unnorm_psi` or `norm_psi`
+
+- **If `unnorm_psi` matches:** the paper already reports Eq. 1 as the methods
+  write it. `second_normalization: false` costs nothing and removes a column
+  the methods never mention. Bob's recommendation stands.
+- **If `norm_psi` matches and `unnorm_psi` does not: Bob's proposed default of
+  `second_normalization: false` is withdrawn.** The paper's headline figure
+  reports the SECOND-normalised column, so switching it off would silently
+  move every bar in Figure 4. The real choice for Raj, then, is: keep
+  `norm_psi` as the reported PSI and add the second min-max to the methods —
+  one sentence after Eq. 1, "the mean is then min-max scaled across
+  settlements" — or switch the figures to Eq. 1 as written and let every bar
+  move. Both columns stay in the config either way; this is a question about
+  what the paper reports, not about what the pipeline can compute.
+
+  *Expected outcome, stated before the run so the write-up cannot be
+  back-fitted:* the plan-review round of 5 Sep 2026 already ran this
+  comparison against the same baseline files and found norm_psi under
+  popdensity matching 8 of the 8 bars, max gap 0.0006, against 1 of 8 for
+  unnorm_psi. The script's job is to make that reproducible and drift-tested,
+  not to discover it.
+
+### The denominator axis — `popsize` or `popdensity`
+
+- **If the popdensity denominator matches** (the y-axis label says it will):
+  **Bob's proposed default of dropping popdensity from the reported results is
+  withdrawn** — the paper's headline figure is the popdensity variant. The
+  real choice for Raj: keep popdensity as the reported denominator and add its
+  equation to the methods (Eq. 3 with Population_i / Area_i), or switch the
+  figures to the per-population Eq. 3 the manuscript prints. Both denominators
+  stay in the config either way.
+- **If popsize matches instead:** the manuscript's Eq. 3 and its figures agree
+  and Bob's proposed default stands unchanged.
+
+### If nothing matches
+
+If no candidate matches at least 6 of the 8 bars, this document prints all
+four candidate tables in full and the finding is "the figure was not produced
+from these columns as-is". That is an escalation to the owner (spec § 7), not
+a guess.
 ```
 
-*(The provenance bullet list, the fenced block, and the finding + consequences
-sections are written by the run step — they are the numbers.)*
+*(The provenance bullet list, the fenced block and the finding sentence are
+written by the run step — they are the numbers. The consequence paragraphs
+above are written HERE, before the run, so the write-up cannot be force-fitted
+to whichever branch the data lands in; the run step keeps the branch that
+fired, deletes the others, and fills in the measured N and G.)*
 
 - [ ] **Step 6: Run the test file again**
 
@@ -1615,11 +1710,12 @@ EOF
 - Create: `docs/data/roads_access.md`
 
 **Interfaces:**
-- Consumes: `scripts._measure_common.{load_settlements, render, resolve_work_dir}` and, in the test, `parse_block` (Task 1); `delhi_psi.neighbors.adjacency`; `delhi_psi.index.road_lengths` semantics; `delhi_psi.pipeline.{compute, methodology_stamp, output_basename, ID_COL, TYPE_COL}`; `delhi_psi.config.{PROFILES_DIR, load_config}`; and in the test `tests.test_cli.data_dir` (the Oraculum data-dir fixture) with `tests.oraculum_fixtures.oracle_profile_path` — the existing end-to-end machinery, reused rather than rebuilt.
+- Consumes: `scripts._measure_common.{load_settlements, render, resolve_work_dir}` and, in the test, `parse_block` (Task 1); `tests.test_measure_common.{DATA_DIR, MEASURE_CACHE, needs_measure_cache, assert_prose_numbers_come_from_the_blocks}` (Task 1); `delhi_psi.neighbors.adjacency`; `delhi_psi.index.road_lengths` semantics; `delhi_psi.pipeline.{compute, methodology_stamp, output_basename, ID_COL, TYPE_COL}`; `delhi_psi.config.{PROFILES_DIR, load_config}`; and in the test `tests.test_cli.data_dir` (the Oraculum data-dir fixture) with `tests.oraculum_fixtures.oracle_profile_path` — the existing end-to-end machinery, reused rather than rebuilt.
 - Produces:
-  - `scripts.measure_roads_access.REPORTED_TYPES / DROPPED_TYPES / ALL_TYPES / DENOMINATORS / OWN_ONLY_PROFILE`
+  - `scripts.measure_roads_access.REPORTED_TYPES / DROPPED_TYPES / ALL_TYPES / DENOMINATORS / OWN_ONLY_PROFILE / ROAD_LENGTH_COL / MISMATCH_SAMPLE`
   - `scripts.measure_roads_access.road_inside_ids(gdf, roads, *, id_col=ID_COL) -> set[str]`
-  - `scripts.measure_roads_access.measure_access(gdf, roads, *, id_col=ID_COL, type_col=TYPE_COL, types=ALL_TYPES) -> dict`
+  - `scripts.measure_roads_access.assert_road_inside_matches_output(inside_ids, verify_csv_path, id_col) -> None` (raises `ValueError` on any mismatch)
+  - `scripts.measure_roads_access.measure_access(gdf, roads, *, id_col=ID_COL, type_col=TYPE_COL, types=ALL_TYPES, inside=None) -> dict`
   - `scripts.measure_roads_access.base_profile_path(base) -> Path`
   - `scripts.measure_roads_access.derived_profile(base, work_dir, *, profile_name=OWN_ONLY_PROFILE) -> Path`
   - `scripts.measure_roads_access.stage_artifacts(verify_dir, run_dir, *, source_name, artifact_name) -> Path`
@@ -1638,7 +1734,9 @@ Create `tests/test_measure_roads_access.py`:
 The counting is proven on four squares in a row; the one-factor machinery is
 proven END TO END on the Oraculum city, where the reference implementation
 already says what `roads: eq4_own_only` must produce. The real run is the run
-step's.
+step's, and the real-data drift test needs DELHI_PSI_MEASURE_CACHE — the
+shared warm work dir the run step exports — or it skips, rather than paying
+~4.5 min for a cold settlement dedup in every implementer's suite run.
 """
 import subprocess
 import sys
@@ -1654,15 +1752,16 @@ from delhi_psi import cli, pipeline
 from delhi_psi.config import PROFILES_DIR
 from scripts._measure_common import FENCE, parse_block
 from scripts.measure_roads_access import (DENOMINATORS, OWN_ONLY_PROFILE,
-                                          REPORTED_TYPES, derived_profile,
-                                          main, measure_access,
-                                          measure_effect, road_inside_ids,
-                                          stage_artifacts)
+                                          REPORTED_TYPES,
+                                          assert_road_inside_matches_output,
+                                          derived_profile, main,
+                                          measure_access, measure_effect,
+                                          road_inside_ids, stage_artifacts)
 from tests.oraculum_fixtures import oracle_profile_path
 from tests.test_cli import data_dir  # noqa: F401 — the Oraculum data dir
-from tests.test_measure_common import (DATA_DIR,
+from tests.test_measure_common import (DATA_DIR, MEASURE_CACHE,
                                        assert_prose_numbers_come_from_the_blocks,
-                                       needs_data)
+                                       needs_measure_cache)
 
 REPO = Path(__file__).resolve().parent.parent
 DOC = REPO / "docs" / "data" / "roads_access.md"
@@ -1730,6 +1829,44 @@ def test_measure_access_refuses_a_settlement_type_it_has_no_key_for():
     settlements.loc[0, "USO_FINAL"] = "Nonesuch"
     with pytest.raises(ValueError, match="Nonesuch"):
         measure_access(settlements, roads)
+
+
+# --- road_inside <=> road_length > 0 (spec § 2.1 (a), § 3) --------------
+def output_csv(tmp_path, ids, lengths, name="verify.csv"):
+    """A code-2025-shaped output CSV: one row per REPORTED settlement, with
+    the `road_length` column production writes."""
+    path = tmp_path / name
+    pd.DataFrame({"USO_AREA_U": ids, "road_length": lengths}).to_csv(
+        path, index=False)
+    return path
+
+
+def test_the_road_inside_set_matches_the_outputs_road_length_column(tmp_path):
+    """The equivalence spec § 2.1 (a) asserts: this script's own geometry
+    (`road_inside_ids`) and production's `index.road_lengths` must classify
+    the same settlements. S4 is left OUT of the CSV on purpose — the run
+    excludes some types (RV), and the comparison is over the ids the CSV
+    reports, not over the whole layer."""
+    settlements, roads = four_squares()
+    inside = road_inside_ids(settlements, roads)
+    csv = output_csv(tmp_path, ["S1", "S2", "S3"], [600.0, 0.0, 0.0])
+    assert assert_road_inside_matches_output(
+        inside, csv, id_col="USO_AREA_U") is None
+
+
+def test_a_road_inside_mismatch_against_the_output_raises_both_ways(tmp_path):
+    """Not a warning. If the two disagree, the access block would misdescribe
+    today's outputs, so the script stops. The message names the offenders in
+    both directions — inside-but-zero-length and positive-length-but-not-inside
+    — because which way it fell tells you which side is wrong."""
+    settlements, roads = four_squares()
+    inside = road_inside_ids(settlements, roads)          # {"S1"}
+    csv = output_csv(tmp_path, ["S1", "S2", "S3"], [0.0, 0.0, 5.0])
+    with pytest.raises(ValueError) as exc:
+        assert_road_inside_matches_output(inside, csv, id_col="USO_AREA_U")
+    message = str(exc.value)
+    assert "road_inside" in message and "road_length" in message
+    assert "S1" in message and "S3" in message
 ```
 
 - [ ] **Step 2: Write the failing test file — part 2, the one-factor machinery and the docs**
@@ -1837,6 +1974,13 @@ def test_own_only_reproduces_the_reference_ideal_roads_column(data_dir,
     """The one-factor machinery — this script's derived profile driven through
     the real CLI — on the city where the answer is known by hand.
 
+    BOTH roads columns are pinned, against
+    `tests/fixtures/oraculum/expected_values.csv` rows with **rule=`ideal`,
+    scenario=`baseline`, denom=`pop`** (spec § 4): `road_pcen` A 0.0075,
+    E 0.0025, others 0; `road_idx` A 1.0, E 1/3, others 0. The memo § 3 quoted
+    the PCEN values as if they were the index — pinning both is what stops
+    that confusion recurring.
+
     The base is the DERIVED oracle profile (the shipped `uso-10` mapping does
     not cover this city's vocabulary). The reference's `ideal` rule differs
     from `code-2025` in more than roads, but under `eq4_own_only` road_pcen is
@@ -1898,14 +2042,26 @@ def test_the_doc_records_its_provenance_and_quotes_only_block_numbers():
     assert_prose_numbers_come_from_the_blocks(text, committed_blocks())
 
 
-@needs_data
-def test_a_fresh_run_reproduces_the_committed_blocks(tmp_path):
+@needs_measure_cache
+def test_a_fresh_run_reproduces_the_committed_blocks():
+    """The real-data drift check, and with it the real-layer exercise of
+    `assert_road_inside_matches_output`: the script raises before printing if
+    `road_inside` and `road_length > 0` disagree, so a zero exit code IS that
+    assertion passing on all 4,131 reported settlements.
+
+    It costs a settlement dedup, a `touch` adjacency over 4,357 polygons and a
+    full `compute`, so it takes its work dir from DELHI_PSI_MEASURE_CACHE (one
+    warm cache per machine, shared with the barriers drift test) and SKIPS
+    when that is unset — `needs_data` alone would charge every per-task suite
+    run on this machine ~4.5 min for a cold dedup. The run step exports it. A
+    warm cache is safe here: nothing in this script inspects `geom_type`.
+    """
     access, one_factor = committed_blocks()
     proc = subprocess.run(
         [sys.executable, "scripts/measure_roads_access.py",
          "--config", "code-2025", "--data-dir", str(DATA_DIR),
          "--verify-dir", str(VERIFY_DIR),
-         "--work-dir", str(tmp_path / "work")],
+         "--work-dir", MEASURE_CACHE],
         cwd=REPO, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-4000:]
     assert parse_block(proc.stdout, name="access") == access
@@ -1952,7 +2108,7 @@ READ-ONLY over --data-dir and --verify-dir. Everything this script writes
 goes under --work-dir, which is never inside the data directory.
 
     uv run python scripts/measure_roads_access.py --config code-2025 \
-        --verify-dir ~/delhi_data/phase3_verify --work-dir ~/measure_work/roads
+        --verify-dir ~/delhi_data/phase3_verify --work-dir ~/measure_work/cache
 """
 
 import argparse
@@ -1977,8 +2133,10 @@ DENOMINATORS = ("pop", "popdensity")
 OWN_ONLY_PROFILE = "roads-own-only"
 ROAD_SERVICE = "road"
 ROAD_IDX_COL = "road_idx"
+ROAD_LENGTH_COL = "road_length"
 PSI_COL = "unnorm_psi"
 ACCESS_KINDS = ("road_inside", "road_via_neighbor", "no_road")
+MISMATCH_SAMPLE = 10
 
 
 def road_inside_ids(gdf, roads, *, id_col=ID_COL):
@@ -2003,21 +2161,68 @@ def road_inside_ids(gdf, roads, *, id_col=ID_COL):
     return inside
 
 
+def assert_road_inside_matches_output(inside_ids, verify_csv_path, id_col):
+    """`road_inside` must BE `road_length > 0` in today's outputs — spec
+    § 2.1 (a) requires this script to assert it, not to claim it.
+
+    `road_inside_ids` reads and reprojects the road layer itself and tests
+    intersection length; production's `index.road_lengths` clips the same
+    layer inside `compute`. They are two implementations of one membership,
+    and if they ever disagree — a different duplicate-dropping rule, a
+    different sjoin predicate, a MultiLineString with mixed zero/positive
+    parts — the `access` block would quietly stop describing the outputs it
+    claims to describe. So this RAISES; it never warns.
+
+    The comparison is over the ids the CSV reports, not over the whole layer:
+    the code-2025 run excludes some settlements (RV and friends — 4,131 rows
+    out of 4,357), and their absence from the output is not a mismatch. Every
+    id the CSV DOES carry must fall on the same side of the line in both.
+
+    Returns None; raises ValueError naming up to MISMATCH_SAMPLE offenders in
+    each direction, because which direction it fell tells you which side to
+    look at.
+    """
+    reported = pd.read_csv(verify_csv_path, usecols=[id_col, ROAD_LENGTH_COL])
+    reported_ids = set(reported[id_col])
+    positive = set(reported.loc[reported[ROAD_LENGTH_COL] > 0, id_col])
+    classified = set(inside_ids) & reported_ids
+
+    inside_but_zero = sorted(classified - positive)
+    positive_but_outside = sorted(positive - classified)
+    if not inside_but_zero and not positive_but_outside:
+        return None
+    raise ValueError(
+        f"road_inside does not match {ROAD_LENGTH_COL} > 0 in "
+        f"{verify_csv_path}: {len(inside_but_zero)} classified road_inside "
+        f"with {ROAD_LENGTH_COL} == 0 "
+        f"{inside_but_zero[:MISMATCH_SAMPLE]}, and "
+        f"{len(positive_but_outside)} with {ROAD_LENGTH_COL} > 0 not "
+        f"classified road_inside {positive_but_outside[:MISMATCH_SAMPLE]} "
+        f"(showing at most {MISMATCH_SAMPLE} of each). The access block "
+        "would misdescribe today's outputs; spec § 2.1 (a).")
+
+
 def measure_access(gdf, roads, *, id_col=ID_COL, type_col=TYPE_COL,
-                   types=ALL_TYPES):
+                   types=ALL_TYPES, inside=None):
     """Block `access`: road inside / only via a `touch` neighbour / neither,
     per settlement type and in total.
 
     A `touch` neighbour may be a DROPPED type; that is correct — dropped
     settlements still lend (28 Aug decision, semantics (a)), and a road in the
     rural village next door is exactly what Raj asked about.
+
+    `inside` lets a caller pass a `road_inside_ids` result it has ALREADY
+    computed — `measure` does, because it must run the
+    `assert_road_inside_matches_output` check on that same set before using
+    it — so the sjoin happens once. Default None recomputes it.
     """
     unknown = sorted(set(gdf[type_col].dropna()) - set(types))
     if unknown:
         raise ValueError(
             f"the layer carries settlement types this report has no key for: "
             f"{unknown}; known types: {list(types)}")
-    inside = road_inside_ids(gdf, roads, id_col=id_col)
+    if inside is None:
+        inside = road_inside_ids(gdf, roads, id_col=id_col)
     frame = neighbors.adjacency(gdf, id_col=id_col, neighbor_col=NBRS_COL,
                                 rule="touch")
     kinds = {}
@@ -2061,7 +2266,15 @@ def derived_profile(base, work_dir, *, profile_name=OWN_ONLY_PROFILE):
     per-profile default name applies (colonies_neighbors_<profile>.joblib) and
     --out-dir decides where the run writes. Every other key is byte-equal
     after the YAML round trip. It is written to DISK, not held in memory, so
-    the run is reproducible by hand with `delhi-psi compute --config <path>`.
+    the run is reproducible by hand with
+
+        delhi-psi compute
+            --config <work-dir>/roads-own-only/roads-own-only.yaml
+            --data-dir <data-dir>
+            --out-dir <work-dir>/roads-own-only
+
+    — the --out-dir matters: with `paths.out_dir` dropped, a hand run without
+    it would not write beside the staged artifact and would not find it.
     """
     raw = yaml.safe_load(base_profile_path(base).read_text())
     raw["profile"] = profile_name
@@ -2081,11 +2294,15 @@ def stage_artifacts(verify_dir, run_dir, *, source_name, artifact_name):
     """Copy the PROVEN neighbours artifact into the run directory under the
     name the derived profile looks for.
 
-    Only the artifact: `compute` reads the neighbours joblib, the population
-    CSV and the service layers. The `*.dedup.gpkg` caches belong to
-    `preprocess`, which this script never runs — the roads switch is applied
-    downstream in `index_frames`, so the stored neighbour lists stay valid
-    (spec § 2.1 (c)).
+    THE ARTIFACT ALONE (spec § 2.1 (b) item 2). `compute` reads the neighbours
+    joblib, the population CSV and the service layers — never a
+    `*.dedup.gpkg`. Those caches belong to `preprocess`, which this script
+    never runs: the roads switch is applied downstream in `index_frames`, so
+    the stored neighbour lists stay valid (spec § 2.1 (c)). Do not add
+    dedup-cache copying here, and do not stage dedup caches into the run
+    directory from outside either — the only dedup cache this script benefits
+    from is the one behind `load_settlements` for the `access` block, which
+    lives in --work-dir itself, not in <work-dir>/roads-own-only.
     """
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -2151,8 +2368,19 @@ def measure(cfg, work_dir, *, base, verify_dir):
     # same here so a duplicated road row cannot change the membership.
     roads = roads.drop_duplicates().reset_index(drop=True)
     roads = geometry.reproject(roads, cfg.crs.epsg)
+
+    inside = road_inside_ids(settlements, roads, id_col=id_col)
+    # --verify-dir is required by main(), so on the real run this ALWAYS
+    # fires: the block's `road_inside` claim is checked against the column it
+    # claims to equal before a single count is written (spec § 2.1 (a)).
+    # `road_length` is the same in both denominators' outputs; the `pop` one
+    # is read.
+    assert_road_inside_matches_output(
+        inside,
+        Path(verify_dir) / f"{pipeline.output_basename(cfg, 'pop')}.csv",
+        id_col)
     access = measure_access(settlements, roads, id_col=id_col,
-                            type_col=type_col)
+                            type_col=type_col, inside=inside)
 
     stamp = pipeline.methodology_stamp(cfg.methodology)
     if any("roads" in block for block in stamp.values()):
@@ -2220,7 +2448,7 @@ if __name__ == "__main__":
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest -q -W error tests/test_measure_roads_access.py -rs`
-Expected: PASS — including the Oraculum end-to-end proof; the three doc tests SKIP with "carries no measured block yet".
+Expected: PASS — including the Oraculum end-to-end proof and the two `assert_road_inside_matches_output` unit tests; the two committed-document tests SKIP with "carries no measured block yet" and the real-data drift test SKIPS with "set DELHI_PSI_MEASURE_CACHE to run the real-data drift check". **No real-data run happens in this task.**
 
 - [ ] **Step 7: Write the document skeleton, including the reopen threshold**
 
@@ -2253,7 +2481,11 @@ the pipeline scores):
 - `road_inside_<TYPE>` — the settlement's polygon contains a positive length
   of the major-road layer. This is the membership `delhi_psi.index.road_lengths`
   uses, so it is `road_length > 0` in today's outputs; a road that only
-  touches the boundary at a point does not count.
+  touches the boundary at a point does not count. That equivalence is not
+  asserted here in prose and hoped for: with `--verify-dir` given the script
+  compares its own `road_inside` set against the `road_length` column of the
+  `code-2025` output CSV and RAISES if they differ, so the block below is
+  either a true description of today's outputs or it was never printed.
 - `road_via_neighbor_<TYPE>` — no road of its own, but at least one
   **`touch`** neighbour (positive shared border — Raj's ratified rule, DEL-19,
   not today's bbox) has one. A neighbour may be a dropped type: dropped
@@ -2296,7 +2528,7 @@ findings per block are written by the run step.)*
 - [ ] **Step 8: Run the test file again**
 
 Run: `uv run pytest -q -W error tests/test_measure_roads_access.py -rs`
-Expected: PASS with the same three skips.
+Expected: PASS with the same three skips (two "carries no measured block yet", one "set DELHI_PSI_MEASURE_CACHE …").
 
 - [ ] **Step 9: Run the full suite in the FOREGROUND**
 
@@ -2312,7 +2544,9 @@ git commit -m "$(cat <<'EOF'
 feat(measure): JJC road access and the roads one-factor effect (DEL-49)
 
 Block `access`: road inside / only in a touch neighbour / neither, by
-settlement type, with "inside" defined as index.road_lengths defines it.
+settlement type, with "inside" defined as index.road_lengths defines it —
+and asserted to be it: with --verify-dir the script raises unless its
+road_inside set is exactly the code-2025 output's road_length > 0.
 Block `one_factor`: code-2025 with only methodology.roads changed, run in
 process against the proven neighbours artifact through a derived YAML in the
 work dir, diffed by type against the code-2025 outputs read from --verify-dir.
@@ -2346,35 +2580,57 @@ EOF
 **Interfaces:**
 - Consumes: everything Tasks 1–5 produced. Produces: no code.
 
-- [ ] **Step 1: Prepare a work directory OUTSIDE the data directory**
+- [ ] **Step 1: Prepare ONE shared warm cache outside the data directory — and leave the pathology run COLD**
 
 The guard refuses any `--work-dir` inside `~/delhi_data`, so the existing
-`~/delhi_data/phase3_verify` caches cannot be used in place. Copy the
-settlement dedup cache out once — it is keyed on the source shapefile's
-mtime+size, which has not changed, so both scripts that need it reuse it
-instead of spending ~3 minutes on the O(n²) dedup:
+`~/delhi_data/phase3_verify` caches cannot be used in place. Stage the
+settlement dedup cache out ONCE, into a single shared directory — it is keyed
+on the source shapefile's mtime+size, which has not changed, so everything
+that reads the settlement universe reuses it instead of spending ~4.5 minutes
+each on the O(n²) dedup:
 
 ```bash
-mkdir -p ~/measure_work/pathologies ~/measure_work/barriers \
-         ~/measure_work/psi-columns ~/measure_work/roads
-for d in pathologies barriers roads; do
-  cp ~/delhi_data/phase3_verify/settlements.dedup.gpkg \
-     ~/delhi_data/phase3_verify/settlements.dedup.stamp ~/measure_work/$d/
-done
+mkdir -p ~/measure_work/cache ~/measure_work/psi-columns
+cp ~/delhi_data/phase3_verify/settlements.dedup.gpkg \
+   ~/delhi_data/phase3_verify/settlements.dedup.stamp ~/measure_work/cache/
+export DELHI_PSI_MEASURE_CACHE=~/measure_work/cache
 ```
 
-Nothing is written under `~/delhi_data` at any point in this task.
+Three things about that, all load-bearing:
+
+1. **`measure_layer_pathologies.py` gets NO staged cache — ever.** It is the
+   one script that inspects `geom_type`, and a warm GeoPackage cache upcasts
+   every Polygon to MultiPolygon (Global Constraints; spec § 3), which turns
+   `multipolygons: 556` into `4357` with nothing else moving. It runs with no
+   `--cache-dir` at all, on its own fresh temp directory, and pays the cold
+   dedup. Do not "optimise" this back.
+2. **`inventory_barriers.py` and `measure_roads_access.py` DO share
+   `~/measure_work/cache` as their `--work-dir`.** Their predicates —
+   `intersects`, intersection length, `touch` adjacency, barrier flags — are
+   type-agnostic, so the upcast cannot change any number they print, and the
+   shared warm cache saves two cold dedups here and two more in Step 8.
+3. **The `roads-own-only` compute is staged by the SCRIPT, not by this step,
+   and it stages the neighbours artifact ALONE** (spec § 2.1 (b) item 2).
+   `pipeline.compute` never reads a `*.dedup.gpkg` — only `preprocess` does.
+   Do not copy dedup caches into `<work-dir>/roads-own-only`; the cache the
+   roads script benefits from is the one in `--work-dir` itself, for the
+   `access` block's `load_settlements`.
+
+`DELHI_PSI_MEASURE_CACHE` must stay exported for Steps 2, 8 and 9 — Step 8's
+two real-data drift tests skip without it. Nothing is written under
+`~/delhi_data` at any point in this task.
 
 - [ ] **Step 2: Run the four measurements (spec § 4)**
 
 Run each in the foreground, keep the whole stdout:
 
 ```bash
-uv run python scripts/measure_layer_pathologies.py \
-    --config code-2025 --cache-dir ~/measure_work/pathologies
+# COLD, deliberately: no --cache-dir. ~4.5 min of dedup, and the only way
+# `multipolygons` comes back as 556 rather than 4357 (Step 1, note 1).
+uv run python scripts/measure_layer_pathologies.py --config code-2025
 
 uv run python scripts/inventory_barriers.py \
-    --config code-2025 --all-candidates --work-dir ~/measure_work/barriers
+    --config code-2025 --all-candidates --work-dir "$DELHI_PSI_MEASURE_CACHE"
 
 uv run python scripts/measure_psi_columns.py \
     --baseline-dir ~/delhi_data/psi_2020_results \
@@ -2383,7 +2639,7 @@ uv run python scripts/measure_psi_columns.py \
 
 uv run python scripts/measure_roads_access.py \
     --config code-2025 --verify-dir ~/delhi_data/phase3_verify \
-    --work-dir ~/measure_work/roads
+    --work-dir "$DELHI_PSI_MEASURE_CACHE"
 ```
 
 Checks before pasting anything:
@@ -2393,6 +2649,19 @@ Checks before pasting anything:
   `overlapping_pairs: 4069`, the three areas, the six point services). Only
   the two DEL-50 keys are new. If any existing value moved, STOP: something
   upstream changed and this is not a measurement question.
+  **`multipolygons: 556` only reproduces on a COLD run.** If it comes back as
+  `4357` with every other key unchanged, that is not an upstream change and
+  not a regression — it is the warm-cache GeoPackage upcast (Global
+  Constraints; spec § 3), which means a `--cache-dir` was passed or a stale
+  one was inherited. Re-run with no `--cache-dir` before treating any
+  `multipolygons` difference as real.
+- `measure_roads_access.py` did not raise `ValueError: road_inside does not
+  match road_length > 0`. Its exit 0 IS the spec § 2.1 (a) equivalence
+  holding on the real layer — the assertion runs before anything is printed,
+  so a printed `access` block is a passed check. If it DID raise, the message
+  names the offending ids in both directions: that is a real divergence
+  between this script's geometry and `index.road_lengths`, and it is a stop,
+  not a number to paste around.
 - `measure_psi_columns.py` printed no `WARNING:` line. If it did, no candidate
   matched 6 of 8 bars — that is spec § 7's stop-and-ask outcome: record the
   four candidate tables, write the finding as "the figure was not produced
@@ -2461,19 +2730,62 @@ unless the run contradicts it.
 `docs/data/psi_columns.md`: the finding section — **[finding from block]**
 "matched N of 8 bars within 0.002, max gap G" for the best candidate, named
 as `<column>` under `<denominator>`, plus the `verify_maxdiff_*` line as the
-cross-check. Then the consequences, written for Raj, per spec § 2.4:
+cross-check.
+
+Then the consequences. **Task 4 already wrote the consequence paragraphs into
+the skeleton, both axes, all branches** — this step does not invent them. It
+keeps the branch that fired, deletes the branches that did not, and fills in
+the measured N and G. Read `best_candidate` and the `matched_*` keys, then:
+
+**The two axes are independent, and the doc carries ONE PARAGRAPH FOR EACH.**
+`best_candidate` is a `<column>_<denom>` pair; the column question
+(`unnorm_psi` vs `norm_psi`) and the denominator question (`popsize` vs
+`popdensity`) are answered separately and can land on opposite sides of Bob's
+proposed defaults. Do not collapse them into one sentence, and do not let the
+answer on one axis decide the other.
+
+*Column axis:*
 1. if `unnorm_psi` matches: the paper already reports Eq. 1 as written, so
    `second_normalization: false` costs nothing and removes a column the
    methods never mention — Bob's recommendation stands;
-2. if the popdensity denominator matches: **Bob's proposed default of dropping
+2. **if `norm_psi` matches and `unnorm_psi` does not: Bob's proposed default
+   of `second_normalization: false` is WITHDRAWN** (spec § 2.4 item 2) — the
+   paper's headline figure reports the second-normalised column, so switching
+   it off would silently move every bar in Figure 4. State the real choice for
+   Raj, symmetric to the popdensity reversal: keep `norm_psi` as the reported
+   PSI and add the second min-max to the methods (one sentence after Eq. 1,
+   "the mean is then min-max scaled across settlements"), or switch the
+   figures to Eq. 1 as written and let every bar move. Both columns stay in
+   the config either way. **This is not a stop-and-ask**: spec § 8 item 8's
+   reasoning — a recommendation the paper's own output contradicts is not a
+   recommendation — is what authorises writing the reversal, exactly as it
+   authorises the popdensity one. The only stop-and-ask outcome here is
+   branch 5.
+
+   *Expect this branch.* The plan-review round of 5 Sep 2026 already ran this
+   comparison against the same baseline files and found **norm_psi ×
+   popdensity matching 8 of 8 bars, max gap 0.0006**, against 1 of 8 for
+   unnorm_psi × popdensity and 0 of 8 for both popsize candidates. So
+   `best_candidate` is expected to be `norm_psi_popdensity` with
+   `matched_norm_psi_popdensity: 8` — not an escalation, and not branch 1.
+   If the run says something else, the disagreement itself is the finding:
+   re-run before writing anything, and if it persists, stop and ask.
+
+*Denominator axis:*
+3. if the popdensity denominator matches: **Bob's proposed default of dropping
    popdensity from the reported results is withdrawn**, because the paper's
    headline figure is the popdensity variant; state the real choice for Raj —
    keep popdensity as the reported denominator and add its equation to the
    methods (Eq. 3 with Population_i/Area_i), or switch the figures to the
    per-population Eq. 3 the manuscript prints. Both denominators stay in the
    config either way;
-3. if no candidate matched at least 6 of 8: print all four candidate tables,
-   state "the figure was not produced from these columns as-is", and escalate.
+4. if popsize matches instead: the manuscript's Eq. 3 and its figures agree,
+   and Bob's proposed default stands unchanged.
+
+*Neither axis:*
+5. if no candidate matched at least 6 of 8: print all four candidate tables,
+   state "the figure was not produced from these columns as-is", and escalate
+   to the owner (spec § 7). This is the one DEL-52 outcome that stops the run.
 
 - [ ] **Step 5: Retire the pending-key tolerance**
 
@@ -2504,7 +2816,12 @@ In `docs/decisions/2026-08-28-raj-methodology-decisions.md`:
   agency" sentence, and the open question for Bijoy, pointing at
   `docs/data/barriers.md`.
 - **§ 7 `norm_psi`:** replace "pending" with the measured finding and what it
-  means for `second_normalization`.
+  means for `second_normalization`. If the finding is `norm_psi` — the
+  outcome Step 4 says to expect — this section records the **withdrawal** of
+  Bob's proposed `second_normalization: false` and the two options for Raj,
+  in the same shape as § 8's popdensity reversal below. Withdrawing a
+  proposed default the measurement contradicts is what spec § 8 item 8
+  commits to; it is not a methodology change and not a stop-and-ask.
 - **§ 8 Popdensity:** replace Bob's proposed default with either its
   confirmation or its **withdrawal** and the two options for Raj (spec § 8
   item 8 commits to writing the reversal if the data says so).
@@ -2523,25 +2840,68 @@ In `docs/decisions/2026-08-28-raj-methodology-decisions.md`:
   **[finding from block]** the roads effect and the PSI column/denominator —
   each naming its `docs/data/` file. If DEL-52 withdrew the popdensity
   default, the DEL-31 bullet's "`outputs.denominators` per DEL-52" line gains
-  the measured answer.
+  the measured answer; if it withdrew the `second_normalization: false`
+  default (the expected `norm_psi` outcome), that bullet's
+  `second_normalization` line gains it too — both axes, separately.
 - `CHANGELOG.md`, top of `[Unreleased]`: one entry for this cycle — the four
   scripts, the shared `_measure_common`, the four `docs/data/` documents, the
   new pathology keys, the decision-log updates, and the four findings in one
   clause each. Say explicitly: no `delhi_psi/` behaviour change, no profile
   change, no fixture change.
 
-- [ ] **Step 8: Prove the doc-drift tests are live**
+- [ ] **Step 8: Prove the doc-drift tests are live — IN THE BACKGROUND, to a log**
 
-Run: `uv run pytest -q -W error -rs tests/test_measure_common.py tests/test_layer_pathologies.py tests/test_inventory_barriers.py tests/test_measure_psi_columns.py tests/test_measure_roads_access.py`
-Expected: PASS with **no** skip whose reason contains "carries no measured
-block yet" — every document now carries its block, so the three doc tests in
-each of the three new modules run for real, alongside the pathology
-document's, including every `needs_data` freshness comparison.
+This is the one run in the whole plan that must NOT be a foreground call.
+With `DELHI_PSI_MEASURE_CACHE` exported the two real-data drift tests wake up:
+`test_inventory_barriers` and `test_measure_roads_access` each drive a full
+script over the real layer, and the roads one adds a `touch` adjacency over
+4,357 polygons and a whole `pipeline.compute`, on top of
+`test_layer_pathologies`'s own COLD dedup fixture (~4.5 min, unavoidable —
+its `multipolygons` key demands cold). **Budget 15–20 minutes.** That is past
+a foreground command's timeout, so run it detached and read the log:
 
-- [ ] **Step 9: Run the full suite in the FOREGROUND**
+```bash
+mkdir -p ~/measure_work/logs
+export DELHI_PSI_MEASURE_CACHE=~/measure_work/cache   # still, if the shell is new
+uv run pytest -q -W error -rs \
+    tests/test_measure_common.py tests/test_layer_pathologies.py \
+    tests/test_inventory_barriers.py tests/test_measure_psi_columns.py \
+    tests/test_measure_roads_access.py \
+    > ~/measure_work/logs/drift.log 2>&1
+```
 
-Run: `uv run pytest -q -W error` (about 6.5 minutes)
-Expected: PASS.
+Run that with the tool's background/detached mode (never `&` in a foreground
+call, and never a 10-minute timeout), then wait for it to exit and READ
+`~/measure_work/logs/drift.log`. "Never background it; never commit on an
+unseen result" from Global Constraints still binds in the sense that matters:
+the result is seen — in the log, in full, before anything is committed. What
+is forbidden is committing on a run whose output nobody read, not detaching a
+20-minute command from a 10-minute timeout.
+
+Expected in the log:
+- PASS, and **no** skip whose reason contains "carries no measured block yet"
+  — every document now carries its block, so the committed-document tests in
+  all four modules run for real.
+- **no** skip whose reason contains "set DELHI_PSI_MEASURE_CACHE" — if one
+  appears, the variable did not reach pytest (a new shell, or `uv run`
+  started before the `export`), the two real-data drift checks did NOT run,
+  and the step is not done. Fix the environment and re-run; do not proceed.
+- the roads drift test passing is also the real-layer proof of
+  `assert_road_inside_matches_output` (Step 2's second check).
+
+- [ ] **Step 9: Run the full suite — also in the BACKGROUND, to a log**
+
+```bash
+uv run pytest -q -W error > ~/measure_work/logs/full.log 2>&1
+```
+
+Same rule as Step 8, same reason: with `DELHI_PSI_MEASURE_CACHE` exported the
+full suite is **15–20 minutes**, not the 6.5 that Tasks 1–5 budget (they run
+with the variable unset, so the two real-data drift tests skip). Run it
+detached, wait for the exit, read `~/measure_work/logs/full.log`, and commit
+only on a green result you have read. If the log shows the
+"set DELHI_PSI_MEASURE_CACHE" skips, the suite did not prove what this step
+claims — re-export and re-run.
 
 - [ ] **Step 10: Commit**
 
