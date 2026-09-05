@@ -26,29 +26,28 @@ records what each merged phase changed. Work is tracked in Jira project
 **DEL** (bob-bell.atlassian.net) — one epic per phase, `[DEL-nn]` tags below
 name each item's ticket; keep the two in sync when either changes.
 
-### Status at a glance (23 Aug 2026)
+### Status at a glance (5 Sep 2026)
 
 | Phase | State | Evidence |
 |---|---|---|
 | 0 Environment & data | done | data synced, `gh` working |
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
 | 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
-| 3 Refactor & bug audit | **in progress** — cycle 3A done (PR pending) | delhi_psi package; code-2025 reproduces the step-0 snapshot byte-for-byte and the July 2025 baseline at zero deviation |
-| 4 Categorization | waiting on Raj | — |
+| 3 Refactor & bug audit | **in progress** — cycles 3A–3D merged (PRs #10, #13, #14, #15); 3E next | delhi_psi package, 540 tests; every methodology choice is a profile value; code-2025 reproduces July 2025 at zero deviation |
+| 4 Categorization | **decisions received 28 Aug 2026** — measurements, then the ratified profile | `docs/decisions/2026-08-28-raj-methodology-decisions.md` |
 | 5–7 | not started | — |
 
 Open items by owner:
 
-- **Bob:** nothing gating — memo package sent to Raj 24 Aug 2026
-  (`docs/oracle/rv-exclusion-decision-memo.md`, `suggested-fixes-memo.md`,
-  `exclusion-semantics-memo.md` + maps; shared-drive copy under
-  `paper/oracle_memos_2026-08-24/`). Hand ratification done 24 Aug 2026.
-  Phase 3 proceeds with every methodology choice behind a parameter, so
-  Raj's answers become config values, not rewrites.
-- **Raj:** memo decisions — tagged DECISION/CONFIRM/FYI in
-  `suggested-fixes-memo.md`; the two blocking ones are exclusion semantics
-  (Open Decision A) and roads Eq. 4 (Open Decision C — B is the
-  data-release posture); Phase 4 categorization.
+- **Bob:** (1) cycle 3E — partial-barrier weighting [DEL-48] + the overlap
+  neighbour rule [DEL-20] + the min-max guard (bug-audit 6), the last code
+  Phase 4 needs; (2) the pre-recalculation measurements [DEL-49/50/51/52];
+  (3) the ratified profile [DEL-31] and recalculation [DEL-32]; (4) the
+  batched reply to Raj (decision log, "What goes in the batched reply").
+- **Raj:** confirm UV/SDA stay in, the overlap neighbour rule, popdensity,
+  `norm_psi` (after Bob's check), Decision B; send the students'
+  reclassification list [DEL-53]; the methods footnotes on his own list
+  (roads, partial barriers, min-max universe, d in km).
 - **Deferred by decision:** Dependabot alerts (absorbed into Phase 3's
   dependency work; the four Dependabot PRs #1–#4 were closed as superseded
   by Phase 1's modernization); `pandas<3` uncap (Phase 3, now that the
@@ -214,17 +213,20 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          rectangles, and a colony's bounding box is typically ~2× its polygon
          area (median ratio 1.95, p90 3.6, max 28,766). So bbox-adjacency
          invents neighbors citywide, constantly. Plausibly the largest
-         paper-vs-code gap; needs Raj (methodology). [DEL-19]
+         paper-vs-code gap. [DEL-19]
          Pinned today's behaviour on a purpose-built city: `H`/`L` are
          disjoint yet bbox neighbours both ways, `T`/`L` touch at a single
          point, and `M` is in `G`'s list while `G` is not in `M`'s
          (`tests/test_messy_fixtures.py`, `docs/oracle/messy-city.md`).
-         Whichever rule Raj chooses, the fix flips those pins.
+         **Decided 28 Aug 2026 (Raj): shared border — a fix, not a
+         ratification.** `adjacency.rule: touch` goes into the ratified
+         profile (DEL-31) and the pins flip then; bbox becomes the Phase 6
+         comparison variant (DEL-39). Open sub-question: corner-only
+         contact pairs on the real layer [DEL-50]. Decision log § 3.
       2. **429 service points double-counted** (bank 211, health 18, police 2,
          ration 104, school 53, transport 41) across 4,069 overlapping colony
          polygon pairs. A containment rule does NOT fix this — it needs a
-         decision on how overlapping colonies share a point. Needs Raj.
-         [DEL-20]
+         decision on how overlapping colonies share a point. [DEL-20]
          Pinned today's behaviour: one clinic strictly inside `O1 ∩ O2`
          is counted for both (`tests/test_messy_fixtures.py::
          test_the_overlap_clinic_is_counted_for_both_owners`). Agreed
@@ -232,6 +234,15 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          reference's `within` both do it — so it is asserted directly, never
          by comparison. The measured real-layer counts now have a
          reproducible source: `docs/data/layer_pathologies.md`.
+         **Decided 28 Aug 2026 (Raj): a service in the overlap counts for
+         every colony containing it** — today's behaviour, ratified; the
+         pin stays as intended behaviour. **Added 5 Sep 2026 (Bob, to
+         confirm with Raj): a neighbour lends only the services not already
+         inside the receiving settlement**, so an overlap service is not
+         counted a second time through the neighbour term (under `touch`
+         overlapping colonies are neighbours too). That part is code —
+         per-pair adjusted counts — and ships in cycle 3E with DEL-48; the
+         messy city already holds the fixture case. Decision log § 5.
       3. ~~**Silent `except: pass` in `calc_pcen_mobile`** — swallows
          missing neighbors, making exclusion semantics (a) unimplementable
          (WORKPLAN Open Decision A is half-answered by this).~~ [DEL-21] —
@@ -245,9 +256,18 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          2026 (3A): all four are config switches with both values
          implemented and reference-pinned (`barrier.rule`, `roads`,
          `second_normalization`, `outputs.denominators`), and the
-         `manuscript` profile runs the paper's rule-set end to end. The
-         fix-or-ratify CALL is still Raj's (DEL-13); whichever he picks is
-         a profile edit, not a code change.
+         `manuscript` profile runs the paper's rule-set end to end.
+         **Calls made 28 Aug 2026:** roads → `eq4_own_only` (each colony
+         counts only its own roads; NB the call's premise was inverted —
+         the code decays roads, the paper does not — so this CHANGES the
+         published numbers; effect measured first [DEL-49]); barrier →
+         partial weighting by the share of shared boundary covered, which
+         is the reserved `partial_weighted` value and therefore **code:
+         cycle 3E [DEL-48]** (Oraculum's canal redrawn to cover the full
+         A–D edge so the worksheet holds; partial case pinned on the messy
+         city; provenance of the barrier layers to check [DEL-51]);
+         `norm_psi` and popdensity still open — Bob determines, Raj
+         confirms [DEL-52]. Decision log §§ 2, 4, 7, 8.
       5. ~~Dead code: function(s) defined but never called; also the pandas
          `FutureWarning`s (dtype-incompatible setitem in
          `spatial_index_utils.py` ~L835/L1212) so a `-W error` CI run becomes
@@ -267,8 +287,10 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          constant: `scripts/check_oraculum_invariants.py` refuses to write a
          fixture with a degenerate min-max group, and the generators call it
          before writing. Still routed to the bug audit: the guard belongs in
-         `index.minmax`, and the decision (raise, or 0.0 as the reference
-         does) is Raj's with DEL-13.
+         `index.minmax`. Not raised on the 28 Aug call; Bob's default
+         (5 Sep 2026) is **raise** with a clear message — a constant column
+         on real data means something upstream is wrong. Lands with cycle
+         3E. Decision log § 12.
 - [x] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must
@@ -312,43 +334,72 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       oracle suite under `-W error`, fixture-drift guard); spec
       `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`. Owner
       follow-up: make `test` a required check in branch protection.
+- [ ] **Cycle 3E — the last code Phase 4 needs** (brainstorm → spec →
+      `/ship`, one branch): (a) `barrier.rule: partial_weighted` — weight a
+      neighbour's contribution by the unblocked share of the shared
+      boundary, linear, symmetric; reference rule, hand anchor (Oraculum's
+      canal redrawn to cover the full A–D edge), a partial-coverage pair on
+      the messy city, production implementation, the buffer width as config
+      [DEL-48]; (b) the overlap neighbour rule — a neighbour lends only
+      services not already inside the receiving settlement [DEL-20];
+      (c) the `hi == lo` guard in `index.minmax` (raise) — bug-audit 6.
+      Spec brainstorm questions are listed on DEL-48. Decision log §§ 4, 5,
+      12.
+- [ ] Pre-recalculation measurements (no code; feed the batched reply to
+      Raj): corner-only contact pairs on the real layer [DEL-50]; barrier
+      layer provenance [DEL-51]. (The roads and `norm_psi` measurements are
+      Phase 4 items, DEL-49/52.)
 
 **Definition of done:** oracle suite still passes; one code path per concept;
 settlement categories, services, and distance parameters are config, not code.
 
 ## Phase 4 — Settlement categorization (Raj decides, Bob implements) — P1
 
-*The big analytical piece. Workshop consensus: ~10 Delhi-specific types are
-too much detail — collapse into a small set of portable, theory-first
-categories. Raj's conceptual work proceeds in parallel with Phases 1–3;
-implementation lands here. Epic DEL-5.*
-- [ ] **Raj:** drop all non-urban categories (rural villages, industrial
-      areas) from the entire analysis — figures and calculations; move their
-      mention to footnotes. It's an urban project. [DEL-28]
+*The big analytical piece. Workshop consensus was that ~10 Delhi-specific
+types are too much detail. **Raj decided on 28 Aug 2026 not to collapse them
+now**: keep every type, drop three, do the framing in the writing, and
+revisit only if reviewers push back (Patrick prefers the types separate).
+Epic DEL-5. All decisions: `docs/decisions/2026-08-28-raj-methodology-decisions.md`.*
+- [x] **Raj:** drop all non-urban categories from the entire analysis —
+      figures and calculations; move their mention to footnotes. It's an
+      urban project. [DEL-28] — **decided 28 Aug 2026: drop RV, Industrial
+      and Other** (three types, not two). UV (138) and SDA (86) stay in as
+      reported types — implied, to be confirmed in the batched reply.
+      Excluded settlements still lend services to neighbours (Open
+      Decision A → semantics (a)); they get no PSI and no output row.
 - [ ] **Raj:** decide the collapsed categories — working candidate from the
       workshop triage: **planned / unauthorized / regularized-unauthorized /
-      resettlement colonies / JJCs** (5 categories). Theory-first (organized
-      around property-rights security and legal service entitlements), no
-      data-fishing. Run past Patrick; resolve the SDA question (missing from
-      the current list; adding it may help the story). [DEL-29]
+      resettlement colonies / JJCs** (5 categories). [DEL-29] — **parked
+      28 Aug 2026** ("not now … wait for people to complain"). Not
+      rejected: the recipe is `docs/methodology-config.md` § 2 worked
+      example 2, one YAML block, when a reviewer asks.
 - [ ] **Raj:** figure decisions from the triage — full map for spatial extent;
-      breakdown charts show the 5 categories; feature the **JJC vs. planned
-      juxtaposition**; remove the per-type data table (footnotes instead)
-      [DEL-30]
-- [ ] **Bob:** encode the agreed mapping in the Phase 3 mapping layer [DEL-31]
-      — unblocked 27 Aug 2026 (3B): this is now **one YAML profile** —
-      copy `code-2025.yaml`, write the `categories.mapping` block, set
-      `exclusion.types: [non-urban]`, regenerate the fixtures. No code
-      change. Worked example and procedure: `docs/methodology-config.md`
-      § 2. Every one of the 10 source types must be mapped — `UV`, `SDA` and
-      `Other` are the open ones (DEL-29)
-- [ ] **Bob:** recalculate all indexes with non-urban categories dropped
-      (supersedes the current "no RV" run — industrial areas go too) — gated
-      on hand ratification, Decision A, the mapping, and the bug-audit
-      fix-or-ratify calls [DEL-32]
+      breakdown charts show the **seven reported types** (was: 5
+      categories); feature the **JJC vs. planned juxtaposition**; remove
+      the per-type data table (footnotes instead) [DEL-30]. Maps that show
+      all of Delhi left-join the PSI file onto the settlement layer and
+      draw the unscored types grey.
+- [ ] **Bob:** pre-recalculation measurements, reported to Raj before
+      DEL-32 runs: JJC road access (road inside vs only in a touching
+      neighbour vs neither) and the one-factor effect of `roads:
+      eq4_own_only` on `code-2025`, by type [DEL-49]; which PSI column the
+      April 2026 figures report (`unnorm_psi` vs `norm_psi`), and the
+      popdensity keep/drop default [DEL-52]
+- [ ] **Bob:** write the **ratified profile** [DEL-31] — one YAML, a copy of
+      `code-2025.yaml` with the 28 Aug decisions: `adjacency.rule: touch`,
+      `barrier.rule: partial_weighted` (after 3E), `roads: eq4_own_only`,
+      `exclusion: {types: [RV, Industrial, Other], stage: post_neighbors,
+      absent_neighbor: contributes}`, `second_normalization` and
+      `outputs.denominators` per DEL-52; identity mapping. Procedure:
+      `docs/methodology-config.md` § 3. Blocked by DEL-48 and DEL-52.
+- [ ] **Bob:** recalculate all indexes with the ratified profile
+      (supersedes the current "no RV" run) — gated on cycle 3E, the
+      measurements above, and the ratified profile [DEL-32]. Hand
+      ratification (done), Decision A (done), the mapping (identity) and
+      the fix-or-ratify calls (made) no longer gate it.
 - [ ] Regenerate paper figures from the new run [DEL-33]
 
-**Definition of done:** new PSI outputs under the agreed categories, synced to
+**Definition of done:** new PSI outputs under the ratified profile, synced to
 the shared drive with clearly dated filenames; figures updated.
 
 ## Phase 5 — Shippable minimum
@@ -387,12 +438,18 @@ Distance / reachability:
       — profile only since 3D: `decay.form` (`none` | `inverse_power` +
       `exponent` | `exponential` + `scale_km`) and `decay.distance`
       (`centroid` | `boundary`); changing only `decay.*` does not invalidate
-      the neighbours artifact, so a decay sweep needs no re-`preprocess`
+      the neighbours artifact, so a decay sweep needs no re-`preprocess`.
+      **Raj's steer (28 Aug 2026):** keep 1/(1+d) in km for the main text;
+      the sweep should favour forms that spread the neighbour weights
+      "up from zero" (`inverse_power` with exponent < 1, `exponential`
+      with a scale of a few km, `boundary` distance) and report the effect
+      on the category ordering. A steeper decay for roads than clinics is
+      punted (and moot — roads have no neighbour term). Decision log § 9
 - [ ] Per-service distance expectations (a school may reasonably be farther
       than water); connects to the walkability/food-desert framing [DEL-38]
 - [ ] Adjacency-method comparison (bbox vs. touch) as a reported variant —
-      whichever rule Raj ratifies in bug-audit item 1 is the main text, the
-      other is this variant [DEL-39]
+      **`touch` is the main text (Raj, 28 Aug 2026); bbox is this
+      variant** [DEL-39]
       — profile only since 3D: `adjacency.rule` is `bbox` | `touch` |
       `within_distance`, and a 0 km band is the third comparison point (the
       intersection rule, which is `touch` plus corner-only contacts)
@@ -407,8 +464,17 @@ Service-set / measurement variants (from the workshop triage):
 - [ ] Core-universal-services variant: schools, health, water only [DEL-42]
 - [ ] Facility size / capacity (intensive margin, not just counts) — P2,
       data-permitting [DEL-43]
+- [ ] **Media-based reclassification** as an appendix robustness check
+      (Raj, 28 Aug 2026): two students reclassified settlements from media
+      articles (~80% of changes are RV → UV); rerun with the reclassified
+      types and report next to the state-category results. **Waiting on
+      Raj's list** (IDs, old type, new type). One profile pointing at the
+      reclassified type column; no code if it joins on `USO_AREA_U`.
+      [DEL-53]
 - Rejected in triage (do not pursue; no ticket): roads as area instead of
   length
+- Punted 28 Aug 2026 (revisit at revision, no ticket): a steeper decay for
+  roads than for point services
 
 - [ ] Write up all variants in an appendix; keep main claims unchanged if
       variants align (or honestly flag if not) [DEL-44]
@@ -423,8 +489,13 @@ Epic DEL-8.
 - [ ] Final repo cleanup for public release (README quickstart, data-access
       instructions, license check) — people will run the repo (and point
       Claude at it) first thing, so find issues before they do [DEL-45]
-- [ ] Optional: release the oracle/test harness and fixtures with the package
-      [DEL-46]
+- [ ] Release the oracle/test harness and fixtures with the package, and
+      write the **reproducibility appendix** (the fixture city, the
+      hand-derived worksheet, the test that ties them) [DEL-46] — **planned,
+      no longer optional: agreed with Raj 28 Aug 2026** ("Beautiful").
+      Whether the messy city is described alongside is a writing call.
+      DEL-45's public-release pass should present the oracle as a
+      front-door feature, not a test detail.
 - [ ] Ship to HAS (and post to SSRN per Patrick's suggestion) [DEL-47]
 
 ## Decisions made (16 Aug 2026 meta-planning session)
@@ -460,37 +531,40 @@ Epic DEL-8.
 
 ## Open decisions (need Raj / group)
 
-Epic DEL-9. Bob's handoff step — sending Raj the oracle memo — is DEL-12.
+Epic DEL-9. Bob's handoff step — sending Raj the oracle memo — was DEL-12
+(24 Aug 2026). **Raj answered on the 28 Aug 2026 call**; the full record,
+with transcript timestamps and Bob's rulings on the sub-questions, is
+`docs/decisions/2026-08-28-raj-methodology-decisions.md`. Summary here.
 
-**A. Exclusion semantics.** "Drop rural villages and industrial areas" hides
-three sub-decisions that change the numbers; Bob to put these to Raj,
-informed by the mythical-city side-by-side demo (Phase 2). *Status (Aug
-2026): the demo exists — `docs/oracle/exclusion-semantics-memo.md` has the
-per-settlement delta tables; the oracle also showed sub-decision 1 is
-currently forced to (b) by a silent `except: pass`, so (a) needs a code
-change before it is even an option. Awaiting Bob sending the memo and Raj's
-reply.* [DEL-13]
+**A. Exclusion semantics — DECIDED 28 Aug 2026.** [DEL-13 ✓]
 
-1. **Neighbor treatment of dropped types** — do excluded settlements still
-   contribute services to adjacent urban settlements' PCEN (Eq. 3), or are
-   they removed entirely before neighbor computation? (The current "no RV"
-   run removes them entirely — inherited, not chosen.)
-2. **Min–max renormalization** — shrinking the settlement universe changes
-   the min/max in Eq. 2, shifting every service index slightly; needs a
-   sentence in the methods text.
-3. **Descriptive tables** — dropped types also vanish from population-share
-   and count tables; confirm the paper's descriptive claims are restated
-   accordingly.
+1. **Neighbor treatment of dropped types → (a), they still contribute.**
+   "Just because we made an analytical decision about a categorization, it
+   doesn't make sense to remove the physical elements." Config:
+   `exclusion.absent_neighbor: contributes`. Dropped settlements get no
+   PSI and no output row (Bob's ruling; maps left-join onto the settlement
+   layer).
+2. **Min–max universe → reported settlements only** (today's behaviour):
+   "the minimum has to be the ones which are in contention." Methods
+   sentence on Raj's list.
+3. **Descriptive tables** — Raj's writing; noted so the restatement is
+   deliberate.
 
-**C. Oracle-memo methodology calls** — not a new decision area but listed
-so nothing falls between A and the bug audit: Raj's reply to the memo also
-has to settle bbox adjacency vs. border-sharing, how overlapping colonies
-share a service point, and fix-or-ratify for barrier/roads/`norm_psi`/
-popdensity. These arrive in the same reply as A, so they are tracked on
-DEL-13 together with A and on the Phase 3 bug tickets DEL-19/20/22.
-Bob's proposed answers, item by item, are in
-`docs/oracle/suggested-fixes-memo.md` (draft; lead item: the barrier rule
-should be pairwise/edge-based, not a per-polygon flag).
+Plus: the dropped types are **RV, Industrial, Other** (DEL-28); UV and SDA
+stay in (to confirm).
+
+**C. Oracle-memo methodology calls — DECIDED, two residuals.**
+Adjacency → shared border (`touch`; DEL-19, corner check DEL-50).
+Overlapping colonies → a service in the overlap counts for each owner
+(ratified), and — Bob's addition, to confirm — is not lent again through the
+neighbour term (DEL-20, code). Barrier → partial weighting by the share of
+shared boundary covered (DEL-48, code; provenance DEL-51). Roads → own
+settlement only, Eq. 4 as written (`eq4_own_only`; NB a change from the
+published numbers — the call's premise was inverted; effect measured first,
+DEL-49). **Residuals:** `norm_psi` (Raj does not know; Bob determines) and
+popdensity (not discussed; Bob proposes drop from reported results) —
+[DEL-52]. `docs/oracle/suggested-fixes-memo.md` keeps Bob's original
+proposals with Raj's answer under each.
 
 **B. Data-release posture** (Raj/group decision — not Bob's call alone).
 Options, in ascending openness: code-only (repo + fixtures, runnable but
@@ -498,8 +572,10 @@ Delhi numbers not reproducible by outsiders); code + derived outputs
 (publish the per-settlement PSI as CSV/GeoPackage — the paper's headline
 dataset — without raw inputs); full archive (inputs + outputs on
 Zenodo/OSF with DOI — requires a redistribution-rights check on the
-DUSIB/DDA/MCD-derived data; WorldPop is CC-BY). Planning floor is
-code + fixtures; anything more awaits the group. [DEL-14]
+DUSIB/DDA/MCD-derived data; WorldPop is CC-BY). **Not discussed on 28 Aug;
+the reproducibility-appendix decision (DEL-46) fixes the floor at code +
+fixtures.** Bob's proposed default for the batched reply: code + derived
+outputs. [DEL-14]
 
 ## Out of repo scope (paper-side, tracked for completeness)
 
@@ -517,13 +593,15 @@ Census data collaborations; process-tracing / media-accounts supplements.
 ## Critical path (from the call, updated for repo state)
 
 1. ~~Phase 0~~ → ~~Phase 1~~ (runnable pipeline) → ~~Phase 2~~ (oracle) — done
-2. In parallel: Raj settles categories with Patrick (Phase 4 decisions) and
-   answers the oracle memo (exclusion semantics, bbox adjacency, overlaps)
-3. **Phase 3** refactor + mapping layer is now the active work — it builds
-   the configurable category layer Phase 4 plugs into
-4. **Phase 4** implementation + recalculation (after Bob's hand ratification)
-   → shippable minimum (Phase 5); **Phase 6** sweeps fill the appendix
-5. **Phase 7** ship
+2. ~~Raj answers the oracle memo and settles categories~~ — done 28 Aug 2026
+   (no collapse; decision log)
+3. **Phase 3, cycle 3E** — partial barriers + overlap neighbour rule +
+   min-max guard (DEL-48/20): the last code before the numbers; in
+   parallel the measurements (DEL-49/50/51/52) and the batched reply to Raj
+4. **Phase 4** ratified profile (DEL-31) → recalculation (DEL-32) → figures
+   (DEL-33) → shippable minimum (Phase 5); **Phase 6** sweeps fill the
+   appendix (DEL-53 once Raj's list arrives)
+5. **Phase 7** ship, with the reproducibility appendix (DEL-46)
 
 Standing discipline (from the call): interrogate the design before letting
 Claude run; verify and inspect its output — the oracle exists precisely to

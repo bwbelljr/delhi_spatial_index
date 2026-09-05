@@ -17,32 +17,46 @@ Profiles live in `delhi_psi/profiles/`. Two ship:
 | `manuscript` | The paper's ideal rules (Eq. 1–4 as written). Proven against the independent reference implementation and the hand-ratified worksheet. |
 
 The `methodology:` block of `code-2025.yaml` lists every switch with its
-allowed values as an inline comment. The ones on the table with Raj:
+allowed values as an inline comment. The ones that were on the table with
+Raj, and what he decided on 28 Aug 2026
+(`docs/decisions/2026-08-28-raj-methodology-decisions.md`; the "ratified"
+column is what the Phase 4 profile, DEL-31, will carry):
 
-| switch | today (`code-2025`) | paper (`manuscript`) | decides |
-|---|---|---|---|
-| `adjacency.rule` | `bbox` | `touch` | memo § 1 (DEL-19) — bbox adjacency invents neighbours. A third value, `within_distance`, is the Phase 6 distance band (§ 6, DEL-36/39) |
-| `barrier.rule` | `global_asymmetric` | `pairwise` | memo § 2 (DEL-22) — sever the crossing pair only |
-| `roads` | `decayed` | `eq4_own_only` | memo § 3 (DEL-22) — Eq. 4 has no neighbour term |
-| `second_normalization` | `true` | `false` | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1 |
-| `outputs.denominators` | `[pop, popdensity]` | `[pop]` | memo "Popdensity denominator" (DEL-22) |
-| `exclusion.absent_neighbor` | `swallowed` | `contributes` | memo § 5 / Open Decision A (DEL-13, DEL-21) — do dropped settlements still lend services? |
-| `decay.distance_unit` | `km` | (manuscript silent) | memo § 7 |
-| `adjacency.max_distance_km` | — (unused) | — (unused) | DEL-36 — the band's radius in km, polygon-to-polygon. **Required** iff `adjacency.rule: within_distance`, and **rejected** otherwise; `>= 0`, where 0 means "every polygon that intersects i" (§ 6) |
-| `decay.form` | `inverse_linear` | `inverse_linear` | DEL-37 — the decay weight w(D): `inverse_linear` = 1/(1+D), `none` = 1, `inverse_power` = 1/(1+D)^`exponent`, `exponential` = e^(−D/`scale_km`). `exponent` / `scale_km` are required by, and only by, their own form |
-| `decay.distance` | `centroid` | `centroid` | DEL-37 — what D means: `centroid` (centroid-to-centroid, as every run so far) or `boundary` (polygon-to-polygon, so every touching or overlapping neighbour is at 0 and lends its services undecayed) |
+| switch | today (`code-2025`) | paper (`manuscript`) | **ratified (28 Aug 2026)** | context |
+|---|---|---|---|---|
+| `adjacency.rule` | `bbox` | `touch` | **`touch`** — shared border; corner-only pairs being counted (DEL-50) | memo § 1 (DEL-19) — bbox adjacency invents neighbours. A third value, `within_distance`, is the Phase 6 distance band (§ 6, DEL-36/39) |
+| `barrier.rule` | `global_asymmetric` | `pairwise` | **`partial_weighted`** — weight by the unblocked share of the shared boundary; **reserved until cycle 3E lands (DEL-48)** | memo § 2 (DEL-22) — `pairwise` severs the crossing pair only; `partial_weighted` generalises it |
+| `roads` | `decayed` | `eq4_own_only` | **`eq4_own_only`** — each colony counts only its own roads. NB a change from the published numbers; effect measured first (DEL-49) | memo § 3 (DEL-22) — Eq. 4 has no neighbour term |
+| `second_normalization` | `true` | `false` | **open** — Bob determines which column the figures report, Raj confirms (DEL-52); Bob's recommendation `false` | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1 |
+| `outputs.denominators` | `[pop, popdensity]` | `[pop]` | **open** — not discussed; Bob's proposed default `[pop]` (DEL-52) | memo "Popdensity denominator" (DEL-22) |
+| `exclusion.absent_neighbor` | `swallowed` | `contributes` | **`contributes`** — dropped settlements still lend services; they get no PSI and no output row | memo § 5 / Open Decision A (DEL-13, DEL-21) |
+| `exclusion.types` | `[RV]` | `[RV]` | **`[RV, Industrial, Other]`** — identity mapping kept; no category collapse (DEL-28/29) | § 2 below |
+| `decay.distance_unit` | `km` | (manuscript silent) | `km` — FYI for the methods text | memo § 7 |
+| `adjacency.max_distance_km` | — (unused) | — (unused) | — | DEL-36 — the band's radius in km, polygon-to-polygon. **Required** iff `adjacency.rule: within_distance`, and **rejected** otherwise; `>= 0`, where 0 means "every polygon that intersects i" (§ 6) |
+| `decay.form` | `inverse_linear` | `inverse_linear` | `inverse_linear` — sweep later (DEL-37; Raj wants weights spread away from zero) | the decay weight w(D): `inverse_linear` = 1/(1+D), `none` = 1, `inverse_power` = 1/(1+D)^`exponent`, `exponential` = e^(−D/`scale_km`). `exponent` / `scale_km` are required by, and only by, their own form |
+| `decay.distance` | `centroid` | `centroid` | `centroid` | DEL-37 — what D means: `centroid` (centroid-to-centroid, as every run so far) or `boundary` (polygon-to-polygon, so every touching or overlapping neighbour is at 0 and lends its services undecayed) |
 
-Also in the block: `exclusion.types` (which **categories** are dropped —
-category names, not raw `USO_FINAL` types; `[RV]` today, which is a category
-only because the shipped mapping is the identity — see § 2),
-`exclusion.stage` (`post_neighbors` = today: neighbours are built on the full
-universe, exclusion happens at compute), `barrier.combine`.
+Also in the block: `exclusion.stage` (`post_neighbors` = today and
+ratified: neighbours are built on the full universe, exclusion happens at
+compute — this is what lets dropped settlements lend services) and
+`barrier.combine`. `exclusion.types` is written in **category** names, not
+raw `USO_FINAL` types; with the identity mapping the two coincide (§ 2).
+
+Two things Raj ratified need **no switch**: the min-max in Eq. 2 runs over
+the reported settlements only (today's behaviour), and a service inside
+overlapping colony polygons counts directly for each of them (today's
+behaviour). One thing Bob added needs **code, not config**: a neighbour
+lends only the services not already inside the receiving settlement, so an
+overlap service is not counted a second time through the neighbour term
+(DEL-20, cycle 3E).
 
 **Reserved — the loader refuses these and tells you why:**
-`barrier.rule: partial_weighted` (needs a reference rule and a hand anchor
-first — see memo § 2), `outputs.denominators: one` (reference does not model
-it), and the key `exclusion.minmax_universe` (Open Decision A.2 — no knob
-anywhere yet). If Raj chooses one of these, it is a 3C ticket, not a YAML edit.
+`barrier.rule: partial_weighted` (**Raj's choice** — needs the reference
+rule, a hand anchor and the production implementation first: cycle 3E,
+DEL-48; see § 5), `outputs.denominators: one` (reference does not model
+it), and the key `exclusion.minmax_universe` (Open Decision A.2 was
+decided as today's behaviour, so no knob is needed). A reserved value is a
+cycle-3x ticket, not a YAML edit.
 
 ## 2. Categories — the settlement-type mapping
 
@@ -100,8 +114,23 @@ both match the independent reference implementation. That equivalence is
 the whole claim of this layer: **it changes the vocabulary, not the
 numbers.**
 
-### Worked example 2 — Delhi, ten types into the Phase 4 candidate
+### Worked example 2 — Delhi, ten types into the workshop's five (parked)
 
+**Raj decided on 28 Aug 2026 not to collapse the types for now** (DEL-29
+parked; revisit if reviewers push back). The Phase 4 profile keeps the
+identity `uso-10` mapping and drops three types:
+
+```yaml
+categories:
+  scheme: uso-10            # identity, as in code-2025
+  mapping: {Planned: Planned, UAC: UAC, JJC: JJC, RUAC: RUAC, RV: RV,
+            UV: UV, SDA: SDA, JJR: JJR, Industrial: Industrial, Other: Other}
+methodology:
+  exclusion:
+    types: [RV, Industrial, Other]   # the 28 Aug 2026 decision; UV and SDA stay in
+```
+
+The example below is the recipe **if** a reviewer asks for the collapse.
 The workshop's working candidate (WORKPLAN DEL-29): planned /
 unauthorized / regularized-unauthorized / resettlement / JJC, with the
 non-urban types dropped. In YAML, `regularized` is the token for WORKPLAN's
@@ -133,7 +162,12 @@ they are open questions (DEL-29 explicitly flags SDA), and the pipeline
 refuses to guess. Counts and provenance for all ten types:
 `docs/data/uso_final_vocabulary.md`.
 
-### Procedure for Raj's decision (DEL-31)
+### Procedure for a category collapse (if it is ever asked for)
+
+DEL-31 no longer needs this — with the identity mapping the ratified
+profile's category change is the single `exclusion.types` line above, made
+alongside the other 28 Aug decisions by the § 3 procedure. Kept for the
+day a reviewer asks for the collapse:
 
 1. Copy `delhi_psi/profiles/code-2025.yaml` to
    `delhi_psi/profiles/urban-5.yaml`, set `profile: urban-5`, and write the
