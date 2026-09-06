@@ -38,8 +38,11 @@ negative anywhere; `links_kept_partial` > `links_kept_code_2025`, i.e. the
 number of severed links FALLS (the global rule severs every link INTO a
 flagged settlement, the partial rule severs only fully covered boundaries);
 `links_severed` == 0 in the weight classes, because a w == 0 link is pruned
-out of the artifact entirely; and the fractional class is non-empty. A result
-outside these bounds is a stop, not a number to write down.
+out of the artifact entirely — which is why that key proves nothing about
+whether anything was fully covered, and why the finding below measures the
+pre-barrier link count separately instead; and the fractional class is
+non-empty. A result outside these bounds is a stop, not a number to write
+down.
 
 - `links_w_one` / `links_fractional` / `links_severed` — the directed
   neighbour links stored in the rebuilt artifact, by weight: unblocked
@@ -65,6 +68,15 @@ outside these bounds is a stop, not a number to write down.
 - `preprocess_seconds` — the wall-clock cost of rebuilding the neighbours
   artifact under the partial rule, so the one-time cost of adopting it is on
   the record next to its effect.
+- `psi_code_<denom>_<TYPE>` / `psi_partial_<denom>_<TYPE>` (and, where both
+  runs carry `norm_psi`, `norm_code_<denom>_<TYPE>` /
+  `norm_partial_<denom>_<TYPE>`) — the mean unnormalised (and normalised) PSI
+  under each rule, per denominator and settlement type and in total, the
+  same one-factor shape `measure_roads_access.py`'s `one_factor` block uses
+  (DEL-49). `psi_code_*` is read from the proven `--verify-dir` output,
+  never recomputed; `psi_partial_*` is this run's own output.
+- `n_<denom>_<TYPE>` — the settlement count behind each mean, so a mean of
+  zero settlements is never mistaken for a mean of zero PSI.
 
 ```text
 block: partial_barriers
@@ -160,23 +172,35 @@ norm_partial_popdensity_total: 0.0312851
 
 ## Finding
 
-**No barrier on the real layer fully covers a shared boundary.**
-`links_severed` is `0` — not merely because a severed link leaves no trace
-in a stored artifact, but because the fractional class accounts for every
-blocked link there is. Of `29118` directed links the partial rule keeps,
-`27482` are untouched at weight 1 and `1636` are partially blocked, and the
-median partly-blocked link keeps `0.938525` of its contribution. Barriers in
-Delhi clip the corners of shared boundaries; they do not wall them off.
+**Barriers in Delhi mostly clip shared boundaries rather than closing
+them.** Of the `29118` directed links the partial rule keeps, `27482` are
+untouched at weight 1 and `1636` are partially blocked, and the median
+partly-blocked link still keeps `0.938525` of its contribution.
 
-**The rule is therefore far less severe than the one in the July 2025
-numbers, and that is most of the effect.** `code-2025`'s
-`global_asymmetric` keeps `21211` directed links; the partial rule keeps
-`29118` — 37 % more — because the global rule deletes every link INTO a
-barrier-flagged settlement, on every side, whether or not a barrier lies
-between the two. `3155` of 4,357 settlements (72 %) get a different
-neighbour list. The bound stated before the run held: the partial rule keeps
-more links than the global rule, the severed class is empty, and the
-fractional class is not.
+*A correction the final review forced, worth stating plainly:* `links_severed`
+is `0`, but that number **cannot** tell you whether anything was fully
+covered — a w == 0 link is pruned before the artifact is written, so it is
+zero by construction whatever the layer looks like. The honest test is to
+count the directed links that exist BEFORE any barrier rule runs and compare.
+Measured separately on the same layer and cache (bbox adjacency, no barrier):
+**29,258 pre-barrier directed links.** So
+
+| rule | keeps | severs | share severed |
+|---|---|---|---|
+| `global_asymmetric` (today) | 21,211 | 8,047 | 27.5 % |
+| `partial_weighted` | 29,118 | 140 | 0.5 % |
+
+140 links ARE fully covered — the earlier claim that none were was wrong, and
+rested on a metric that could not show it. The real finding is the ratio:
+the partial rule severs **57× fewer** links than the rule in the July 2025
+numbers.
+
+**Most of the effect is not the partial weighting at all — it is retiring the
+global flag.** `global_asymmetric` deletes every link INTO a barrier-flagged
+settlement, on every side, whether or not a barrier lies between that pair;
+that accounts for 8,047 of the 8,187-link difference, against 1,636 links
+merely discounted. `3155` of 4,357 settlements (72 %) get a different
+neighbour list.
 
 **What it does to the index.** Under the population-density denominator —
 the one the paper's figures use (`psi_columns.md`) — every reported type
@@ -193,37 +217,35 @@ back:
 | UV | `0.0381201` | `0.0549061` | +44 % |
 | SDA | `0.027875` | `0.0233856` | −16.1 % |
 
-**The paper's headline comparison survives, but the gap narrows sharply.**
-Planned stays the highest-scoring type and JJC the lowest under the density
-denominator, before and after. But JJC's mean roughly triples while
-Planned's rises by under a tenth, so the ratio between them falls from about
-33× to about 12×. That is a change to the size of the paper's central claim,
-not to its direction, and it is Raj's to weigh — it is exactly what adopting
-his own partial-barrier decision costs.
+**Two consequences for the paper's headline, and the second one is a
+reordering.**
+
+*The gap narrows sharply.* JJC stays the lowest-scoring type before and
+after, and its mean roughly triples while Planned's rises by under a tenth,
+so Planned-over-JJC falls from about 33× to about 12×. Top-to-bottom across
+all reported types it falls from 33× to about 14×.
+
+*Planned is no longer the top-scoring type.* Under `partial_weighted`, urban
+villages overtake planned colonies — `0.0549061` against `0.0482092`, where
+today it is Planned `0.0443043` over UV `0.0381201`. The same reordering
+holds on the unnormalised column. This is not a change of degree but of
+rank, in the density variant the figures are drawn from, and it is the one
+result here that could change a sentence in the paper rather than a number.
+
+Both are Raj's to weigh: they are what adopting his own partial-barrier
+decision costs, and neither is a reason on its own to abandon it.
 
 **Cost.** Rebuilding the neighbours artifact under this rule took
 `864.935` seconds (14.4 minutes) on 4,357 settlements — a one-off per
 profile, since the barrier block is in the methodology stamp and `compute`
 refuses a mismatched artifact.
-- `psi_code_<denom>_<TYPE>` / `psi_partial_<denom>_<TYPE>` (and, where both
-  runs carry `norm_psi`, `norm_code_<denom>_<TYPE>` /
-  `norm_partial_<denom>_<TYPE>`) — the mean unnormalised (and normalised) PSI
-  under each rule, per denominator and settlement type and in total, the
-  same one-factor shape `measure_roads_access.py`'s `one_factor` block uses
-  (DEL-49). `psi_code_*` is read from the proven `--verify-dir` output,
-  never recomputed; `psi_partial_*` is this run's own output.
-- `n_<denom>_<TYPE>` — the settlement count behind each mean, so a mean of
-  zero settlements is never mistaken for a mean of zero PSI.
 
-Proven on Oraculum (spec § 6.1), where the classification is hand-counted:
+## The same classification, hand-counted
+
+Proven on Oraculum (spec § 6.1), where every pair can be counted by hand:
 10 undirected `bbox` pairs make 20 directed links, of which only the A–D
 edge is fractional in both directions (w = 0.08, the 5 m round-cap buffer
 against a canal covering 90% of the shared edge) and none is severed — 18
 at w == 1, 2 fractional, 0 severed. (These are the Oraculum hand counts, not
-the real-layer block below; they are deliberately not in `backticks` so the
+the real-layer block above; they are deliberately not in `backticks` so the
 prose-number guard never mistakes one for the other.)
-
-The fenced block itself is pasted here once the run step (spec § 6.6) has
-produced it against `~/delhi_data/phase3_verify`; until then this section
-states what each key means and what the numbers must satisfy, not what they
-are.

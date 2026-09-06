@@ -191,24 +191,29 @@ code's global/asymmetric flag is retired from the ratified profile.
 **Measured (6 Sep 2026, DEL-48; `docs/data/rule_effects.md`).** Two findings,
 and the second is the one for Raj.
 
-1. **No barrier on the real layer fully covers a shared boundary.** Of the
-   29,118 directed links the rule keeps, 27,482 are untouched and 1,636 are
-   partly blocked, with a median retained weight of 0.94. Nothing is severed.
-   Delhi's barriers clip the corners of shared boundaries; they do not wall
-   them off.
-2. **The effect is large, and most of it is not the partial weighting — it
-   is retiring the global flag.** `code-2025` keeps 21,211 directed links;
-   the partial rule keeps 29,118, 37 % more, because the global rule deletes
-   every link INTO a flagged settlement whether or not a barrier lies
-   between the pair. 3,155 of 4,357 settlements (72 %) get a different
-   neighbour list. Under the population-density denominator the paper's
-   figures use, every reported type gains: Planned +8.8 %, JJC +199 %,
-   UAC +67 %, RUAC +61 %, UV +44 %, JJR +27 %, SDA −16 %.
-   **The headline comparison survives in direction but narrows sharply:**
-   Planned stays highest and JJC lowest, but the ratio between them falls
-   from about 33× to about 12×. That is the size of Raj's own decision, and
-   it is his to weigh — it belongs in the batched reply and in the methods
-   discussion, not in a config note. Rebuilding the artifact cost 14.4 min.
+1. **The partial rule severs 57× fewer links than today's.** Of 29,258
+   directed links that exist before any barrier rule runs, today's
+   `global_asymmetric` keeps 21,211 (severing 8,047, 27.5 %) while
+   `partial_weighted` keeps 29,118 (severing 140, 0.5 %). Of the links it
+   keeps, 1,636 are partly blocked with a median retained weight of 0.94.
+   Barriers in Delhi mostly clip shared boundaries rather than closing them
+   — though 140 boundaries ARE fully covered, so "none" would be wrong.
+2. **Most of the effect is not the partial weighting — it is retiring the
+   global flag**, which deletes every link INTO a flagged settlement whether
+   or not a barrier lies between that pair. 3,155 of 4,357 settlements
+   (72 %) get a different neighbour list. Under the population-density
+   denominator the paper's figures use, every reported type gains except
+   SDA: Planned +8.8 %, JJC +199 %, UAC +67 %, RUAC +61 %, UV +44 %,
+   JJR +27 %, SDA −16 %.
+3. **Two consequences for the headline, and the second is a reordering.**
+   The gap narrows: JJC stays lowest and Planned-over-JJC falls from about
+   33× to about 12×. But **urban villages overtake planned colonies** under
+   the new rule (0.0549 against 0.0482, where today Planned leads UV 0.0443
+   to 0.0381) — a change of RANK, not just of degree, in the exact variant
+   the figures are drawn from. That is the one result here that could change
+   a sentence in the paper rather than a number, and it belongs in the
+   batched reply. Neither consequence is a reason on its own to abandon the
+   decision; both are Raj's to weigh. Rebuilding the artifact cost 14.4 min.
 
 **Raj's question (14:30–14:31):** where did the barrier layers come from —
 city data or drawn by Bijoy? Bob to check (**DEL-51**). Raj's writing: the
