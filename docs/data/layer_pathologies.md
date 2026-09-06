@@ -53,6 +53,14 @@ multi_settlement_points_transport: 41
 - `overlapping_pairs` — polygon pairs whose intersection has positive area.
   They are `touch` neighbours today (DEL-19) and they double-count any
   service point inside the overlap (DEL-20); the messy city's `O1`/`O2`.
+- `corner_only_pairs` / `corner_only_settlements` — polygon pairs whose
+  intersection is non-empty but has **zero length and zero area**: they meet
+  at one or more isolated points and nowhere else, and the settlements
+  involved. Raj ratified shared-border adjacency on 28 Aug 2026 (decision log
+  § 3), and a corner is not a border: such a pair is a neighbour under `bbox`
+  and under a 0 km distance band, and NOT under `touch`. The messy city's
+  `T`/`L` is the hand-checkable case (`docs/oracle/messy-city.md`); Oraculum
+  has none.
 - `multi_settlement_points_<service>` — points inside more than one
   settlement, counted for each. The `<service>` names are the `code-2025`
   profile's service layer names, so `health` here is the messy city's

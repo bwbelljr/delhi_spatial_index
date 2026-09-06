@@ -93,6 +93,37 @@ def count_overlapping_pairs(gdf, *, id_col):
         and geoms.iloc[left].intersection(geoms.iloc[right]).area > 0))
 
 
+def corner_only_pairs(gdf, *, id_col):
+    """Pairs whose intersection is NON-EMPTY but has zero length and zero
+    area — they meet at one or more isolated points. `touch` (positive shared
+    length) does NOT make them neighbours; a 0 km distance band does.
+
+    Same sjoin-then-test shape as `count_overlapping_pairs`: the join narrows
+    the candidates so the measure test never runs on all n^2 pairs, and
+    `left < right` keeps one of each unordered pair. Shapely returns a Point
+    or MultiPoint for such an intersection, but the test is on MEASURES, not
+    on `geom_type`, so a GeometryCollection of points also counts and one
+    containing a line does not.
+    """
+    frame = gdf[[id_col, "geometry"]].reset_index(drop=True)
+    joined = gpd.sjoin(frame, frame, how="inner", predicate="intersects")
+    geoms = frame.geometry
+    ids = frame[id_col]
+    out = []
+    for left, right in zip(joined.index, joined["index_right"]):
+        if left >= right:
+            continue
+        shared = geoms.iloc[left].intersection(geoms.iloc[right])
+        if not shared.is_empty and shared.length == 0 and shared.area == 0:
+            out.append((ids.iloc[left], ids.iloc[right]))
+    return out
+
+
+def count_corner_only_pairs(gdf, *, id_col):
+    """How many pairs meet at a point and nowhere else."""
+    return len(corner_only_pairs(gdf, id_col=id_col))
+
+
 def count_multi_settlement_points(gdf, points, *, id_col):
     """Service points that fall inside MORE THAN ONE settlement (production
     counts such a point for every one of them)."""
@@ -120,6 +151,10 @@ def measure(cfg, cache_dir):
         "area_km2_max": f"{areas.max():.6g}",
         "overlapping_pairs": count_overlapping_pairs(gdf, id_col=id_col),
     }
+    pairs = corner_only_pairs(gdf, id_col=id_col)
+    report["corner_only_pairs"] = len(pairs)
+    report["corner_only_settlements"] = len(
+        {settlement for pair in pairs for settlement in pair})
     for service, path in sorted(cfg.services.point.items()):
         points = io.read_layer(cfg.paths.data_dir / path)
         # `compute` drops exact-duplicate service rows before counting; do the
