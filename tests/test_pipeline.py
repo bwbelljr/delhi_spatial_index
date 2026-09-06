@@ -359,3 +359,75 @@ def test_pre_neighbours_exclusion_strips_the_weight_column_too():
     row = got[got["USO_AREA_U"] == "A"].iloc[0]
     assert row["nbrs_bbox"] == ["B"]
     assert row[pipeline.NBRS_WEIGHT_COL] == [("B", 0.5)]
+
+
+# --- 3E: overlap lending is wired per service (spec § 3.2) -------------
+def _messy_overlap_frames(lending):
+    """The messy city scored through compute_frames with ONE methodology
+    value changed, both denominators' worth of plumbing in one call."""
+    from dataclasses import replace
+
+    from delhi_psi.config import OverlapConfig, OverlapLending
+    from delhi_psi.pipeline import compute_frames
+    from tests.cities import MESSY
+    from tests.oraculum_fixtures import methodology_with
+
+    methodology = methodology_with("code-2025", types=(), stage=None,
+                                   city=MESSY)
+    methodology = replace(methodology, overlap=OverlapConfig(
+        lending=OverlapLending(lending)))
+    return compute_frames(MESSY.load_settlements(),
+                          {"canal": MESSY.load_barriers()},
+                          MESSY.load_services(), None, methodology, "pop",
+                          mapping=MESSY.mapping(),
+                          scheme=MESSY.scheme).set_index("USO_AREA_U")
+
+
+def test_index_frames_builds_one_shared_structure_per_service():
+    """The clinic moves and the school does not, in ONE run: a single dict
+    reused across services would move both, and a dict built for the wrong
+    service would move the wrong one."""
+    whole = _messy_overlap_frames("whole")
+    outside = _messy_overlap_frames("outside_receiver")
+    assert outside.loc["O1", "clinic_pcen"] == pytest.approx(
+        1 / 600, abs=1e-12)
+    assert whole.loc["O1", "clinic_pcen"] == pytest.approx(
+        (1 + 1 / 1.8) / 600, abs=1e-12)
+    assert outside.loc["O1", "school_pcen"] == whole.loc["O1", "school_pcen"]
+    assert outside.loc["O1", "police_pcen"] == whole.loc["O1", "police_pcen"]
+
+
+def test_the_overlap_rule_adds_no_column_and_no_stamp_entry():
+    """It is applied downstream in `compute`, like decay and roads, so one
+    stored artifact serves both values and the output column set is
+    lending-independent."""
+    from dataclasses import replace
+
+    from delhi_psi.config import OverlapConfig, OverlapLending
+    from tests.cities import MESSY
+    from tests.oraculum_fixtures import methodology_with
+
+    assert list(_messy_overlap_frames("outside_receiver").columns) == \
+        list(_messy_overlap_frames("whole").columns)
+    methodology = methodology_with("code-2025", types=(), stage=None,
+                                   city=MESSY)
+    outside = replace(methodology, overlap=OverlapConfig(
+        lending=OverlapLending.OUTSIDE_RECEIVER))
+    assert pipeline.methodology_stamp(outside) == \
+        pipeline.methodology_stamp(methodology)
+
+
+def test_no_shared_structure_is_built_under_whole(monkeypatch):
+    """`whole` must not pay for a rule it does not use, and must not go near
+    the arithmetic: the builder is never called AT ALL, which is the only
+    way to state "bit-identical" as a test rather than as a comparison
+    against a number that would be equal by construction."""
+    from delhi_psi import index
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("shared_amounts must not be called under whole")
+
+    monkeypatch.setattr(index, "shared_amounts", refuse)
+    got = _messy_overlap_frames("whole")
+    assert got.loc["O1", "clinic_pcen"] == pytest.approx(
+        (1 + 1 / 1.8) / 600, abs=1e-12)
