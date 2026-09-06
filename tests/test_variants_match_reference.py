@@ -82,7 +82,7 @@ BASELINE_EXCLUSION = {"types": [], "stage": "post_neighbors",
 
 
 @pytest.mark.parametrize("variant", ["band_small_boundary", "exp1",
-                                     "partial_5m"])
+                                     "partial_5m", "overlap_outside"])
 def test_a_derived_variant_profile_runs_end_to_end(expected, data_dir,  # noqa: F811
                                                    tmp_path, variant):
     """Proves the whole chain the in-memory test skips: YAML -> load_config
@@ -90,7 +90,10 @@ def test_a_derived_variant_profile_runs_end_to_end(expected, data_dir,  # noqa: 
     for `scale_km`; `band_small_boundary` for the band, the boundary
     distance and the stamped `max_distance_km` together; `partial_5m` for
     the barrier weights, which are computed in `preprocess`, stored in the
-    artifact, stamped with `buffer_m: 5.0`, and consumed by `compute`.
+    artifact, stamped with `buffer_m: 5.0`, and consumed by `compute`; and
+    `overlap_outside` for the new REQUIRED key, which has to survive the
+    YAML round trip and reach `compute` even though it shapes nothing the
+    artifact holds.
     """
     overrides = dict(VARIANTS[variant])
     overrides["exclusion"] = BASELINE_EXCLUSION
