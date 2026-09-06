@@ -37,6 +37,8 @@ REFERENCE_KNOBS = {
     "methodology.barrier.rule": {"global_asymmetric": "global",
                                  "pairwise": "pair",
                                  "partial_weighted": "partial_weighted"},
+    "methodology.overlap.lending": {"whole": "whole",
+                                    "outside_receiver": "outside_receiver"},
     "methodology.decay.form": {"inverse_linear": "inverse_linear",
                                "none": "none",
                                "inverse_power": "inverse_power",
@@ -57,6 +59,7 @@ REFERENCE_KNOBS = {
 ENUM_KEYS = (
     "methodology.adjacency.rule",
     "methodology.barrier.rule",
+    "methodology.overlap.lending",
     "methodology.decay.form",
     "methodology.decay.distance",
     "methodology.roads",
@@ -76,6 +79,7 @@ def _make_enum(name, key):
 
 AdjacencyRule = _make_enum("AdjacencyRule", "methodology.adjacency.rule")
 BarrierRule = _make_enum("BarrierRule", "methodology.barrier.rule")
+OverlapLending = _make_enum("OverlapLending", "methodology.overlap.lending")
 DecayForm = _make_enum("DecayForm", "methodology.decay.form")
 DecayDistance = _make_enum("DecayDistance", "methodology.decay.distance")
 RoadsFormula = _make_enum("RoadsFormula", "methodology.roads")
@@ -87,6 +91,7 @@ Denominator = _make_enum("Denominator", "outputs.denominators[]")
 ENUMS = {
     "methodology.adjacency.rule": AdjacencyRule,
     "methodology.barrier.rule": BarrierRule,
+    "methodology.overlap.lending": OverlapLending,
     "methodology.decay.form": DecayForm,
     "methodology.decay.distance": DecayDistance,
     "methodology.roads": RoadsFormula,
@@ -117,6 +122,13 @@ RESERVED_KEYS = {
         "unmapped source type must fail the run, because silence is the "
         "failure mode this layer exists to prevent (spec 3B § 2). Map every "
         "source type explicitly instead.",
+    "methodology.overlap.counting":
+        "reserved: Raj ratified on 28 Aug 2026 that a service inside k "
+        "overlapping colonies counts for each of the k — today's behaviour "
+        "on both sides (production's `intersects`, the reference's "
+        "`within`) — so there is no knob and nothing to choose (decision "
+        "log § 5). The OTHER half of that memo section, what a neighbour "
+        "LENDS, is the switch `methodology.overlap.lending`.",
 }
 
 
@@ -190,6 +202,16 @@ class BarrierConfig:
 
 
 @dataclass(frozen=True)
+class OverlapConfig:
+    # `whole` names today's arithmetic: a neighbour lends its whole amount
+    # S_j. `outside_receiver` lends |S_j \ S_i| — the amount minus whatever
+    # of the same service already lies inside the receiver, so a service in
+    # the overlap of two colonies is never counted twice for one of them.
+    # Required like every methodology key: no default, never inherited.
+    lending: OverlapLending
+
+
+@dataclass(frozen=True)
 class DecayConfig:
     form: DecayForm
     distance_unit: str
@@ -209,6 +231,7 @@ class ExclusionConfig:
 class MethodologyConfig:
     adjacency: AdjacencyConfig
     barrier: BarrierConfig
+    overlap: OverlapConfig
     decay: DecayConfig
     roads: RoadsFormula
     second_normalization: bool
@@ -389,7 +412,7 @@ def _profile_path(profile_or_path):
 
 
 def _methodology(raw, *, allowed_categories):
-    _reject_unknown(raw, {"adjacency", "barrier", "decay", "roads",
+    _reject_unknown(raw, {"adjacency", "barrier", "overlap", "decay", "roads",
                           "second_normalization", "exclusion"}, "methodology")
 
     adjacency_raw = _require(raw, "adjacency", "methodology")
@@ -428,6 +451,13 @@ def _methodology(raw, *, allowed_categories):
             used_by="methodology.barrier.rule: partial_weighted",
             applies=barrier_rule == BarrierRule.PARTIAL_WEIGHTED,
             minimum=0, strict=True))
+
+    overlap_raw = _require(raw, "overlap", "methodology")
+    _reject_unknown(overlap_raw, {"lending"}, "methodology.overlap")
+    overlap = OverlapConfig(
+        lending=_coerce_enum(
+            "methodology.overlap.lending",
+            _require(overlap_raw, "lending", "methodology.overlap")))
 
     decay_raw = _require(raw, "decay", "methodology")
     _reject_unknown(decay_raw, {"form", "distance_unit", "distance",
@@ -485,6 +515,7 @@ def _methodology(raw, *, allowed_categories):
     return MethodologyConfig(
         adjacency=adjacency,
         barrier=barrier,
+        overlap=overlap,
         decay=decay,
         roads=_coerce_enum("methodology.roads",
                            _require(raw, "roads", "methodology")),

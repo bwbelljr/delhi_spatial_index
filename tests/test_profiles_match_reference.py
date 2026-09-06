@@ -116,6 +116,7 @@ def test_every_mapped_knob_is_one_the_reference_actually_implements():
     knob_for_key = {
         "methodology.adjacency.rule": "adjacency_rule",
         "methodology.barrier.rule": "barrier_rule",
+        "methodology.overlap.lending": "overlap_lending",
         "methodology.decay.form": "decay_form",
         "methodology.decay.distance": "decay_distance",
         "methodology.roads": "roads_formula",

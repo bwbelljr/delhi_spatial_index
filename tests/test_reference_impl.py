@@ -588,7 +588,8 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
     from delhi_psi.config import (
         AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
         BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
-        ExclusionStage, MethodologyConfig, RoadsFormula,
+        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
+        RoadsFormula,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -598,6 +599,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         adjacency=AdjacencyConfig(rule=AdjacencyRule.BBOX),
         barrier=BarrierConfig(rule=BarrierRule.PARTIAL_WEIGHTED,
                               combine="any", buffer_m=5.0),
+        overlap=OverlapConfig(lending=OverlapLending.WHOLE),
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
         roads=RoadsFormula.DECAYED,
