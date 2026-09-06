@@ -225,6 +225,22 @@ def test_the_gate_multiplier_is_1_5x_specifically():
     assert gated
 
 
+def test_the_gate_multiplier_is_pinned_from_BELOW_as_well():
+    """The 1.7 case above only catches a LOOSER constant. A stricter one —
+    1.2x, say — passes it too, so on its own the pin is one-sided and the
+    suite would accept a rule that gates cells the spec says to report.
+    (Found by the fix-round re-review: mutating 1.5 -> 1.2 broke nothing.)
+
+    130 tied at the cut against a decile of k = 100 -> ratio 1.3: past 1.2x
+    (120) but under 1.5x (150), so it must NOT gate under the documented rule
+    and WOULD gate under a stricter one. With the case above, the constant is
+    now bracketed on both sides."""
+    s = pd.Series([0.0] * 130 + list(np.linspace(0.1, 1.0, 870)))
+    got, gated = S.decile_set(s, top=False)
+    assert len(got) == 130
+    assert not gated
+
+
 def test_the_real_baseline_shape_ties_but_does_not_gate():
     """The two real shapes, and they land on opposite sides of the gate.
 
