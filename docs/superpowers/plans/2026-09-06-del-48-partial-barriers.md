@@ -1047,7 +1047,16 @@ def test_a_mixed_intersection_is_decomposed_part_by_part():
     """Overlap on one side, shared edge on another: shapely returns a
     GeometryCollection, whose `.boundary` is None. SB is the overlap
     polygon's 1000 m perimeter plus the 400 m line, so a barrier over the
-    line alone blocks 410 of 1400."""
+    line alone blocks exactly 400 of 1400.
+
+    The round cap adds NOTHING here, unlike the Oraculum canal: this
+    barrier's endpoints coincide with the line piece's own endpoints, and
+    the shared boundary does not continue past them — the polygon piece is
+    200 m away, far beyond the 5 m buffer. Verified in shapely 2.1.2: the
+    blocked length is 400.0 at buffer 5 AND at buffer 1. A cap only wins
+    extra length where the boundary continues past the barrier's end, which
+    is the Oraculum case (canal [25, 475] strictly inside a 500 m edge) and
+    the closed-perimeter overlap case above."""
     from shapely.geometry import LineString, MultiPolygon, box
 
     mixed = MultiPolygon([box(900, 0, 1900, 400), box(1000, 600, 1900, 1000)])
@@ -1058,7 +1067,7 @@ def test_a_mixed_intersection_is_decomposed_part_by_part():
     got = partial(two_squares(square, mixed),
                   LineString([(1000, 600), (1000, 1000)]))
     assert weights_of(got)["A"]["B"] == pytest.approx(
-        1 - 410 / 1400, abs=1e-12)
+        1 - 400 / 1400, abs=1e-12)
 
 
 def test_a_corner_only_contact_is_never_severed():
@@ -1777,9 +1786,17 @@ and replace the single-column drop at the end with:
     return result
 ```
 
-In `delhi_psi/io.py`:
+In `delhi_psi/io.py`, replace the constant AND the comment above it — the
+comment currently reads "drops exactly these three", which the fourth entry
+falsifies:
 
 ```python
+# Shapefiles cannot hold list or geometry-valued columns; production drops
+# these before to_file (spec § 5). `nbrs_barrier_weight` is present only
+# under `barrier.rule: partial_weighted` and only on the neighbours frame —
+# `index_frames` drops it before returning, so it never reaches a CSV, but
+# `missing_population.csv` is cut from the neighbours frame, where it IS
+# present.
 SHAPEFILE_DROP_COLUMNS = ("nbrs_bbox", "nbrs_dist_bbox", "centroid",
                           "nbrs_barrier_weight")
 ```
@@ -2269,8 +2286,11 @@ def synthetic_partial_city():
                                 box(-400, 600, 0, 1000)])],
         crs="EPSG:7760")
     # The canal covers y in [0, 400] of the x = 0 boundary P shares with R's
-    # lower part, and reaches 5 m past each end: 410 of the 800 m shared
-    # boundary, so w_PR is strictly fractional.
+    # lower part: 400 of the 800 m shared boundary, so w_PR is strictly
+    # fractional (0.5). The round cap adds nothing — the canal's endpoints
+    # coincide with that segment's own endpoints and the shared boundary
+    # does not continue past them; the test asserts 0 < w_PR < 1, so this
+    # comment is description, not a pin.
     barriers = gpd.GeoDataFrame(
         {"name": ["canal"]},
         geometry=[LineString([(0, 0), (0, 400)])], crs="EPSG:7760")
@@ -3332,5 +3352,37 @@ None`; `LineString.buffer(0).is_empty`) was computed against shapely 2.1.2 in
 this worktree before the plan was written, not copied from the spec. The
 seven § 6.1 PCEN anchors were re-derived from the fixture geometry and agree
 with the spec's table.
+
+## Plan review R1 (6 Sep 2026, 4 lenses + adversarial verify)
+
+10 agents, 7 raw findings, **3 confirmed and 0 refuted — all three the same
+defect**, found independently by the geometry, repo-API and TDD lenses, plus
+4 minors (3 of them the same number in prose).
+
+**The defect:** `test_a_mixed_intersection_is_decomposed_part_by_part` pinned
+`1 − 410/1400`. The actual blocked length is **400**, not 410. Verified three
+times over — by two of the lenses executing this plan's own
+`shared_boundary`/`partial_weight` code, and by the controller running the
+geometry directly in shapely 2.1.2: `L_blocked = 400.0` at buffer 5 **and at
+buffer 1**, so no cap extension is involved at all.
+
+**Why it was wrong, and why the correct cases are still correct:** the round
+cap only wins extra length where the shared boundary *continues past* the
+barrier's endpoint. In this case it does not — the barrier is coterminous
+with the 400 m line piece, and the polygon piece is 200 m away, far beyond a
+5 m buffer. The Oraculum anchor is the opposite situation (the canal covers
+[25, 475] strictly inside a 500 m edge, so both caps land on real boundary
+and w_AD = 0.08 stands), as is the closed-perimeter overlap case. Fixed in
+the test, in its docstring, and in the Task 8 synthetic-city comment that
+repeated the same figure without asserting it.
+
+The remaining minor — `io.py`'s "drops exactly these three" comment, which a
+fourth entry falsifies — is fixed in Task 5 Step 4.
+
+**R2 skipped.** All three confirmed findings were one arithmetic error, fixed
+by changing a constant; the fix cannot introduce a new defect, the churn
+detector does not apply, and the corrected value has been verified
+independently by the controller. The remaining risk is carried by the tests
+themselves, which is where it belongs.
 
 Execution: subagent-driven-development.
