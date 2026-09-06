@@ -10,9 +10,9 @@ The work directory may NEVER be the data directory (or a child of it):
 `~/delhi_data` is bisynced hourly to a shared drive, so a stray sweep file
 there propagates to everyone and `~/delhi_data/phase3_verify` holds this
 repo's real-data correctness proof, which a careless overwrite would destroy.
-`scripts._measure_common.resolve_work_dir` enforces this for a real run; a
-`--dry-run` enforces the identical refusal without creating anything (see
-`_refuse_if_inside` below).
+`scripts._measure_common.resolve_work_dir` enforces this for both a real run
+and `--dry-run` — the latter passes its `create=False` keyword, so the
+identical refusal fires without creating anything.
 
 THIS IS A DRY RUN. Every profile here is frozen `code-2025` plus one factor;
 Raj's 28 Aug decisions supersede several of these methodology choices, so the
@@ -62,8 +62,8 @@ GROUPS = {"decay": DECAY, "adjacency": ADJACENCY, "bands": BANDS,
 # of showing up as a blank column months later.
 MANIFEST_KEYS_OK = (
     "profile", "status", "stages_run", "skip_reason", "stamp",
-    "preprocess_s", "compute_s", "n_links", "deg_mean", "deg_p50",
-    "deg_max", "n_isolates", "degree_from", "n_settlements",
+    "preprocess_s", "dedup_cache_warm", "compute_s", "n_links", "deg_mean",
+    "deg_p50", "deg_max", "n_isolates", "degree_from", "n_settlements",
     "n_barrier_flagged", "n_reported", "n_missing_population",
     "outputs", "commit", "run_date")
 MANIFEST_KEYS_FAILED = MANIFEST_KEYS_OK + (
@@ -94,9 +94,16 @@ def artifact_matches(path_or_frame, cfg):
     Accepts either a loaded frame (as a caller that already has one in hand
     can pass directly) or a path (loaded here with `io.read_neighbors`) —
     the shape `plan_point` uses, so a mismatch is never discovered only
-    after paying to load the file twice. A path that does not exist is
-    simply "does not match"; `plan_point` is what tells "artifact missing"
-    and "stamp mismatch" apart for its human-readable `reason`.
+    after paying to load the file twice. A path that does not exist, OR
+    cannot be loaded at all, is simply "does not match": `io.write_neighbors`
+    is not atomic (a plain `joblib.dump` straight to the final path), so a
+    preprocess killed mid-write (an OOM or a segfault — the case
+    `run_stage`'s subprocess isolation exists for) leaves a truncated file
+    that raises an unpickling/EOF error, not a `ValidationError`, on read.
+    ANY load failure means "rebuild it", never "abort the group" — the one
+    invariant this whole module exists for. `plan_point` is what tells
+    "artifact missing", "artifact unreadable" and "stamp mismatch" apart for
+    its human-readable `reason`.
 
     Reuses `pipeline.check_methodology_stamp`'s own comparison rather than
     re-implementing it — the two could otherwise drift apart silently.
@@ -105,7 +112,10 @@ def artifact_matches(path_or_frame, cfg):
         path = Path(path_or_frame)
         if not path.exists():
             return False
-        frame = io.read_neighbors(path)
+        try:
+            frame = io.read_neighbors(path)
+        except Exception:
+            return False
     else:
         frame = path_or_frame
     try:
@@ -115,12 +125,15 @@ def artifact_matches(path_or_frame, cfg):
     return True
 
 
-def _stamp_mismatch_reason(artifact, cfg):
+def _mismatch_reason(frame, cfg):
     """A short human string naming the mismatched key, e.g. `"stamp
-    mismatch: adjacency.max_distance_km"`. Extracted from
+    mismatch: adjacency.max_distance_km"`, from an ALREADY LOADED frame —
+    `plan_point` passes the one frame it read itself, so this never issues
+    a second `io.read_neighbors` call just to describe a mismatch it has
+    already detected (on `band-10km`, a ~4.37M-link frame, that second load
+    would cost minutes spent building a string). Extracted from
     `check_methodology_stamp`'s own message (regex, not a second
-    comparison) so this text can never disagree with the boolean above."""
-    frame = io.read_neighbors(artifact)
+    comparison) so this text can never disagree with `artifact_matches`."""
     try:
         pipeline.check_methodology_stamp(frame, cfg)
     except validate.ValidationError as exc:
@@ -131,15 +144,36 @@ def _stamp_mismatch_reason(artifact, cfg):
 
 def plan_point(profile, work_dir):
     """What `profile` needs against the artifact under `work_dir`: both
-    stages when the artifact is missing or its stamp mismatches `profile`'s
-    config, `compute` alone when it already matches."""
+    stages when the artifact is missing, unreadable, or its stamp
+    mismatches `profile`'s config; `compute` alone when it already matches.
+
+    Reads the artifact AT MOST ONCE: when it exists and loads cleanly, that
+    same in-memory frame is handed to `artifact_matches` (which accepts a
+    frame directly) and, on a mismatch, to `_mismatch_reason` — never a
+    second `io.read_neighbors` of a file that can be millions of links.
+    A file that fails to load (missing or corrupt) is never read twice
+    either: `artifact_matches` gets the untouched path and makes its own
+    (cheap, exists-check-first) determination.
+    """
     cfg = load_config(profile)
     artifact = Path(work_dir) / cfg.paths.neighbors_artifact
-    if artifact_matches(artifact, cfg):
+    frame = None
+    if artifact.exists():
+        try:
+            frame = io.read_neighbors(artifact)
+        except Exception:
+            frame = None  # corrupt/truncated — treated exactly like missing
+
+    if artifact_matches(frame if frame is not None else artifact, cfg):
         return Point(profile, artifact, ("compute",),
                     "artifact matches — preprocess skipped")
-    reason = ("artifact missing" if not artifact.exists()
-             else _stamp_mismatch_reason(artifact, cfg))
+
+    if frame is not None:
+        reason = _mismatch_reason(frame, cfg)
+    elif artifact.exists():
+        reason = "artifact unreadable — rebuilding"
+    else:
+        reason = "artifact missing"
     return Point(profile, artifact, ("preprocess", "compute"), reason)
 
 
@@ -272,6 +306,20 @@ def _extract_int(text, field):
     return int(match.group(1)) if match else None
 
 
+def _dedup_cache_warm(work_dir):
+    """True iff `delhi_psi.pipeline._dedup_cached`'s settlement/barrier
+    `*.dedup.stamp` files already exist under `work_dir` — i.e. some earlier
+    preprocess IN THIS WORK DIR already paid the one-off O(n^2) dedup cost
+    that `decay-none` is ordered first (spec § 7) specifically to absorb.
+    Checked and recorded BEFORE a point's own preprocess runs, so a
+    `preprocess_s` reading is self-describing: a reader can tell a cold-
+    cache number from a warm one without reconstructing what happened —
+    the gap this closes is `decay-none` failing and the NEXT point silently
+    paying (and reporting) the cold-cache cost instead.
+    """
+    return any(Path(work_dir).glob("*.dedup.stamp"))
+
+
 def _expected_outputs(cfg, work_dir):
     """The paths `compute` should have written, recovered from the config's
     own `outputs.denominators` / `outputs.formats` / `name_template` plus
@@ -334,6 +382,12 @@ def run_group(group, *, work_dir, data_dir, run_date, commit, only=None):
         completed = []
         failure = None
         for stage in point.stages:
+            if stage == "preprocess":
+                # Recorded BEFORE the subprocess runs — the dedup stamp
+                # files this checks are exactly what THIS preprocess is
+                # about to write, so checking after would always read
+                # "warm" and defeat the point.
+                manifest["dedup_cache_warm"] = _dedup_cache_warm(work_dir)
             try:
                 timing = run_stage(profile, stage, data_dir=data_dir,
                                    work_dir=work_dir)
@@ -394,26 +448,6 @@ def run_group(group, *, work_dir, data_dir, run_date, commit, only=None):
 
 
 # --- CLI -------------------------------------------------------------------
-def _refuse_if_inside(work_dir, data_dir):
-    """The ONE containment check `main` uses for both the real run and
-    `--dry-run`, so the two paths cannot silently diverge.
-
-    Mirrors `scripts._measure_common.resolve_work_dir`'s own guard (which
-    also mkdirs, which is exactly what `--dry-run` must not do) — that
-    module's docstring deliberately caps it at five public names, so this
-    three-line comparison is kept here instead of asking it to export a
-    sixth. Same message shape (both mention "bisynced"), so a refusal reads
-    identically whichever path produced it.
-    """
-    data_dir = Path(data_dir).expanduser().resolve()
-    resolved = Path(work_dir).resolve()
-    if resolved == data_dir or data_dir in resolved.parents:
-        raise SystemExit(
-            f"work directory {work_dir} is inside the data directory "
-            f"{data_dir}, which this sweep never writes to (it is bisynced "
-            "to the shared drive)")
-
-
 def _current_commit():
     try:
         proc = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
@@ -456,12 +490,11 @@ def main(argv=None):
     data_dir = Path(args.data_dir).expanduser()
 
     if args.dry_run:
-        # resolve_work_dir with data_dir=None only resolves the path — no
-        # guard, no mkdir (see its own docstring) — so the containment
-        # check has to be applied separately, and must not create anything
-        # of its own either.
-        work_dir = resolve_work_dir(args.work_dir, data_dir=None)
-        _refuse_if_inside(work_dir, data_dir)
+        # Same containment check a real run gets (resolve_work_dir's guard
+        # fires identically either way), via its create=False keyword,
+        # which only skips the mkdir — so the two paths cannot diverge.
+        work_dir = resolve_work_dir(args.work_dir, data_dir=data_dir,
+                                    create=False)
         profiles = GROUPS[args.group]
         if args.only:
             profiles = tuple(p for p in profiles if p in args.only)

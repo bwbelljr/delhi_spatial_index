@@ -16,13 +16,20 @@ FENCE = "```text"
 
 
 def resolve_work_dir(cli_value=None, *, data_dir=None,
-                     prefix="delhi_psi_measure_"):
+                     prefix="delhi_psi_measure_", create=True):
     """Where a script's scratch output goes — NEVER the data directory.
 
     ~/delhi_data is bisynced to the shared drive, so a stray file there
-    propagates to everyone. With `data_dir` given the guard fires and the
-    directory is created; with `data_dir` None this only RESOLVES a path (no
-    guard, no mkdir), which is the shape the default test uses.
+    propagates to everyone. With `data_dir` given the guard fires; with
+    `data_dir` None this only RESOLVES a path (no guard, no mkdir), which is
+    the shape the default test uses.
+
+    `create` (default True) gates ONLY the mkdir at the end — the guard
+    itself always fires when `data_dir` is given, `create` or not. Pass
+    `create=False` to get the identical refusal without creating the
+    directory (a `--dry-run` caller's shape): every existing caller passes
+    `data_dir` and wants the directory made, so the default keeps their
+    behaviour unchanged.
     """
     work_dir = (Path(cli_value).expanduser() if cli_value
                 else Path(tempfile.mkdtemp(prefix=prefix)))
@@ -35,7 +42,8 @@ def resolve_work_dir(cli_value=None, *, data_dir=None,
             f"work directory {work_dir} is inside the data directory "
             f"{data_dir}, which these scripts never write to (it is bisynced "
             "to the shared drive)")
-    work_dir.mkdir(parents=True, exist_ok=True)
+    if create:
+        work_dir.mkdir(parents=True, exist_ok=True)
     return work_dir
 
 
