@@ -572,11 +572,45 @@ EXPECTED_BAND_PAIRS = {
 ```
 
 `ADDED_BAND_PAIRS` needs the pairs each new radius adds over the one below it.
-**Derive them, do not guess:** load each city's `settlements.geojson`, compute
-every polygon-to-polygon distance, and list the pairs in each half-open band.
-Write them into the table as literals with their distances in a comment, the
-way the existing rows do. Oraculum at 5.0 km and 10.0 km adds nothing (21 = the
-complete graph on 7 settlements), and that empty set is itself worth a comment.
+These were derived from the committed fixtures before this plan was revised —
+use them, and re-derive only to check:
+
+```python
+    "oraculum": {
+        0.25: {("A", "RV"), ("C", "RV")},          # 0.100 km each
+        0.75: {("B", "D"), ("B", "IND")},          # 0.500 km each
+        # BOTH pairs are at EXACTLY 1000.000 m — the `<=` boundary. See
+        # test_a_pair_exactly_at_the_radius_is_a_neighbour.
+        1.0: {("A", "C"), ("E", "RV")},            # 1.000 km each, ON the edge
+        5.0: {("A", "IND"), ("C", "D"),            # 1.500 km each
+              ("D", "IND"),                        # 2.000 km
+              ("D", "RV"), ("IND", "RV")},         # 1.166190379 km each
+        # Nothing: 21 pairs IS the complete graph on 7 settlements, so the
+        # city cannot distinguish 5 km from 10 km. The empty set is the pin.
+        10.0: set(),
+    },
+    "messy": {
+        0.25: {("H", "L"), ("H", "T"), ("L", "S")},   # 0.131519/0.223607/0.199
+        0.75: {("G", "M"), ("S", "T")},               # 0.450 / 0.630242
+        # M-U is at EXACTLY 1000.000 m — the `<=` boundary.
+        1.0: {("M", "U"),                             # 1.000 km, ON the edge
+              ("N", "O1"), ("O2", "U")},              # 0.800 km each
+        5.0: {("G", "H"), ("G", "L"), ("G", "O1"), ("G", "O2"), ("G", "T"),
+              ("G", "U"), ("H", "M"), ("L", "M"), ("M", "N"), ("M", "O1"),
+              ("M", "O2"), ("M", "S"), ("M", "T"), ("N", "U")},
+        # I-U is at EXACTLY 10000.000 m — the `<=` boundary again.
+        10.0: {("G", "N"), ("G", "S"), ("H", "N"), ("H", "O1"), ("H", "O2"),
+               ("H", "U"), ("I", "N"), ("I", "O1"), ("I", "O2"),
+               ("I", "U"),                            # 10.000 km, ON the edge
+               ("L", "N"), ("L", "O1"), ("L", "O2"), ("L", "U"), ("N", "T"),
+               ("O1", "S"), ("O1", "T"), ("O2", "S"), ("O2", "T"), ("S", "U"),
+               ("T", "U")},
+    },
+```
+
+Check the arithmetic before you rely on it: each city's added-pair counts must
+sum with the row below to the `EXPECTED_BAND_PAIRS` total — Oraculum
+10+2+2+2+5+0 = 21, messy 5+3+2+3+14+21 = 48.
 
 - [ ] **Step 1b: Pin the `<=` boundary explicitly**
 
@@ -587,6 +621,7 @@ follow what is already there):
 
 ```python
 # Measured on the committed fixtures: these pairs are at EXACTLY the radius.
+# Oraculum A-C and E-RV, messy M-U — all three at 1000.000000 m.
 BOUNDARY_PAIRS_1KM = {"oraculum": 2, "messy": 1}
 
 
