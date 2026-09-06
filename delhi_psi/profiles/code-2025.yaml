@@ -47,8 +47,10 @@ methodology:
                                     # max_distance_km: required iff rule is
                                     # within_distance (>= 0 km, polygon-to-polygon)
   barrier:
-    rule: global_asymmetric         # global_asymmetric | pairwise
-                                    # partial_weighted: reserved (spec 4)
+    rule: global_asymmetric         # global_asymmetric | pairwise | partial_weighted
+                                    # buffer_m: required iff rule is
+                                    # partial_weighted (> 0 metres); a boundary
+                                    # point within buffer_m of a barrier is blocked
     combine: any                    # any | [layer names]; which flags OR into `barrier`
                                     # (every configured layer's flag column is always computed)
   decay:

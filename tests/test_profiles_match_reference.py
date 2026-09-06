@@ -100,6 +100,8 @@ def test_production_decay_forms_are_exactly_the_config_table():
 EXTRA_PARAMS = {
     ("methodology.adjacency.rule", "within_distance"):
         {"max_distance_km": 0.25},
+    ("methodology.barrier.rule", "partial_weighted"):
+        {"barrier_buffer_m": 5.0},
     ("methodology.decay.form", "inverse_power"): {"exponent": 2},
     ("methodology.decay.form", "exponential"): {"scale_km": 1.0},
 }
