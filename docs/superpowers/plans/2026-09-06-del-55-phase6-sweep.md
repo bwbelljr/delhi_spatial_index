@@ -17,9 +17,13 @@ a profile omits). `scripts/run_sweep.py` drives `delhi-psi preprocess` /
 `code-2025` baseline and emits rank-based comparison blocks into
 `docs/data/phase6_sweep.md`.
 
-**Tech Stack:** uv, Python 3.13, pandas/geopandas, pytest, PyYAML, scipy for
-the rank statistics (already a transitive dependency — confirm in Task 5 and
-add explicitly to `pyproject.toml` if it is not a direct one).
+**Tech Stack:** uv, Python 3.13, pandas/geopandas, pytest, PyYAML. **No new
+dependency.** scipy is not a dependency of this project — not direct, not
+transitive, absent from `uv.lock` — so Spearman ρ and Kendall τ-b are
+implemented on pandas + numpy in Task 5. Adding scipy would also mean
+regenerating and committing `uv.lock`, which CI's `uv sync --locked` requires
+and which is easy to forget; and it would promote a heavyweight runtime
+dependency for code that lives in `scripts/`, not in the shipped package.
 
 **Spec:** `docs/superpowers/specs/2026-09-06-phase6-sweep-dry-run-design.md`
 
@@ -61,6 +65,10 @@ add explicitly to `pyproject.toml` if it is not a direct one).
 - Create: `tests/test_sweep_profiles.py`
 - Modify: `scripts/generate_production_fixtures.py:36` (`PROFILES`)
 - Modify: `tests/test_production_fixtures.py:17` (`PROFILES`)
+- Modify: `tests/test_config.py:55-56` (`test_both_profiles_ship` asserts the
+  EXACT set of shipped YAMLs and goes red the moment a profile is added)
+- Modify: `docs/methodology-config.md` § 3 step 2 (the registration list omits
+  `tests/test_config.py`, which is why the surprise exists)
 - Create (generated): `tests/fixtures/oraculum/production/<profile>.csv` and
   `tests/fixtures/messy/production/<profile>.csv`, ten files
 
@@ -139,6 +147,18 @@ def test_the_profile_moves_exactly_the_keys_it_claims(profile, base_methodology)
     expected = {k: (str(v) if not isinstance(v, bool) else v)
                 for k, v in SWEEP_PROFILES[profile].items()}
     assert moved == expected
+
+
+@pytest.mark.parametrize("profile", sorted(SWEEP_PROFILES))
+def test_the_profile_copies_the_baseline_categories_verbatim(profile):
+    """Each sweep profile hand-copies the ten-category identity mapping, and
+    the one-factor guard above only inspects `methodology`. A typo in a
+    category name would change which settlements are excluded — a second
+    factor, invisible to every other test in the repo."""
+    base = load_config(BASE).categories
+    got = load_config(profile).categories
+    assert got.mapping == base.mapping
+    assert got.scheme == base.scheme
 
 
 @pytest.mark.parametrize("profile", sorted(SWEEP_PROFILES))
@@ -263,6 +283,50 @@ PROFILES = ("code-2025", "manuscript",
 Make the same edit to `PROFILES` in `tests/test_production_fixtures.py` (it is
 a list there, not a tuple).
 
+Then `tests/test_config.py:55-56`, which no registration document mentions and
+which goes red the moment an eighth line lands in `delhi_psi/profiles/`:
+
+```python
+def test_both_profiles_ship():
+    assert sorted(shipped_profiles()) == ["code-2025", "manuscript"]
+```
+
+Keep its intent — the shipped set is *exactly* what we think it is, so a
+forgotten or stray YAML is caught — by widening the literal rather than
+loosening the assertion:
+
+```python
+# Every YAML in delhi_psi/profiles/, in one place. A stray or forgotten file
+# is exactly what this test exists to catch, so it stays an equality: adding a
+# profile means adding it here, and `docs/methodology-config.md` § 3 step 2
+# says so.
+SHIPPED = [
+    "adj-touch", "band-0km", "band-10km", "band-1km", "band-5km", "code-2025",
+    "decay-boundary", "decay-exp2km", "decay-exp5km", "decay-none",
+    "decay-power05", "decay-power2", "manuscript",
+]
+
+
+def test_the_shipped_profiles_are_exactly_these():
+    assert sorted(shipped_profiles()) == sorted(SHIPPED)
+
+
+def test_the_two_production_profiles_still_ship():
+    """The pair everything else defaults to; named separately so the intent
+    survives the sweep profiles being deleted one day."""
+    assert {"code-2025", "manuscript"} <= set(shipped_profiles())
+```
+
+Task 1 adds the five band/adjacency names; Task 2 appends its six.
+
+Finally, `docs/methodology-config.md` § 3 step 2 ("**Register it.**") gains the
+missing line, so the next person adding a profile is not ambushed:
+
+```
+   Add the name to `SHIPPED` in `tests/test_config.py` as well — it asserts
+   the exact set of shipped YAMLs, and a new profile turns it red.
+```
+
 - [ ] **Step 6: Generate the fixtures and verify nothing else moved**
 
 ```bash
@@ -275,15 +339,15 @@ modified, STOP and report — that is a hard stop under spec § 8.
 
 - [ ] **Step 7: Run this task's tests**
 
-Run: `uv run pytest -q -W error tests/test_sweep_profiles.py tests/test_production_fixtures.py`
+Run: `uv run pytest -q -W error tests/test_sweep_profiles.py tests/test_production_fixtures.py tests/test_config.py`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add delhi_psi/profiles tests/test_sweep_profiles.py \
+git add delhi_psi/profiles tests/test_sweep_profiles.py tests/test_config.py \
         scripts/generate_production_fixtures.py tests/test_production_fixtures.py \
-        tests/fixtures
+        docs/methodology-config.md tests/fixtures
 git commit -m "feat(profiles): the five adjacency and band sweep points (DEL-55)"
 ```
 
@@ -298,7 +362,8 @@ git commit -m "feat(profiles): the five adjacency and band sweep points (DEL-55)
 - Modify: `tests/test_sweep_profiles.py` (extend `SWEEP_PROFILES`, add the
   shared-artifact test)
 - Modify: `scripts/generate_production_fixtures.py`,
-  `tests/test_production_fixtures.py` (`PROFILES`)
+  `tests/test_production_fixtures.py` (`PROFILES`), `tests/test_config.py`
+  (`SHIPPED`, the six decay names)
 - Create (generated): twelve more `production/*.csv`
 
 **Interfaces:**
@@ -427,7 +492,7 @@ git commit -m "feat(profiles): the six decay sweep points, one shared artifact (
 
 ---
 
-### Task 3: Reference cross-check for the four unpinned decay constants
+### Task 3: Reference cross-check for the seven unpinned constants
 
 **Files:**
 - Modify: `tests/variants.py` (`VARIANTS`)
@@ -445,13 +510,10 @@ git commit -m "feat(profiles): the six decay sweep points, one shared artifact (
 In `tests/variants.py`, after `"exp1"`, add:
 
 ```python
-    # DEL-55: the three decay CONSTANTS the Phase 6 sweep uses that 3D never
-    # pinned. Same code paths as pow1/pow2/exp1 at different numbers, so the
-    # risk is low — but the rule since 3D is that a methodology value ships as
-    # a row here, scored by both implementations and compared at 1e-12. The
-    # sweep's band radii (1, 5, 10 km) need no rows: on a fixture city 200 m
-    # across, every one of them is the complete graph `band_large` already
-    # pins.
+    # DEL-55: the decay CONSTANTS the Phase 6 sweep uses that 3D never pinned.
+    # Same code paths as pow1/pow2/exp1 at different numbers, so the risk is
+    # low — but the rule since 3D is that a methodology value ships as a row
+    # here, scored by both implementations and compared at 1e-12.
     "decay_none": {
         "decay": {"form": "none", "distance": "centroid",
                   "distance_unit": "km"},
@@ -468,7 +530,85 @@ In `tests/variants.py`, after `"exp1"`, add:
         "decay": {"form": "exponential", "scale_km": 5.0,
                   "distance": "centroid", "distance_unit": "km"},
     },
+    # DEL-55: the sweep's three real radii. Unlike 0.25 and 0.75 km, these were
+    # NOT chosen to avoid the `<=` boundary — they are the methodological
+    # points DEL-36 asks for, and the Delhi run uses them as they are. Both
+    # cities distinguish all three (Oraculum spans 4.0 x 3.0 km, messy
+    # 21.0 x 2.4 km; undirected pairs 16/21/21 and 13/27/48), and 1 km lands
+    # EXACTLY on the boundary: two pairs at 1000.000 m in Oraculum, one in
+    # messy, one more at 10 km in messy. That is the point of pinning them —
+    # if the two implementations ever disagree about a distance sitting
+    # exactly on the radius, it surfaces here rather than on 4,357 settlements.
+    "band_1km": {
+        "adjacency": {"rule": "within_distance", "max_distance_km": 1.0},
+        "decay": {"form": "inverse_linear", "distance": "centroid",
+                  "distance_unit": "km"},
+    },
+    "band_5km": {
+        "adjacency": {"rule": "within_distance", "max_distance_km": 5.0},
+        "decay": {"form": "inverse_linear", "distance": "centroid",
+                  "distance_unit": "km"},
+    },
+    "band_10km": {
+        "adjacency": {"rule": "within_distance", "max_distance_km": 10.0},
+        "decay": {"form": "inverse_linear", "distance": "centroid",
+                  "distance_unit": "km"},
+    },
 ```
+
+Then extend the band constants below the table. `BAND_RADII_KM` and
+`EXPECTED_BAND_PAIRS` / `ADDED_BAND_PAIRS` are consumed by
+`scripts/check_oraculum_invariants.check_bands` and
+`tests/test_variant_rules.py` — **read both before editing**, and add the three
+radii with the measured pair counts:
+
+```python
+BAND_RADII_KM = (0.0, 0.25, 0.75, 1.0, 5.0, 10.0)
+
+EXPECTED_BAND_PAIRS = {
+    "oraculum": {0.0: 10, 0.25: 12, 0.75: 14, 1.0: 16, 5.0: 21, 10.0: 21},
+    "messy": {0.0: 5, 0.25: 8, 0.75: 10, 1.0: 13, 5.0: 27, 10.0: 48},
+}
+```
+
+`ADDED_BAND_PAIRS` needs the pairs each new radius adds over the one below it.
+**Derive them, do not guess:** load each city's `settlements.geojson`, compute
+every polygon-to-polygon distance, and list the pairs in each half-open band.
+Write them into the table as literals with their distances in a comment, the
+way the existing rows do. Oraculum at 5.0 km and 10.0 km adds nothing (21 = the
+complete graph on 7 settlements), and that empty set is itself worth a comment.
+
+- [ ] **Step 1b: Pin the `<=` boundary explicitly**
+
+The three radii sit on ties, so the inclusive comparison stops being an
+implementation detail and becomes a pinned rule. Add to
+`tests/test_variant_rules.py` (or the file where `check_bands` is exercised —
+follow what is already there):
+
+```python
+# Measured on the committed fixtures: these pairs are at EXACTLY the radius.
+BOUNDARY_PAIRS_1KM = {"oraculum": 2, "messy": 1}
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_a_pair_exactly_at_the_radius_is_a_neighbour(city):
+    """`within_distance` is `<=`, not `<`. 3D never had to say so — 0.25 and
+    0.75 km were chosen to sit in a gap of both cities' distance lists. The
+    sweep's 1 km radius cannot: it lands exactly on the boundary. Pin the
+    inclusive reading, and pin how many pairs depend on it.
+    """
+    gdf = city.load_settlements()
+    exact = [(i, j) for i, j in itertools.combinations(range(len(gdf)), 2)
+             if gdf.geometry.iloc[i].distance(gdf.geometry.iloc[j]) == 1000.0]
+    assert len(exact) == BOUNDARY_PAIRS_1KM[city.name]
+    pairs = adjacency_pairs(gdf, rule="within_distance", max_distance_km=1.0)
+    for i, j in exact:
+        assert pair_of(gdf, i, j) in pairs, "a pair AT the radius must be in"
+```
+
+Adapt `adjacency_pairs` / `pair_of` to whatever the existing band tests call —
+read `tests/test_variant_rules.py` first and reuse its helpers rather than
+inventing new ones.
 
 - [ ] **Step 2: Run the variant tests and watch them fail**
 
@@ -712,17 +852,44 @@ Expected: FAIL — `ModuleNotFoundError: scripts.run_sweep`.
    (sum of list lengths, i.e. DIRECTED links), `deg_mean` (float),
    `deg_p50`, `deg_max`, `n_isolates`.
 7. `run_group(group, *, work_dir, data_dir, run_date, commit, only=None)` —
-   for each point: plan, run its stages, compute `degree_report` from the
-   artifact **immediately after preprocess while it is already in memory**
-   (nothing downstream reloads a gigabyte file), and write
-   `manifest/<profile>.json`. On `StageFailed`, write a `FAILED` manifest and
-   continue.
+   for each point: plan, run its stages, then, **only when this point actually
+   ran `preprocess`**, load the artifact once with `io.read_neighbors` and
+   compute `degree_report`. The stages are subprocesses, so the artifact is
+   not in the runner's memory when `preprocess` returns — this one load is
+   deliberate, it is the peak-memory moment of the cycle for `band-10km`
+   (4.37 M links), and it happens exactly once per artifact.
+   A point that skipped `preprocess` copies the degree summary from the
+   manifest of the point that built its artifact and records
+   `"degree_from": "<that profile>"`; if no such manifest exists (a re-run
+   against a pre-existing artifact), the degree keys are `null` and
+   `degree_from` says `"artifact predates this run"` — never silently zero,
+   because a zero would read as "no links" and trip the `isolates` flag.
+   Then write `manifest/<profile>.json`. On `StageFailed`, write a `FAILED`
+   manifest and continue.
 8. Manifest keys: `profile`, `status` (`OK`/`FAILED`), `stages_run`,
    `skip_reason`, `stamp`, `preprocess_s`, `compute_s`, `n_links`, `deg_mean`,
-   `deg_p50`, `deg_max`, `n_isolates`, `n_settlements`, `n_barrier_flagged`,
-   `n_reported`, `n_missing_population`, `outputs`, `commit`, `run_date`, and
-   on failure `failed_stage`, `returncode`, `stderr_tail`.
-9. `main(argv=None)` — `--group` (required, one of `GROUPS`), `--data-dir`
+   `deg_p50`, `deg_max`, `n_isolates`, `degree_from`, `n_settlements`,
+   `n_barrier_flagged`, `n_reported`, `n_missing_population`, `outputs`,
+   `commit`, `run_date`, and on failure `failed_stage`, `returncode`,
+   `stderr_tail`.
+
+   **Where each count comes from, because three of them are not obvious.**
+   `n_settlements` and `n_barrier_flagged` are fields of `PreprocessResult`;
+   `n_reported` and `n_missing_population` are fields of `ComputeResult` — but
+   the runner invokes the CLI as a subprocess and therefore never sees those
+   objects. Before writing this, read `delhi_psi/cli.py` and find out what each
+   stage prints or logs on success. If a count is not recoverable from the
+   subprocess's output, recover it from the artifacts instead — `n_settlements`
+   from the neighbours frame, `n_reported` from the output CSV's row count,
+   `n_missing_population` from `missing_population.csv` — and say in a comment
+   which route each took. **Do not invent a value and do not silently drop a
+   key**: a manifest is this multi-hour run's only durable record.
+
+9. A schema test (`test_the_manifest_carries_every_documented_key`) asserts the
+   exact key set of both an `OK` and a `FAILED` manifest against a literal
+   list, so a key that quietly stops being written fails a test rather than
+   showing up as a blank column months later.
+10. `main(argv=None)` — `--group` (required, one of `GROUPS`), `--data-dir`
    (default `~/delhi_data`), `--work-dir` (default `~/psi_sweep`), `--only`
    (repeatable, restricts to named profiles), `--dry-run`, `--run-date`
    (default: today, so a re-run is reproducible), `--log-level`. The work dir
@@ -774,8 +941,14 @@ git commit -m "feat(sweep): the runner — plan, cost manifest, failure isolatio
   - `cohens_d(x, y) -> float`
   - `bootstrap_rank_intervals(frame, *, seed=0, n=1000) -> dict`
   - `bootstrap_p_greater(frame, a, b, *, seed=0, n=1000) -> float`
-  - `decile_jaccard(a, b, *, top=True) -> float`
+  - `decile_set(series, *, top, fraction=0.10) -> tuple[set, bool]` — the
+    tie-inclusive set and whether it is gated
+  - `decile_jaccard(a, b, *, top=True) -> float | None` — `None` when either
+    side is gated; the renderer turns that into `—`
+  - `spearman_rho(a, b) -> float`, `kendall_tau_b(a, b) -> float`
   - `flags(row) -> tuple[str, ...]`
+  - `OUTPUT_USECOLS` — the explicit column list every CSV read passes, so a
+    `band-10km` output's neighbour lists are never parsed
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -877,6 +1050,61 @@ def test_decile_jaccard_of_a_frame_with_itself_is_one():
     ...
 
 
+def test_a_tie_block_at_the_cut_is_taken_whole():
+    """Membership must be a property of the numbers. With values
+    [0,0,0,0,0,0,0,0,1,2] and k=1, the bottom decile is all EIGHT zeros, not
+    whichever one pandas happened to sort first."""
+    got, gated = S.decile_set(pd.Series([0]*8 + [1, 2]), top=False)
+    assert len(got) == 8
+
+
+def test_an_oversized_tie_block_gates_the_cell():
+    """Eight rows is 8x the decile of 1 — past 1.5x, so every statistic built
+    on this set renders an em dash rather than a number measuring sort order."""
+    _, gated = S.decile_set(pd.Series([0]*8 + [1, 2]), top=False)
+    assert gated
+    assert S.decile_jaccard(pd.Series([0]*8 + [1, 2]),
+                            pd.Series([0]*8 + [1, 2]), top=False) is None
+
+
+def test_the_real_baseline_shape_ties_but_does_not_gate():
+    """The two real shapes, and they land on opposite sides of the gate.
+
+    Baseline: 452 rows at norm_psi == 0 against a decile of 413. Tie-inclusive
+    gives a well-defined set of 452 — 9 % oversized, under the 1.5x gate, so it
+    is REPORTED. The rule that matters here is tie-inclusion, not gating: it is
+    what stops nsmallest(413) from picking 413 of the 452 by sort order.
+    """
+    baseline = pd.Series([0.0]*452 + list(np.linspace(0.1, 1.0, 4131 - 452)))
+    got, gated = S.decile_set(baseline, top=False)
+    assert len(got) == 452 and not gated
+    assert not S.decile_set(baseline, top=True)[1]
+
+
+def test_the_own_only_anchor_shape_gates():
+    """Own-only: 1,834 of 4,131 rows own nothing, so 44 % of the universe sits
+    at exactly 0. A "decile" of 1,834 against k=413 is 4.4x — past the gate,
+    and the cell renders an em dash."""
+    anchor = pd.Series([0.0]*1834 + list(np.linspace(0.1, 1.0, 4131 - 1834)))
+    got, gated = S.decile_set(anchor, top=False)
+    assert len(got) == 1834 and gated
+
+
+def test_kendall_tau_b_differs_from_tau_a_when_there_are_ties():
+    """An implementation that silently computes tau-a passes every tie-free
+    case. Hand-computed: x = [1,1,2,3], y = [1,2,2,3].
+    Pairs: 6 total; concordant 4, discordant 0, 1 tied in x only,
+    1 tied in y only -> tau_b = 4 / sqrt(5 * 5) = 0.8, while tau_a = 4/6.
+    """
+    got = S.kendall_tau_b(pd.Series([1, 1, 2, 3]), pd.Series([1, 2, 2, 3]))
+    assert got == pytest.approx(0.8)
+    assert got != pytest.approx(4 / 6)
+
+
+def test_spearman_rho_averages_tied_ranks():
+    ...
+
+
 def test_flags_fire_on_the_documented_conditions():
     assert "smoothed" in S.flags({"own_share_p50": 0.05, ...})
     assert "isolates" in S.flags({"n_isolates": 3, ...})
@@ -896,12 +1124,38 @@ Expected: FAIL — `ModuleNotFoundError`.
 
 Rules that the tests above do not fully pin, and that matter:
 
-- `own_share` pools over the eight amount columns by summing own_pcen and
-  summing pcen across services, then dividing — not by averaging per-service
-  shares, which would weight a settlement's rarest service equally with its
-  commonest.
-- The guard is `own_share <= 1 + 1e-9`; raise `ValueError` naming the worst
-  offending row and its share.
+- `own_share` pools over the **seven** amount columns (six point services plus
+  `road_length`) by summing own_pcen and summing pcen across services, then
+  dividing — not by averaging per-service shares, which would weight a
+  settlement's rarest service equally with its commonest.
+- **0/0 is `NaN`, not 0.** A settlement that owns nothing and receives nothing
+  has no share; 1,834 of the baseline's 4,131 reported settlements own zero of
+  all seven services, so this is the common case. Return `NaN` for those rows,
+  exclude them from the median, and return the count alongside as
+  `n_own_share_undef`. Reading them as 0 would drag `own_share_p50` toward the
+  `smoothed` flag on every point.
+- The guard is `own_share <= 1 + 1e-9` on the non-NaN rows; raise `ValueError`
+  naming the worst offending row and its share. Note in the docstring what the
+  guard does *not* prove: the denominator cancels in the ratio, so it catches a
+  mis-shaped reconstruction, not a wrong denominator. What pins the denominator
+  is `test_own_share_of_one_when_there_is_no_neighbour_term`.
+- **Decile sets are tie-inclusive and gated.** `decile_set(series, *, top,
+  fraction=0.10)` returns every row tied with the k-th value, so membership is
+  a property of the numbers and not of pandas' sort order — the bottom-decile
+  cut on this data falls inside a 452-row tie block at the baseline and an
+  1,834-row block at the own-only anchor, against a decile of 413. When the
+  returned set exceeds `1.5 * k`, the set is still returned but
+  `decile_is_gated(...)` is True and every statistic built on it renders `—`.
+  This governs `jaccard_top10`, `jaccard_bottom10`, and § 6.5's three
+  `*_decile_share_*` cells alike. A test must pin BOTH halves: that a tie block
+  is taken whole, and that an oversized one gates.
+- **No scipy.** `spearman_rho(a, b)` is Pearson on average-tied ranks
+  (`Series.rank()` then `numpy.corrcoef`). `kendall_tau_b(a, b)` uses the
+  standard formula `(C - D) / sqrt((n0 - n1) * (n0 - n2))`, computed by
+  broadcasting in chunks (4,131 rows is a 17 M-pair comparison; chunk it at
+  ~1,000 rows and accumulate, keeping the intermediate as `int8`). Test τ-b
+  against at least one hand-computed case WITH ties — an implementation that
+  silently uses τ-a passes every tie-free case.
 - `own_only_psi` reuses Eq. 2's min-max and must fail the same way
   `delhi_psi.index` does on a constant column, with the same explanation —
   import and call the production helper rather than re-deriving it if one is
@@ -913,9 +1167,6 @@ Rules that the tests above do not fully pin, and that matter:
 - `kendall_tau_order` compares two orderings of the same category set; if the
   sets differ (a category absent from a run), restrict to the intersection and
   record how many were dropped.
-- Correlations come from `scipy.stats` (`spearmanr`, `kendalltau` with
-  `variant="b"`). Confirm scipy is a direct dependency in `pyproject.toml`; if
-  it is only transitive, add it explicitly in this task's commit.
 - No statistic on the § 6.9 forbidden list is implemented. Not "implemented but
   unused" — absent.
 
@@ -927,9 +1178,11 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/summarize_sweep.py tests/test_summarize_sweep.py pyproject.toml
+git add scripts/summarize_sweep.py tests/test_summarize_sweep.py
 git commit -m "feat(sweep): rank-based sweep statistics (DEL-55)"
 ```
+
+No `pyproject.toml`, no `uv.lock`: this task adds no dependency.
 
 ---
 
@@ -1115,3 +1368,15 @@ tests and T6's rendering. `SHARED_ARTIFACT` is defined in T2 and imported by
 T4's test. `own_share(frame, denominator, columns=...)` takes the same three
 arguments in every test and in T6's use. `degree_report(frame, id_col,
 nbr_col=None)` — T4's test passes `nbr_col`, the runner does not.
+`decile_set` returns `(set, gated)` everywhere it appears, and
+`decile_jaccard` returns `float | None` in T5's interface, its tests, and T6's
+renderer.
+
+**Revised after the plan review** (spec § 12): Task 1 gained
+`tests/test_config.py` and the `docs/methodology-config.md` § 3 fix; Task 1's
+guard gained the `categories` comparison; Task 3 grew from four variant rows to
+seven and gained the `<=` boundary pin; Task 4's `degree_report` no longer
+claims the artifact is in memory and gained `degree_from`, the manifest key
+provenance and a schema test; Task 5 dropped scipy, made `own_share` NaN-aware,
+and gained the tie-inclusive gated decile rule; the CSV reads gained
+`OUTPUT_USECOLS`.

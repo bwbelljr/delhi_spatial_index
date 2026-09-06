@@ -119,7 +119,13 @@ Every sweep profile is `code-2025` copied verbatim with:
   `colonies_neighbors.joblib`);
 - `outputs.denominators: [popdensity]` — see § 4.3;
 - `outputs.formats: [csv]` — the summariser reads CSV; `.shp` and `.joblib`
-  would add ~18 MB per point for nothing;
+  would add ~18 MB per point for nothing. **This does not make the outputs
+  small.** The CSV carries `geometry`, `centroid`, `nbrs_bbox` and
+  `nbrs_dist_bbox`, so its size scales with the LINK count: the baseline's
+  ~30 k links give 15 MB, and `band-10km`'s 4.37 M links will give a file
+  two orders larger. The saving is real but bounded, and the summariser must
+  therefore read with an explicit `usecols` (§ 6) rather than loading a
+  quarter-gigabyte of neighbour lists it has no use for;
 - the one or two `methodology:` keys the table in § 3 names, and nothing else.
 - **No `paths.out_dir`** — a literal there would ignore `--data-dir` (§ 3 of
   `docs/methodology-config.md`).
@@ -176,27 +182,62 @@ and the fixtures regenerated. **No profile is added to `PROFILE_RULES` in
 neither `"code"` nor `"ideal"` wholesale. § 3 says such a profile "is pinned by
 its production fixture alone". That is the correct and only registration.
 
+**§ 3's registration list is incomplete, and this ticket fixes it.**
+`tests/test_config.py::test_both_profiles_ship` asserts the *exact* set of
+shipped YAMLs (`sorted(shipped_profiles()) == ["code-2025", "manuscript"]`),
+so dropping eleven files into `delhi_psi/profiles/` turns the suite red
+deterministically — and following the documented procedure would not have
+caught it. That test is updated here, and the missing step is added to
+`docs/methodology-config.md` § 3 step 2 so the next profile does not repeat
+the surprise.
+
 `code-2025.csv` and `manuscript.csv` must not change. If either moves, that is
 a **STOP**, not a regeneration.
 
-### 4.5 Variant rows for the three unpinned parameter values
+### 4.5 Variant rows for the seven unpinned parameter values
 
 Cycle 3D pinned `within_distance` at 0/0.25/0.75 km, `inverse_power` at
-exponent 1 and 2, `exponential` at scale 1.0 km, and `boundary`. Three values
+exponent 1 and 2, `exponential` at scale 1.0 km, and `boundary`. Seven values
 this sweep uses have never been compared against the independent reference
 implementation:
 
 - `decay.form: none`
 - `inverse_power`, `exponent: 0.5`
 - `exponential`, `scale_km: 2.0` and `5.0`
+- `within_distance` at `1.0`, `5.0` and `10.0` km
 
-They are the same code paths at different constants, so the risk is low — but
-the standing rule since 3D is that a methodology value ships as a **row in
+The standing rule since 3D is that a methodology value ships as a **row in
 `tests/variants.py`**, cross-checked at 1e-12 against `tests/reference_impl.py`
-on both fixture cities. Four new rows, appended; `RULESETS` and every existing
-expected value untouched. The band radii 1/5/10 km need no new rows: on a
-fixture city 200 m across, every one of them is the same complete graph that
-0.75 km already pins.
+on both fixture cities. Seven new rows, appended; `RULESETS` and every existing
+expected value untouched.
+
+**The band radii earn their rows, and an earlier draft of this spec said
+otherwise on a false premise.** That draft claimed the fixture cities are
+~200 m across, so 1/5/10 km would all be the same complete graph 0.75 km
+already pins. Measured, they are not: Oraculum spans 4.0 × 3.0 km and the
+messy city 21.0 × 2.4 km, and the three radii give genuinely different
+neighbourhoods on both —
+
+| radius | Oraculum undirected pairs | messy undirected pairs |
+|---|---|---|
+| 0.75 km (pinned in 3D) | 14 | 10 |
+| 1 km | 16 | 13 |
+| 5 km | 21 | 27 |
+| 10 km | 21 | 48 |
+
+More importantly, **1.0 km lands exactly on the `<=` boundary in both cities**
+(two pairs at exactly 1000.000 m in Oraculum, one in messy), and 10.0 km lands
+on it once in messy. Cycle 3D deliberately chose 0.25 and 0.75 km because they
+"sit in a gap of BOTH cities' polygon-to-polygon distance lists (≥ 26 m
+clearance), so no pair lands on the `<=` boundary" — this sweep cannot make
+that choice, because 1/5/10 km are the methodological points DEL-36 asks for
+and the Delhi run must use them.
+
+So the fragility is pinned rather than avoided: the variant rows put both
+implementations on the tie, and a test asserts the boundary pairs ARE included
+(the rule is `<=`, inclusive) with the exact distances written down. If the two
+implementations ever disagree about a distance that lands exactly on the
+radius, this is where it surfaces — on seven settlements, not on 4,357.
 
 **Addition-only is a hard condition.** The regenerated
 `variants_expected_values.csv` must be a strict superset of the committed one,
@@ -242,11 +283,16 @@ uv run python scripts/run_sweep.py --group bands|adjacency|decay|all \
 - The runner never writes into `~/delhi_data/phase3_verify` and never passes
   it as `--out-dir`.
 
-**Degree statistics without loading the 10 km artifact into the summariser.**
-The runner computes them once, at the point where the artifact is already in
-memory — immediately after `preprocess` — and writes only the summary
-(`n_links`, `deg_mean`, `deg_p50`, `deg_max`, `n_isolates`) into the manifest.
-The 10 km artifact is on the order of a gigabyte; nothing downstream reloads it.
+**Degree statistics are read once, by the runner, and never again.** The
+stages are subprocesses, so the artifact is *not* in the runner's memory when
+`preprocess` returns — the runner loads it exactly once, immediately after,
+and writes only the summary (`n_links`, `deg_mean`, `deg_p50`, `deg_max`,
+`n_isolates`) into the manifest. That one load is the peak-memory moment of
+the whole cycle for `band-10km` (4.37 M links over 4,357 rows); it happens
+between two stages rather than during one, and nothing downstream repeats it.
+A point that skips `preprocess` (the five later decay points) inherits the
+degree summary from the manifest of the point that built the shared artifact,
+named explicitly in its own manifest as `degree_from`.
 
 ---
 
@@ -261,6 +307,12 @@ Reads the per-point output CSVs and manifests plus the baseline run, computes
 the statistics below, and prints fenced `block:` sections in the established
 `docs/data/` shape (`scripts/_measure_common.render` / `parse_block`), which
 the doc carries verbatim and a test re-checks.
+
+Every CSV read passes an explicit `usecols`: the id, the type, `category`,
+`population`, `area_km2`, the seven amount columns, the seven `*_pcen`
+columns, `unnorm_psi` and `norm_psi`. The neighbour lists, the geometry and
+the centroid are never loaded — at `band-10km`'s link count they are most of
+the file (§ 4.1) and the summariser has no use for them.
 
 ### 6.1 The governing principle
 
@@ -288,10 +340,20 @@ The output CSV carries the own counts (`<service>_count`, `road_length`),
 min-max normalised over the same reported universe, summed, and re-normalised
 under `second_normalization: true`. No pipeline run, no new profile.
 
-**Self-check, and it is load-bearing:** `own_share = own_pcen / pcen` must lie
-in `[0, 1 + 1e-9]` for every row and every service, because the neighbour term
-is non-negative. A wrong denominator formula breaks this on thousands of rows.
-The summariser asserts it and refuses to emit a table if it fails.
+**Self-check:** `own_share = own_pcen / pcen` must lie in `[0, 1 + 1e-9]` for
+every row, because the neighbour term is non-negative. It is a real guard
+against a mis-shaped reconstruction, and it is worth stating what it does
+*not* prove: the denominator **cancels** in that ratio, so a wrong denominator
+formula passes it. What actually pins the denominator is the own-only anchor's
+own arithmetic, and the test that a settlement with an empty neighbour list
+has `own_share == 1` exactly.
+
+**`own_share` is undefined, not zero, where `pcen == 0`.** A settlement that
+owns nothing and receives nothing gives 0/0 — and 1,834 of the baseline's
+4,131 reported settlements own zero of all seven services, so this is the
+common case rather than an edge case. Those rows are `NaN`, excluded from the
+median, and counted as `n_own_share_undef` beside it. Silently reading them as
+0 would drag `own_share_p50` toward the `smoothed` flag on every point.
 
 ### 6.3 Block `points` — one row per sweep point
 
@@ -310,7 +372,8 @@ anchor has no neighbourhood at all: its structure columns are `—` and its
 `own_share_p50` is 1.000 by construction.
 
 Composition: `own_share_p50` (3 dp) — the median over settlements of
-own / (own + neighbour), pooled over the eight amount columns. This is the
+own / (own + neighbour), pooled over the seven amount columns (six point
+services and `road_length`). This is the
 number that says how much of the index is still a property of the settlement.
 Below 0.10 the index is a spatial smooth of the city and the row is flagged.
 
@@ -327,6 +390,30 @@ Outcome, all rank-based:
 - `jaccard_top10`, `jaccard_bottom10` — overlap of the top and bottom decile
   *sets* with the `bbox` baseline (3 dp). ρ alone hides a tail reshuffle
   behind a stable middle, and the paper's claim lives in the tails.
+
+  **These cells are tie-gated, and that is not a detail.** PSI has a mass
+  point at exactly zero that is *larger than a decile*: on the baseline,
+  452 of 4,131 reported settlements sit at `norm_psi == 0` against a decile
+  of 413, and on the own-only anchor 1,834 do. So the bottom-decile cut falls
+  *inside* a tie block, and which settlements land in "the bottom 10 %" is
+  then decided by pandas' sort order, not by the index. Measured: the same
+  two series give `jaccard_bottom10` of 0.070 in file order and 0.121–0.157
+  under twenty random row permutations — the number moves more than twofold
+  on nothing at all, and prints to 3 dp either way.
+
+  The rule, applied to both ends and stated in the caption:
+
+  1. The decile set is **tie-inclusive** — every row whose value ties the
+     k-th is in it, so the set is a property of the numbers alone.
+  2. If that set exceeds **1.5 × k**, the cell renders `—` and the tie mass
+     is printed beside it. A "decile" that is 44 % of the universe is not a
+     decile, and an em dash is the honest rendering.
+
+  On today's numbers `jaccard_top10` survives (exactly one row sits at
+  `norm_psi == 1`, and 412 above the cut) and `jaccard_bottom10` renders `—`
+  against the own-only anchor. That is the correct outcome, not a failure:
+  the tail comparison the spec wanted is unavailable at the bottom, and the
+  document says so rather than printing a number that measures sort order.
 - `planned_gt_jjc` — TRUE/FALSE
 - `flag` — see § 6.6
 
@@ -359,9 +446,15 @@ One row per point:
   smoothing itself, and its divergence from δ is the tail-behaviour signal.
 - `pct_gap_planned_jjc` (1 dp) — difference in mean percentile rank.
 - `p_planned_gt_jjc` (3 dp) — bootstrap probability that the Planned mean
-  exceeds the JJC mean.
+  exceeds the JJC mean. If it comes out 1.000 at every point — which at
+  n = 4,131 is the likely outcome — the doc states that **in one sentence**
+  and drops the column. A column of identical 1.000s carries no information
+  and invites exactly the significance reading § 6.9 forbids.
 - `top_decile_share_planned`, `top_decile_share_jjc`,
-  `bottom_decile_share_jjc` (3 dp).
+  `bottom_decile_share_jjc` (3 dp) — built on the **same tie-gated decile
+  sets as § 6.3**, and rendered `—` under the same 1.5 × k rule. A "bottom
+  decile" holding 44 % of the universe would make all three of these
+  meaningless in exactly the way the Jaccard cells are.
 
 Then the same row for the pooled blocks **formal = {Planned, SDA} vs informal
 = {JJC, JJR}**. That grouping is a *stated assumption of this document*, not a
@@ -463,8 +556,9 @@ Disk: ~1.5 GB under `~/psi_sweep`, dominated by the 5 km and 10 km artifacts.
    `variants_expected_values.csv` deletions or modifications, any
    `production/*.csv` for `code-2025` or `manuscript`).
 2. The baseline `code-2025` real-data numbers move.
-3. `own_share > 1 + 1e-9` anywhere (§ 6.2) — the denominator reconstruction is
-   wrong and every derived statistic with it.
+3. `own_share > 1 + 1e-9` anywhere (§ 6.2) — the reconstruction is mis-shaped
+   and every derived statistic with it. (`NaN` from `pcen == 0` is expected,
+   counted, and is *not* a stop.)
 4. Anything writing under `~/delhi_data` outside an explicit `--out-dir`.
 
 **Not a stop, by design:** a sweep point that fails or is degenerate. It is
@@ -476,9 +570,9 @@ recorded, flagged, and the run continues (§ 5, § 6.6).
 
 | Task | Deliverable | Test |
 |---|---|---|
-| 1 | The five adjacency/band profiles + registration + fixtures | `test_sweep_profiles.py` one-factor guard; regenerated fixtures byte-match |
-| 2 | The six decay profiles (shared artifact) + registration + fixtures | same guard extended; a test that all six pin the same `neighbors_artifact` |
-| 3 | Four new `tests/variants.py` rows + regenerated variant expectations | addition-only verified by diff |
+| 1 | The five adjacency/band profiles + registration + fixtures + the `test_config.py` and `methodology-config.md` § 3 registration fix | `test_sweep_profiles.py` one-factor guard (methodology **and** categories); regenerated fixtures byte-match |
+| 2 | The six decay profiles (shared artifact) + registration + fixtures | same guard extended; a test that all six pin the same `neighbors_artifact`, and that it is not the baseline's |
+| 3 | Seven new `tests/variants.py` rows + regenerated variant expectations + the `<=` boundary pin | addition-only verified by diff; the 1 km tie pairs asserted present with their exact distances |
 | 4 | `scripts/run_sweep.py` | `test_run_sweep.py` — plan construction, skip-if-stamp-matches, work-dir guard, failure isolation, `--dry-run` |
 | 5 | `scripts/summarize_sweep.py` statistics core | `test_summarize_sweep.py` — every statistic on hand-built frames with hand-computed answers |
 | 6 | Rendering + `docs/data/phase6_sweep.md` skeleton | block round-trip through `parse_block` |
@@ -530,3 +624,51 @@ window rather than at 2 a.m.:
 - `docs/data/phase6_sweep.md` carries the blocks, every caption labelled
   `DRY RUN on code-2025 — superseded by the ratified profile`.
 - CHANGELOG updated; PR opened and merged; DEL-55 closed with evidence.
+
+---
+
+## 12. What the plan review changed
+
+One ultracode round: five lenses (attributability, statistics, APIs,
+operational safety, test quality), 30 gating findings, each put to three
+independent skeptics instructed to refute it. Three survived, and one that did
+*not* survive was right anyway — recorded here because "the skeptics killed it"
+is not the same as "it was wrong", and the difference is the reason to read a
+killed list rather than only a confirmed one.
+
+**Survived and applied:**
+
+1. **The bottom decile is decided by sort order, not by the index** (§ 6.3).
+   452 baseline rows and 1,834 own-only rows sit at exactly `norm_psi == 0`,
+   against a decile of 413 — so `jaccard_bottom10` moved from 0.070 to 0.157
+   across twenty random row permutations of the same data. Now tie-inclusive
+   and gated to `—` past 1.5 × k, and the same rule applies to § 6.5's three
+   decile-share cells, which had the same defect.
+2. **Eleven new YAMLs turn the suite red on a test the documented procedure
+   never mentions** (§ 4.4). `test_both_profiles_ship` asserts the exact set of
+   shipped profiles. Under this spec's own rule that implementers run only
+   their own test files, that failure would have surfaced *after* the
+   multi-hour real-data run. `docs/methodology-config.md` § 3 gains the missing
+   step.
+3. **scipy is not a dependency of this project** — not direct, not transitive,
+   not in `uv.lock`. The plan assumed it. Spearman ρ and Kendall τ-b are now
+   implemented on numpy, which also avoids promoting a heavyweight runtime
+   dependency for code that lives in `scripts/`.
+
+**Refuted 3–0 by the skeptics, and correct regardless** (§ 4.5): the claim that
+the fixture cities are ~200 m across, so the 1/5/10 km radii would all be the
+same complete graph. Measured, Oraculum spans 4 × 3 km and the messy city
+21 × 2.4 km; the three radii give different neighbourhoods on both, and 1 km
+lands *exactly* on the `<=` boundary in both cities. The band radii now get
+variant rows — the fragility is pinned on seven settlements rather than
+discovered on 4,357.
+
+**Applied from the killed list on their merits**, without re-litigating their
+severity: `outputs.formats: [csv]` does not make the outputs small (the CSV
+carries the neighbour lists, so the summariser reads with explicit `usecols`,
+§ 6); `degree_report` cannot run "while the artifact is already in memory"
+because the stages are subprocesses (§ 5 now says the runner loads it once,
+and what that costs); `own_share` is 0/0 for the 1,834 settlements that own
+nothing (§ 6.2 makes those `NaN` and counts them); the one-factor guard
+inspected only `methodology`, so it now compares `categories` too; and the
+spec said "eight amount columns" where there are seven.
