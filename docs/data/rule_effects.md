@@ -1,4 +1,4 @@
-# What `methodology.barrier: partial_weighted` does to today's numbers
+# What the cycle-3E rule changes do to today's numbers
 
 Raj's 28 Aug 2026 decision log § 4 (`docs/decisions/2026-08-28-raj-methodology-decisions.md`)
 ratifies partial-coverage weighting for barriers (`w_ij = 1 −
@@ -8,8 +8,10 @@ quantification against today's numbers "as for roads" (§ 4, § 5's "What
 goes in the batched reply to Raj"). This document is that quantification
 for the barrier rule, produced by `scripts/measure_rule_effects.py`, which
 reads the layers named by the `code-2025` profile and writes nothing under
-the data directory. `tests/test_measure_rule_effects.py` re-runs it and
-compares the block below (it skips when the data is not present).
+the data directory. A second section below covers the same quantification
+for the overlap lending rule (DEL-20). `tests/test_measure_rule_effects.py`
+re-runs the script and compares each block below (it skips when the data is
+not present).
 
 Numbers quoted in prose below in `backticks` are block values verbatim;
 percentages and other derived quantities are written with a `%` sign or
@@ -249,3 +251,61 @@ against a canal covering 90% of the shared edge) and none is severed — 18
 at w == 1, 2 fractional, 0 severed. (These are the Oraculum hand counts, not
 the real-layer block above; they are deliberately not in `backticks` so the
 prose-number guard never mistakes one for the other.)
+
+## Block `overlap_lending` — the effect on today's numbers
+
+`code-2025` with ONE thing changed, `methodology.overlap: {lending:
+outside_receiver}` — everything else, `bbox` adjacency and
+`global_asymmetric` barriers included, left exactly as `code-2025` states
+it, so the diff is attributable to the lending rule alone.
+
+Unlike the barrier block, this one REUSES the proven `code-2025` neighbours
+artifact: `overlap.lending` is applied downstream in `compute` and is not in
+the methodology stamp, so the stored lists are still the right ones. The
+script asserts that before staging, so a future change that puts `overlap`
+in the stamp fails loudly instead of quietly describing a neighbourhood
+nobody built.
+
+- **Run date:** 2026-09-06
+- **Inputs:** settlement layer `uso_update_sep2021`, the six point-service layers and the road layer, and the proven `code-2025` run in `~/delhi_data/phase3_verify` (its neighbours artifact, staged unchanged, and its output CSVs, read for the one-factor comparison)
+- **Commit:** `a4b51c6`
+- **Command:** `uv run python scripts/measure_rule_effects.py --config code-2025 --verify-dir ~/delhi_data/phase3_verify --work-dir ~/measure_work/cache --only overlap_lending`
+
+**What the run must show, stated before it runs** (spec § 6.6): no NaN and
+no negative anywhere; `settlements_pcen_rose_pop` and
+`settlements_pcen_rose_popdensity` both **0**, because lending is only ever
+reduced — a risen PCEN is a bug, not a finding;
+`pcen_changed_outside_the_overlap_set_*` both **0**, because the rule cannot
+move a settlement with no overlapping neighbour;
+`shared_pairs_total` greater than 0 and no larger than twice the 429
+multi-settlement points `docs/data/layer_pathologies.md` counts (each such
+point contributes at most k(k-1) ordered entries, and k is 2 for essentially
+all of them), summed over the six point services; and `shared_pairs_road`
+consistent with a road network that crosses the 4,069 overlapping pairs. A
+result outside these bounds is a stop, not a number to write down.
+
+- `shared_pairs_<service>` — the number of ORDERED `(i, j)` entries
+  `index.shared_amounts` builds for that service: how many directed pairs
+  share at least one unit of it. `shared_pairs_total` sums these across
+  every point and line service.
+- `settlements_with_an_overlapping_neighbour` — settlements with at least
+  one STORED neighbour whose polygon overlaps theirs (a positive-area
+  intersection). This is the containment bound: the lending rule cannot move
+  any other settlement's PCEN.
+- `settlements_pcen_changed_<denom>` / `settlements_pcen_rose_<denom>` — how
+  many settlements have at least one `*_pcen` column that moved between the
+  two runs, and how many of those moved UP. `outside_receiver` only ever
+  subtracts, so a risen PCEN would be a bug.
+- `pcen_changed_outside_the_overlap_set_<denom>` — settlements whose PCEN
+  changed despite having no overlapping neighbour: must be 0, or the rule
+  reached further than the shared structure it is built from.
+- `psi_code_<denom>_<TYPE>` / `psi_outside_<denom>_<TYPE>` (and, where both
+  runs carry `norm_psi`, `norm_code_<denom>_<TYPE>` /
+  `norm_outside_<denom>_<TYPE>`) — the mean unnormalised (and normalised) PSI
+  under each rule, per denominator and settlement type and in total, the
+  same one-factor shape `measure_roads_access.py`'s `one_factor` block and
+  the barrier block above use. `psi_code_*` is read from the proven
+  `--verify-dir` output, never recomputed; `psi_outside_*` is this run's own
+  output.
+- `n_<denom>_<TYPE>` — the settlement count behind each mean, so a mean of
+  zero settlements is never mistaken for a mean of zero PSI.
