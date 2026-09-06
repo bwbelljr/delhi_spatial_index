@@ -280,6 +280,33 @@ def test_service_amounts_sums_every_road_row(settlements, services):
         assert amounts[sid] == 0.0, sid
 
 
+def test_reference_minmax_raises_on_a_degenerate_group():
+    """The reference is the equations, and Eq. 2 is undefined when hi == lo.
+    It used to emit 0.0 — an invention production does not share (DEL-54).
+    Unreachable through the committed fixtures: check_oraculum_invariants
+    refuses to write a city with a degenerate min-max group."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    # Two settlements, no services at all (not even a road row inside
+    # either one) and no barriers: every *_pcen column is 0 for both rows,
+    # so the very first min-max (clinic_pcen) is degenerate.
+    settlements = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "population": [100.0, 200.0],
+         "area_km2": [1.0, 1.0]},
+        geometry=[box(0, 0, 1000, 1000), box(10000, 0, 11000, 1000)],
+        crs="EPSG:7760")
+    barriers = gpd.GeoDataFrame(geometry=[], crs="EPSG:7760")
+    services = {"road": gpd.GeoDataFrame(geometry=[], crs="EPSG:7760")}
+
+    with pytest.raises(ValueError) as excinfo:
+        compute_city(settlements, services, barriers,
+                     scenario="nothing_dropped", denom="pop",
+                     scenarios={"nothing_dropped": (frozenset(), False)},
+                     **RULESETS["ideal"])
+    assert "clinic_pcen" in str(excinfo.value)
+
+
 def test_emit_expected_values_takes_a_city_and_defaults_to_oraculum(tmp_path):
     from tests.cities import ORACULUM
 

@@ -268,15 +268,26 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     df = pd.DataFrame.from_dict(rows, orient="index")
     idx_cols = []
     for svc in POINT_SERVICES + ("road",):
-        pcen = df[f"{svc}_pcen"]
+        col = f"{svc}_pcen"
+        pcen = df[col]
         lo, hi = pcen.min(), pcen.max()
-        df[f"{svc}_idx"] = 0.0 if hi == lo else (pcen - lo) / (hi - lo)
+        if hi == lo:
+            raise ValueError(
+                f"min-max of {col!r} is undefined: all {len(pcen)} values "
+                f"equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 — every "
+                f"settlement scores the same on this service")
+        df[f"{svc}_idx"] = (pcen - lo) / (hi - lo)
         idx_cols.append(f"{svc}_idx")
     df["psi_eq1"] = df[idx_cols].mean(axis=1)
     if second_norm:
         p = df["psi_eq1"]
         lo, hi = p.min(), p.max()
-        df["norm_psi"] = 0.0 if hi == lo else (p - lo) / (hi - lo)
+        if hi == lo:
+            raise ValueError(
+                f"min-max of 'psi_eq1' is undefined: all {len(p)} values "
+                f"equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 — every "
+                f"settlement's unnormalized PSI is the same")
+        df["norm_psi"] = (p - lo) / (hi - lo)
     return df
 
 
