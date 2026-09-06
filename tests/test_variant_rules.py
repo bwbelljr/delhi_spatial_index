@@ -15,7 +15,7 @@ import pytest
 from tests.cities import CITIES, MESSY, ORACULUM
 from tests.reference_impl import (
     RULESETS, VARIANT_KNOBS, VARIANT_RULESETS, adjacency, apply_barrier,
-    compute_city, partial_weights,
+    compute_city, partial_weights, shared_amounts,
 )
 from tests.variants import (
     ADDED_BAND_PAIRS, BAND_RADII_KM, EXPECTED_BAND_PAIRS, VARIANTS,
@@ -407,3 +407,99 @@ def test_partial_5m_is_degenerate_on_the_messy_city():
     for column in base.columns:
         assert list(got[column]) == pytest.approx(list(base[column]),
                                                   abs=1e-12), column
+
+
+# --- DEL-20: overlap lending on the messy city (spec § 3.1, § 6.2) -----
+# O1 is _rect(10000, 0, 11000, 1000) and O2 is _rect(10800, 0, 11800, 1000),
+# so they overlap in x in [10800, 11000]. The ONE clinic at (10900, 500) is
+# strictly inside BOTH, so it is O1's own AND O2's own — Raj's ratified
+# counting half, which does not move — and under `whole` it is ALSO lent
+# from each to the other, which is the half this switch removes. Centroids
+# (10500, 500) and (11300, 500) are 0.8 km apart, so the decay is 1/1.8.
+OVERLAP_OUTSIDE = dict(RULESETS["code"], overlap_lending="outside_receiver")
+W_O1O2 = 1 / 1.8
+
+
+def test_the_overlap_clinic_is_lent_back_under_whole():
+    """Today's arithmetic, stated so the switch has something to move: the
+    single physical clinic reaches O1 twice — once as its own, once decayed
+    from O2 — and reaches O2 twice as well."""
+    got = scored(MESSY, RULESETS["code"])
+    assert got.loc["O1", "clinic_pcen"] == pytest.approx(
+        (1 + 1 * W_O1O2) / 600, abs=1e-12)
+    assert got.loc["O2", "clinic_pcen"] == pytest.approx(
+        (1 + 1 * W_O1O2) / 700, abs=1e-12)
+
+
+def test_outside_receiver_lends_only_what_is_not_already_inside():
+    """|S_j \\ S_i| is 0 for the clinic: O2's only clinic is already inside
+    O1, so O1 gets it once. The OWN counts do not move — Raj's ratified half
+    is untouched, and that is what makes this a lending rule and not a
+    counting rule."""
+    got = scored(MESSY, OVERLAP_OUTSIDE)
+    assert got.loc["O1", "clinic_count"] == 1
+    assert got.loc["O2", "clinic_count"] == 1
+    assert got.loc["O1", "clinic_pcen"] == pytest.approx(1 / 600, abs=1e-12)
+    assert got.loc["O2", "clinic_pcen"] == pytest.approx(1 / 700, abs=1e-12)
+
+
+def test_a_neighbours_service_outside_the_overlap_is_lent_in_full():
+    """The clinic moves and the school does not: O2's school at (11400, 500)
+    lies outside O1, so |S_j \\ S_i| == |S_j| and O1's school row is exactly
+    the `whole` value — asserted with `==`, because a pair with nothing
+    shared must not go anywhere near the arithmetic. O1's own police point
+    is not in O2 either."""
+    whole = scored(MESSY, RULESETS["code"])
+    got = scored(MESSY, OVERLAP_OUTSIDE)
+    assert got.loc["O1", "school_pcen"] == whole.loc["O1", "school_pcen"]
+    assert got.loc["O1", "school_pcen"] == pytest.approx(
+        (0 + 1 * W_O1O2) / 600, abs=1e-12)
+    assert got.loc["O1", "police_pcen"] == pytest.approx(1 / 600, abs=1e-12)
+
+
+def test_overlap_outside_is_degenerate_on_oraculum():
+    """No overlapping polygons and no point inside two settlements, so the
+    shared structure is EMPTY and every row equals the `code` base — stated,
+    like `boundary` on Oraculum and `partial_5m` on the messy city, so the
+    CSV rows are never mistaken for a proof they are not."""
+    base = scored(ORACULUM, RULESETS["code"])
+    got = scored(ORACULUM, OVERLAP_OUTSIDE)
+    for column in base.columns:
+        assert list(got[column]) == pytest.approx(list(base[column]),
+                                                  abs=1e-12), column
+
+
+def test_the_shared_structure_is_sparse_and_symmetric():
+    """One entry, both orders, on the one pair that shares anything; nothing
+    at all on Oraculum, and nothing for the road (no road row crosses the
+    O1/O2 overlap). Every other pair has |S_j \\ S_i| == |S_j| and is never
+    computed or stored — that is the cost argument, made checkable."""
+    for city, expected in ((ORACULUM, {}),
+                           (MESSY, {("O1", "O2"): 1, ("O2", "O1"): 1})):
+        settlements = city.load_settlements()
+        nbrs = apply_barrier(adjacency(settlements, "bbox"), settlements,
+                             city.load_barriers(), "global")
+        got = shared_amounts(nbrs, settlements, city.load_services())
+        assert got["clinic"] == expected, city.name
+        assert all(not table for svc, table in got.items()
+                   if svc != "clinic"), city.name
+
+
+def test_no_service_column_is_constant_under_overlap_outside():
+    """The invariants guard refuses a degenerate min-max group and DEL-54's
+    guard raises on one. Both cities, both denominators, every service:
+    checked HERE, before Task 5's fixture regeneration depends on it."""
+    for city in CITIES:
+        for denom in ("pop", "popdensity"):
+            got = scored(city, OVERLAP_OUTSIDE, denom)
+            for column in [c for c in got.columns if c.endswith("_pcen")]:
+                assert got[column].max() > got[column].min(), (city.name,
+                                                               denom, column)
+
+
+def test_an_unknown_lending_value_raises():
+    """An unimplemented value must RAISE — the mapped-knob test relies on
+    it, and so does the loader's enum table being the only source of
+    values."""
+    with pytest.raises(ValueError, match="overlap lending"):
+        scored(MESSY, dict(RULESETS["code"], overlap_lending="halves"))
