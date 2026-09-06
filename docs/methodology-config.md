@@ -226,6 +226,8 @@ Work on a branch; `main` requires the CI check.
    `tests/test_profiles_match_reference.py` mapped to `"code"` or `"ideal"`
    — only if *all* its reference-pinned switches match that rule-set;
    a mixed profile is pinned by its production fixture alone.
+   Add the name to `SHIPPED` in `tests/test_config.py` as well — it asserts
+   the exact set of shipped YAMLs, and a new profile turns it red.
 3. **Regenerate the fixtures:** `uv run python scripts/generate_production_fixtures.py`.
    A new file `tests/fixtures/oraculum/production/<profile>.csv` appears.
    The diff against `code-2025.csv` *is* the methodology change on the

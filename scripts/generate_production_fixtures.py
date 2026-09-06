@@ -33,7 +33,8 @@ def production_dir(city=ORACULUM):
 
 # Every profile with a committed production fixture. Adding a profile is one
 # YAML plus one entry here, then a regeneration commit (spec § 4).
-PROFILES = ("code-2025", "manuscript")
+PROFILES = ("code-2025", "manuscript",
+            "adj-touch", "band-0km", "band-1km", "band-5km", "band-10km")
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
 SERVICES = POINT_SERVICES + ("road",)

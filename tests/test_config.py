@@ -52,8 +52,25 @@ def write(tmp_path, text, name="p.yaml"):
     return path
 
 
-def test_both_profiles_ship():
-    assert sorted(shipped_profiles()) == ["code-2025", "manuscript"]
+# Every YAML in delhi_psi/profiles/, in one place. A stray or forgotten file
+# is exactly what this test exists to catch, so it stays an equality: adding a
+# profile means adding it here, and `docs/methodology-config.md` § 3 step 2
+# says so.
+# Task 2 (DEL-55) appends the six decay-* profiles here.
+SHIPPED = [
+    "adj-touch", "band-0km", "band-10km", "band-1km", "band-5km", "code-2025",
+    "manuscript",
+]
+
+
+def test_the_shipped_profiles_are_exactly_these():
+    assert sorted(shipped_profiles()) == sorted(SHIPPED)
+
+
+def test_the_two_production_profiles_still_ship():
+    """The pair everything else defaults to; named separately so the intent
+    survives the sweep profiles being deleted one day."""
+    assert {"code-2025", "manuscript"} <= set(shipped_profiles())
 
 
 def test_profile_loads_by_name_and_by_path(tmp_path):
