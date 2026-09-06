@@ -61,11 +61,13 @@ OUTPUT_USECOLS = (
     "unnorm_psi", "norm_psi",
 )
 
-# flags() non-triggering defaults (spec § 6.6). A row that omits a key is
-# read as "this condition cannot fire" rather than KeyError — callers pass
-# only the fields relevant to the flags they care about.
+# flags() non-triggering defaults (spec § 6.6) for the flags that read a
+# single row in isolation. A row that omits a key is read as "this condition
+# cannot fire" rather than KeyError — callers pass only the fields relevant
+# to the flags they care about. `n_isolates` is NOT here: the `isolates`
+# flag is baseline-relative (see `flags`'s docstring) and has its own
+# None-means-skip handling, not a default that could silently fire.
 _FLAG_DEFAULTS = {
-    "n_isolates": 0,
     "own_share_p50": 1.0,
     "n_at_psi1": 0,
     "p99_psi": 1.0,
@@ -538,17 +540,43 @@ def bootstrap_p_greater(frame, a, b, *, psi_col="norm_psi",
     return float(np.mean(draws_a > draws_b))
 
 
-def flags(row):
+def flags(row, *, baseline_isolates=None):
     """Degenerate-run flags (spec § 6.6), in documented order. `row` is a
-    mapping; a missing key reads as the value that cannot trigger its flag
-    (see `_FLAG_DEFAULTS`), so a caller need only pass the fields relevant
-    to the flags it wants checked."""
+    mapping; a missing key for one of the single-row flags reads as the
+    value that cannot trigger it (see `_FLAG_DEFAULTS`), so a caller need
+    only pass the fields relevant to the flags it wants checked.
+
+    `isolates` is baseline-RELATIVE, not `n_isolates > 0` (corrected
+    2026-09-06, spec commit 67e3f24, against the measured real-data run):
+    the bbox baseline itself has 360 isolated settlements out of 4,131
+    reported — an artifact of `code-2025`'s `global_asymmetric` barrier
+    rule, which severs every link INTO a flagged settlement, and has
+    nothing to do with any swept factor. `n_isolates > 0` would therefore
+    fire on every point including both anchors, which makes it a constant
+    rather than a flag. The two adjacency points measured so far genuinely
+    have MORE (band-0km 697, adj-touch 715 — a narrower neighbourhood
+    strands more settlements), and that comparison to the baseline is the
+    real signal this flag is for: fires on `row["n_isolates"] >
+    baseline_isolates`, strictly.
+
+    `baseline_isolates=None` means the flag is not EVALUATED at all — not
+    fired as False — because the comparison has no basis: the own-only
+    anchor has no neighbourhood to begin with, and a point whose own
+    artifact was unreadable has `n_isolates: None`
+    (`run_sweep.py` records `degree_from: "artifact unreadable: ..."` in
+    that case). It is the caller's job, per point, to decide whether a
+    baseline comparison is meaningful and pass `None` when it is not; this
+    function never raises over it, whether it is `baseline_isolates` or the
+    row's own `n_isolates` that is missing or None.
+    """
     def get(key):
         return row.get(key, _FLAG_DEFAULTS[key])
 
     result = []
-    if get("n_isolates") > 0:
-        result.append("isolates")
+    if baseline_isolates is not None:
+        n_isolates = row.get("n_isolates")
+        if n_isolates is not None and n_isolates > baseline_isolates:
+            result.append("isolates")
     if get("own_share_p50") < 0.10:
         result.append("smoothed")
     if get("n_at_psi1") == 1 and get("p99_psi") < 0.5:

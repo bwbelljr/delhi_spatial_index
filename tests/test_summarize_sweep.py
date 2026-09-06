@@ -275,16 +275,49 @@ def test_spearman_rho_averages_tied_ranks():
 
 def test_flags_fire_on_the_documented_conditions():
     assert S.flags({"own_share_p50": 0.05}) == ("smoothed",)
-    assert S.flags({"n_isolates": 3}) == ("isolates",)
+    assert S.flags({"n_isolates": 3}, baseline_isolates=2) == ("isolates",)
     assert S.flags({"n_at_psi1": 1, "p99_psi": 0.3}) == ("pinned",)
     assert S.flags({"rho_vs_own": 0.4, "n_fragile_pairs": 3}) == ("reshuffled",)
     # a clean row raises no flags
     assert S.flags({}) == ()
     # multiple flags fire together, in documented order
-    assert (S.flags({"n_isolates": 1, "own_share_p50": 0.05})
+    assert (S.flags({"n_isolates": 3, "own_share_p50": 0.05},
+                    baseline_isolates=2)
             == ("isolates", "smoothed"))
     # "pinned" requires BOTH conditions: one settlement pinned at 1 is not
     # enough on its own if the 99th percentile is not also low.
     assert S.flags({"n_at_psi1": 1, "p99_psi": 0.9}) == ()
     # "reshuffled" requires BOTH a low rho and enough fragile pairs
     assert S.flags({"rho_vs_own": 0.4, "n_fragile_pairs": 2}) == ()
+
+
+def test_isolates_flag_is_relative_to_the_baseline_not_absolute():
+    """Corrected 6 Sep 2026 (spec commit 67e3f24): the measured bbox
+    baseline itself has 360 isolated settlements out of 4,131 reported, an
+    artifact of code-2025's `global_asymmetric` barrier rule (it severs
+    every link INTO a flagged settlement) with nothing to do with any swept
+    factor. `n_isolates > 0` would therefore fire on every point including
+    both anchors — a constant, not a flag — so the flag is instead
+    STRICTLY more isolates than the baseline."""
+    # more isolates than the baseline -> flags (e.g. band-0km's real 697
+    # against the real baseline's 360)
+    assert S.flags({"n_isolates": 697}, baseline_isolates=360) == ("isolates",)
+    # fewer than the baseline -> does not flag
+    assert S.flags({"n_isolates": 100}, baseline_isolates=360) == ()
+    # exactly equal to the baseline -> does not flag: the comparison is
+    # strict, so the baseline itself (and any point matching it exactly)
+    # never flags on its own count.
+    assert S.flags({"n_isolates": 360}, baseline_isolates=360) == ()
+
+
+def test_isolates_flag_is_not_evaluated_without_a_baseline():
+    """`baseline_isolates=None` means the comparison has no basis — the
+    own-only anchor has no neighbourhood at all, and a point whose own
+    artifact was unreadable has `n_isolates: None` (`run_sweep.py`'s
+    `degree_from: "artifact unreadable: ..."` case). Either way this is "no
+    flag", not "False" pretending to be an answer, and it must not raise
+    even when `n_isolates` is itself huge or None."""
+    assert S.flags({"n_isolates": 10_000}) == ()  # baseline_isolates default
+    assert S.flags({"n_isolates": 10_000}, baseline_isolates=None) == ()
+    assert S.flags({"n_isolates": None}, baseline_isolates=None) == ()
+    assert S.flags({}) == ()  # n_isolates absent entirely
