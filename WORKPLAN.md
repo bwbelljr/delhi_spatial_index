@@ -345,10 +345,21 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       (c) the `hi == lo` guard in `index.minmax` (raise) — bug-audit 6.
       Spec brainstorm questions are listed on DEL-48. Decision log §§ 4, 5,
       12.
-- [ ] Pre-recalculation measurements (no code; feed the batched reply to
+- [x] Pre-recalculation measurements (no code; feed the batched reply to
       Raj): corner-only contact pairs on the real layer [DEL-50]; barrier
       layer provenance [DEL-51]. (The roads and `norm_psi` measurements are
       Phase 4 items, DEL-49/52.)
+      — done 5 Sep 2026. **DEL-50** (`docs/data/layer_pathologies.md`):
+      656 pairs involving 955 settlements touch only at a corner (most
+      plausibly four-way junctions on a tessellated layer — an
+      interpretation, not measured); not neighbours under `touch`, all
+      neighbours under a 0 km band — a corner is not a border, `touch`
+      stands. **DEL-51** (`docs/data/barriers.md`): 43 canal / 5,356
+      railway / 616 drain features flagging 28 / 240 / 390 settlements
+      (595 under any); schemas of an official GIS source, ArcGIS Pro files
+      of 2 Aug 2020, the root copies are re-exports of the same data; the
+      agency and what "manually marked" covered remain a question for
+      Bijoy.
 
 **Definition of done:** oracle suite still passes; one code path per concept;
 settlement categories, services, and distance parameters are config, not code.
@@ -379,19 +390,31 @@ Epic DEL-5. All decisions: `docs/decisions/2026-08-28-raj-methodology-decisions.
       the per-type data table (footnotes instead) [DEL-30]. Maps that show
       all of Delhi left-join the PSI file onto the settlement layer and
       draw the unscored types grey.
-- [ ] **Bob:** pre-recalculation measurements, reported to Raj before
+- [x] **Bob:** pre-recalculation measurements, reported to Raj before
       DEL-32 runs: JJC road access (road inside vs only in a touching
       neighbour vs neither) and the one-factor effect of `roads:
       eq4_own_only` on `code-2025`, by type [DEL-49]; which PSI column the
       April 2026 figures report (`unnorm_psi` vs `norm_psi`), and the
       popdensity keep/drop default [DEL-52]
+      — done 5 Sep 2026. **DEL-49** (`docs/data/roads_access.md`): 17 of
+      764 JJCs contain a major road, 645 reach one only via a touching
+      neighbour, 102 neither; under own-only roads 422 of 749 reported
+      JJCs fall to a zero road index, the JJC mean PSI falls 13 % (pop) /
+      10 % (density), no JJC/Planned ordering flip — the decision stands.
+      **DEL-52** (`docs/data/psi_columns.md`): Figure 4 matches `norm_psi`
+      × popdensity on 8 of 8 bars (max gap 0.0006); both of Bob's proposed
+      defaults (`second_normalization: false`, drop popdensity) are
+      withdrawn and the two choices go to Raj.
 - [ ] **Bob:** write the **ratified profile** [DEL-31] — one YAML, a copy of
       `code-2025.yaml` with the 28 Aug decisions: `adjacency.rule: touch`,
       `barrier.rule: partial_weighted` (after 3E), `roads: eq4_own_only`,
       `exclusion: {types: [RV, Industrial, Other], stage: post_neighbors,
-      absent_neighbor: contributes}`, `second_normalization` and
-      `outputs.denominators` per DEL-52; identity mapping. Procedure:
-      `docs/methodology-config.md` § 3. Blocked by DEL-48 and DEL-52.
+      absent_neighbor: contributes}`; `second_normalization` — the figures
+      report `norm_psi` (DEL-52), so `true` unless Raj switches to Eq. 1 as
+      written; `outputs.denominators` — the figures use popdensity (DEL-52),
+      so it stays reported unless Raj switches to per-population Eq. 3;
+      identity mapping. Procedure: `docs/methodology-config.md` § 3.
+      Blocked by DEL-48 and Raj's two DEL-52 answers.
 - [ ] **Bob:** recalculate all indexes with the ratified profile
       (supersedes the current "no RV" run) — gated on cycle 3E, the
       measurements above, and the ratified profile [DEL-32]. Hand

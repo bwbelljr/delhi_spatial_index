@@ -13,44 +13,22 @@ propagates to everyone.
 
 Prints a provenance line, then the fenced block that
 docs/data/layer_pathologies.md carries verbatim. The first run is slow — the
-pipeline's O(n^2) dedup takes about three minutes on 4,357 rows — so pass
---cache-dir <a persistent directory OUTSIDE the data directory> to reuse it.
+pipeline's O(n^2) dedup takes about three minutes on 4,357 rows. A WARM
+--cache-dir is only safe for scripts that never inspect `geom_type`: reusing
+one here upcasts every settlement to MultiPolygon on the re-read, which
+corrupts the `multipolygons` count. This script must always run COLD — do not
+pass a persistent --cache-dir to "reuse" it.
 """
 
 import argparse
 import sys
-import tempfile
-from pathlib import Path
 
 import geopandas as gpd
 
 from delhi_psi import geometry, io, neighbors, pipeline
 from delhi_psi.config import load_config
-
-FENCE = "```text"
-
-
-def resolve_cache_dir(cli_value=None):
-    """Where the dedup cache goes. NEVER derived from the data directory."""
-    if cli_value:
-        return Path(cli_value).expanduser()
-    return Path(tempfile.mkdtemp(prefix="delhi_psi_pathologies_"))
-
-
-def load_settlements(cfg, cache_dir):
-    """Read, deduplicate and reproject exactly as `pipeline.preprocess` does,
-    so every count below describes the universe the pipeline actually scores.
-    """
-    source = cfg.paths.data_dir / cfg.layers.settlements.path
-    gdf = io.read_layer(source)
-    gdf = pipeline._dedup_cached(gdf, cache_dir, "settlements", source)
-    # `remove_duplicate_geom` reset_index()es, which leaves an `index`
-    # column; preprocess drops exactly these two, and bbox_frame's
-    # pd.concat needs the same shape.
-    gdf = gdf.drop(columns={"index", "level_0"}.intersection(gdf.columns))
-    gdf = geometry.reproject(gdf, cfg.crs.epsg)
-    gdf["area_km2"] = gdf.area / 1_000_000
-    return gdf
+from scripts._measure_common import (load_settlements, parse_block, render,
+                                     resolve_work_dir)
 
 
 def count_rectangles(gdf, *, rtol=1e-9):
@@ -115,6 +93,37 @@ def count_overlapping_pairs(gdf, *, id_col):
         and geoms.iloc[left].intersection(geoms.iloc[right]).area > 0))
 
 
+def corner_only_pairs(gdf, *, id_col):
+    """Pairs whose intersection is NON-EMPTY but has zero length and zero
+    area — they meet at one or more isolated points. `touch` (positive shared
+    length) does NOT make them neighbours; a 0 km distance band does.
+
+    Same sjoin-then-test shape as `count_overlapping_pairs`: the join narrows
+    the candidates so the measure test never runs on all n^2 pairs, and
+    `left < right` keeps one of each unordered pair. Shapely returns a Point
+    or MultiPoint for such an intersection, but the test is on MEASURES, not
+    on `geom_type`, so a GeometryCollection of points also counts and one
+    containing a line does not.
+    """
+    frame = gdf[[id_col, "geometry"]].reset_index(drop=True)
+    joined = gpd.sjoin(frame, frame, how="inner", predicate="intersects")
+    geoms = frame.geometry
+    ids = frame[id_col]
+    out = []
+    for left, right in zip(joined.index, joined["index_right"]):
+        if left >= right:
+            continue
+        shared = geoms.iloc[left].intersection(geoms.iloc[right])
+        if not shared.is_empty and shared.length == 0 and shared.area == 0:
+            out.append((ids.iloc[left], ids.iloc[right]))
+    return out
+
+
+def count_corner_only_pairs(gdf, *, id_col):
+    """How many pairs meet at a point and nowhere else."""
+    return len(corner_only_pairs(gdf, id_col=id_col))
+
+
 def count_multi_settlement_points(gdf, points, *, id_col):
     """Service points that fall inside MORE THAN ONE settlement (production
     counts such a point for every one of them)."""
@@ -142,6 +151,10 @@ def measure(cfg, cache_dir):
         "area_km2_max": f"{areas.max():.6g}",
         "overlapping_pairs": count_overlapping_pairs(gdf, id_col=id_col),
     }
+    pairs = corner_only_pairs(gdf, id_col=id_col)
+    report["corner_only_pairs"] = len(pairs)
+    report["corner_only_settlements"] = len(
+        {settlement for pair in pairs for settlement in pair})
     for service, path in sorted(cfg.services.point.items()):
         points = io.read_layer(cfg.paths.data_dir / path)
         # `compute` drops exact-duplicate service rows before counting; do the
@@ -151,28 +164,6 @@ def measure(cfg, cache_dir):
         report[f"multi_settlement_points_{service}"] = \
             count_multi_settlement_points(gdf, points, id_col=id_col)
     return report
-
-
-def render(report):
-    """The fenced block docs/data/layer_pathologies.md carries verbatim."""
-    return "\n".join([FENCE,
-                      *(f"{key}: {value}" for key, value in report.items()),
-                      "```"])
-
-
-def parse_block(text):
-    """The inverse of `render`. The SAME parser reads the committed document
-    and this script's stdout, so the test compares like with like."""
-    lines = text.splitlines()
-    if FENCE not in lines:
-        raise ValueError(f"no {FENCE} block found")
-    out = {}
-    for line in lines[lines.index(FENCE) + 1:]:
-        if line.strip() == "```":
-            return out
-        key, _, value = line.partition(":")
-        out[key.strip()] = value.strip()
-    raise ValueError(f"unterminated {FENCE} block")
 
 
 def main(argv=None):
@@ -187,14 +178,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config, data_dir=args.data_dir)
-    cache_dir = resolve_cache_dir(args.cache_dir)
-    data_dir = cfg.paths.data_dir.resolve()
-    if cache_dir.resolve() == data_dir or data_dir in cache_dir.resolve().parents:
-        raise SystemExit(
-            f"--cache-dir {cache_dir} is inside the data directory "
-            f"{data_dir}, which this script never writes to (it is bisynced "
-            "to the shared drive)")
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = resolve_work_dir(args.cache_dir, data_dir=cfg.paths.data_dir,
+                                 prefix="delhi_psi_pathologies_")
 
     print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}")
     print(f"cache: {cache_dir}")

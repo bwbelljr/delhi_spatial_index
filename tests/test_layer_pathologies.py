@@ -16,9 +16,12 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon, box
 
-from scripts.measure_layer_pathologies import (count_isolated_bbox,
-                                               count_isolated_touch,
-                                               parse_block, resolve_cache_dir)
+from scripts._measure_common import parse_block, resolve_work_dir
+from scripts.measure_layer_pathologies import (corner_only_pairs,
+                                               count_corner_only_pairs,
+                                               count_isolated_bbox,
+                                               count_isolated_touch)
+from tests.cities import MESSY, ORACULUM
 
 REPO = Path(__file__).resolve().parent.parent
 DOC = REPO / "docs" / "data" / "layer_pathologies.md"
@@ -29,7 +32,9 @@ needs_data = pytest.mark.skipif(
     reason=f"real Delhi data not present at {DATA_DIR}")
 
 COUNT_KEYS = ("settlements", "rectangles", "multipolygons", "isolated_bbox",
-              "isolated_touch", "no_population", "overlapping_pairs")
+              "isolated_touch", "no_population", "overlapping_pairs",
+              # DEL-50, measured and committed on 5 Sep 2026:
+              "corner_only_pairs", "corner_only_settlements")
 AREA_KEYS = ("area_km2_min", "area_km2_median", "area_km2_max")
 POINT_SERVICES = ("bank", "health", "police", "ration", "school", "transport")
 
@@ -96,9 +101,9 @@ def test_the_doc_has_the_fenced_block_with_every_required_key(committed):
                       for key in committed
                       if key.startswith("multi_settlement_points_"))
     assert services == sorted(POINT_SERVICES), services
-    assert set(committed) == (set(COUNT_KEYS) | set(AREA_KEYS)
-                              | {f"multi_settlement_points_{s}"
-                                 for s in POINT_SERVICES})
+    expected = (set(COUNT_KEYS) | set(AREA_KEYS)
+                | {f"multi_settlement_points_{s}" for s in POINT_SERVICES})
+    assert set(committed) == expected, sorted(set(committed) ^ expected)
 
 
 def test_the_doc_records_its_provenance():
@@ -110,8 +115,10 @@ def test_the_doc_records_its_provenance():
 
 def test_the_cache_dir_default_is_a_fresh_directory_outside_the_data_dir():
     """~/delhi_data is bisynced to the shared drive: a cache written there
-    propagates to everyone. The default must never be derived from it."""
-    made = [resolve_cache_dir(), resolve_cache_dir()]
+    propagates to everyone. The default must never be derived from it. The
+    guard now lives in scripts/_measure_common.resolve_work_dir; this script
+    keeps its historic --cache-dir flag name."""
+    made = [resolve_work_dir(), resolve_work_dir()]
     try:
         assert made[0] != made[1], "each run must get its own cache"
         for path in made:
@@ -120,7 +127,7 @@ def test_the_cache_dir_default_is_a_fresh_directory_outside_the_data_dir():
     finally:
         for path in made:
             shutil.rmtree(path, ignore_errors=True)
-    assert resolve_cache_dir("/somewhere/else") == Path("/somewhere/else")
+    assert resolve_work_dir("/somewhere/else") == Path("/somewhere/else")
 
 
 @needs_data
@@ -129,7 +136,8 @@ def test_a_fresh_run_reproduces_the_committed_counts(committed, fresh):
     and the three float area keys are checked for presence and parseability
     by the shape test instead of by text equality."""
     measured, _, _ = fresh
-    assert set(measured) == set(committed)
+    assert set(measured) == set(committed), sorted(set(measured)
+                                                   ^ set(committed))
     for key, value in committed.items():
         if key.startswith("area_km2_"):
             continue
@@ -145,3 +153,40 @@ def test_the_script_writes_nothing_under_the_data_directory(fresh):
     created = after - before
     leaked = sorted(str(path) for path in created if ".dedup." in path.name)
     assert leaked == [], leaked
+
+
+# --- DEL-50: corner-only contact pairs ---------------------------------
+def test_the_messy_city_has_exactly_one_corner_only_pair():
+    """`T`'s contact with `L` is a single Point (docs/oracle/messy-city.md):
+    zero length, zero area. It is a `bbox` neighbour and never a `touch`
+    one, and a 0 km distance band would make it a neighbour again — which is
+    exactly the question DEL-50 asks of the real layer."""
+    city = MESSY.load_settlements()
+    assert corner_only_pairs(city, id_col="USO_AREA_U") == [("L", "T")]
+    assert count_corner_only_pairs(city, id_col="USO_AREA_U") == 1
+
+
+def test_oraculum_has_no_corner_only_pairs():
+    """Every Oraculum settlement is an axis-aligned rectangle in a grid; the
+    pairs that meet, meet along an edge."""
+    assert count_corner_only_pairs(ORACULUM.load_settlements(),
+                                   id_col="USO_AREA_U") == 0
+
+
+def test_a_shared_edge_and_a_shared_corner_are_told_apart():
+    """A-B share an edge (positive length), B-C share one point, A-C are
+    disjoint: exactly one corner-only pair."""
+    gdf = gpd.GeoDataFrame(
+        {"id": ["A", "B", "C"]},
+        geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1), box(2, 1, 3, 2)],
+        crs="EPSG:7760")
+    assert corner_only_pairs(gdf, id_col="id") == [("B", "C")]
+
+
+def test_an_overlapping_pair_is_not_corner_only():
+    """The intersection of an overlap has AREA, so the measure test — not a
+    geom_type test — excludes it."""
+    gdf = gpd.GeoDataFrame(
+        {"id": ["O1", "O2"]},
+        geometry=[box(0, 0, 2, 1), box(1, 0, 3, 1)], crs="EPSG:7760")
+    assert count_corner_only_pairs(gdf, id_col="id") == 0
