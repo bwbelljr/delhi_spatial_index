@@ -519,3 +519,121 @@ def test_reference_the_other_rules_reject_a_buffer(rule):
     with pytest.raises(ValueError, match="barrier_buffer_m"):
         apply_barrier({"A": {"B"}, "B": {"A"}}, city, _barrier_frame(), rule,
                       buffer_m=5.0)
+
+
+# --- 3E: production == reference on synthetic geometry (spec § 6.4) ----
+def synthetic_partial_city():
+    """Three settlements built for the case no fixture city can carry.
+
+    P and Q OVERLAP (so their shared boundary is the intersection polygon's
+    perimeter); R is a two-part MultiPolygon TOUCHING P along both parts
+    (a MultiLineString shared boundary); a canal partially covers the P-R
+    boundary, so at least one weight is strictly between 0 and 1.
+
+    EVERY point service the reference scores gets a layer, because
+    `compute_city` min-maxes all six of `POINT_SERVICES` plus road and
+    DEL-54's guard raises on a constant column — a city with only a clinic
+    layer would make school/bank/police/ration/transport all-zero and stop
+    the comparison before it started. One point per settlement, reused for
+    every service: the three denominators (100, 200, 400) are distinct, so
+    no PCEN column can be constant. Each point is strictly interior to
+    exactly one settlement and none lies in the P-Q overlap, so
+    production's boundary-inclusive `intersects` and the reference's strict
+    `within` agree on every one (rule-set gap #6 is not in scope here).
+    """
+    import geopandas as gpd
+    from shapely.geometry import LineString, MultiPolygon, Point, box
+
+    settlements = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["P", "Q", "R"], "USO_FINAL": ["Planned"] * 3,
+         "population": [100.0, 200.0, 400.0],
+         "area_km2": [1.2, 1.0, 0.8]},
+        geometry=[box(0, 0, 1200, 1000),
+                  box(1000, 0, 2000, 1000),
+                  MultiPolygon([box(-400, 0, 0, 400),
+                                box(-400, 600, 0, 1000)])],
+        crs="EPSG:7760")
+    # The canal covers y in [0, 400] of the x = 0 boundary P shares with R's
+    # lower part: 400 of the 800 m shared boundary, so w_PR is strictly
+    # fractional (0.5). The round cap adds nothing — the canal's endpoints
+    # coincide with that segment's own endpoints and the shared boundary
+    # does not continue past them; the test asserts 0 < w_PR < 1, so this
+    # comment is description, not a pin.
+    barriers = gpd.GeoDataFrame(
+        {"name": ["canal"]},
+        geometry=[LineString([(0, 0), (0, 400)])], crs="EPSG:7760")
+    # P only, Q only, R's upper part only — none in the P-Q overlap.
+    hosts = [Point(600, 500), Point(1600, 500), Point(-200, 800)]
+    services = {
+        name: gpd.GeoDataFrame({"service": [name] * 3},
+                               geometry=list(hosts), crs="EPSG:7760")
+        for name in ("clinic", "school", "bank", "police", "ration",
+                     "transport")
+    }
+    # 300 m inside R's lower part, 1100 m inside P, 100 m inside Q (the
+    # overlap stretch counts for both owners, on both sides) — three
+    # distinct lengths, so road_pcen is not constant either.
+    services["road"] = gpd.GeoDataFrame(
+        {"service": ["road"]},
+        geometry=[LineString([(-300, 200), (1100, 200)])], crs="EPSG:7760")
+    return settlements, barriers, services
+
+
+def test_production_matches_the_reference_on_synthetic_partial_geometry():
+    """The fractional-weight x overlap x MultiPolygon case, scored by BOTH
+    implementations at 1e-12. It cannot live in a fixture city without
+    moving an existing expected value (spec § 12 item 3), so it lives here
+    and costs no fixture file.
+    """
+    from delhi_psi.config import (
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
+        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
+        ExclusionStage, MethodologyConfig, RoadsFormula,
+    )
+    from delhi_psi.pipeline import compute_frames
+    from tests.test_profiles_match_reference import METRIC_MAP
+
+    settlements, barriers, services = synthetic_partial_city()
+    methodology = MethodologyConfig(
+        adjacency=AdjacencyConfig(rule=AdjacencyRule.BBOX),
+        barrier=BarrierConfig(rule=BarrierRule.PARTIAL_WEIGHTED,
+                              combine="any", buffer_m=5.0),
+        decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
+                          distance=DecayDistance.CENTROID),
+        roads=RoadsFormula.DECAYED,
+        second_normalization=True,
+        exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
+                                  absent_neighbor=AbsentNeighbor.SWALLOWED))
+
+    for denom in ("pop", "popdensity"):
+        got = compute_frames(settlements, {"canal": barriers}, services, None,
+                             methodology, denom,
+                             mapping={"Planned": "Planned"},
+                             scheme="synthetic").set_index("USO_AREA_U")
+        exp = compute_city(
+            settlements, services, barriers, adjacency_rule="bbox",
+            barrier_rule="partial_weighted", barrier_buffer_m=5.0,
+            roads_formula="decayed", scenario="none", denom=denom,
+            second_norm=True, absent_neighbor_contribution="swallowed",
+            scenarios={"none": (frozenset(), False)})
+        assert set(got.index) == set(exp.index)
+        # Every METRIC_MAP column exists on both sides: the city carries all
+        # six point services plus road, and second_norm is on, so nothing is
+        # skipped and the comparison cannot pass by omission.
+        for prod_col, metric in METRIC_MAP.items():
+            for sid in exp.index:
+                assert got.loc[sid, prod_col] == pytest.approx(
+                    exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)
+
+
+def test_the_synthetic_city_really_carries_a_fractional_weight():
+    """The test above would still pass if every weight were 1 or 0 — that is
+    exactly the failure mode it exists to rule out."""
+    from tests.reference_impl import adjacency, partial_weights
+
+    settlements, barriers, _ = synthetic_partial_city()
+    weights = partial_weights(adjacency(settlements, "bbox"), settlements,
+                              barriers, 5.0)
+    fractional = [w for w in weights.values() if 0.0 < w < 1.0]
+    assert fractional, weights
+    assert weights[("P", "R")] == weights[("R", "P")]
