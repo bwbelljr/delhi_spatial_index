@@ -468,7 +468,16 @@ per-category table above carries all ten regardless.
 Computed automatically and printed in the `flag` column; a flagged row stays in
 the table, greyed, and the prose says why:
 
-- `isolates` — `n_isolates > 0`
+- `isolates` — **more isolates than the `bbox` baseline**, not `n_isolates > 0`.
+  Corrected 6 Sep 2026 against the measured decay group: the baseline itself
+  has **360** isolated settlements out of 4,131 reported. They are a property
+  of `code-2025`'s `global_asymmetric` barrier rule, which severs every link
+  *into* a flagged settlement — nothing to do with the factor under test. As
+  originally written the flag would fire on every row including both anchors,
+  which makes it a constant, and a constant is not a flag. (One of the plan
+  review's killed findings predicted exactly this and was refuted 3–0; the
+  real data says the refuters were wrong. `n_isolates` is reported as a number
+  regardless — see § 6.7.)
 - `smoothed` — `own_share_p50 < 0.10`
 - `pinned` — exactly one settlement at norm_psi = 1 while the 99th percentile
   is below 0.5 (one outlier compressing everyone)
