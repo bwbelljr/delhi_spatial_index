@@ -675,8 +675,11 @@ three, in that order. `JJC` is the lowest-scoring category at every point,
 which is the ordering the gap block below quantifies.
 
 **The top six categories are a genuine composition-sensitivity finding,
-not noise.** At the bbox baseline five of the six top categories share an
-interval overlapping `[1-6]`, and `n_fragile_pairs` is `5` out of the
+not noise.** At the bbox baseline **all six** of the top categories carry a
+rank interval lying inside ranks 1 to 6 — `Other`, `Industrial` and `JJR` at
+`1 [1-6]`, `2 [1-6]`, `3 [1-6]`, then `SDA: 4 [2-6]`, `UV: 5 [2-6]` and
+`Planned: 6 [3-6]` — so every one of them could plausibly occupy any of the
+top six places under a different settlement draw. `n_fragile_pairs` is `5` out of the
 8 adjacent pairs the 9-category ordering has — most of the *top* of the
 ranking would plausibly reorder under a different settlement draw, while
 the *bottom* would not. `band-1km` and `own-only` are the two narrowest

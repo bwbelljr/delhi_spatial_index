@@ -413,6 +413,14 @@ def test_every_caption_says_the_run_is_provisional():
     doc = DOC.read_text()
     headings = list(re.finditer(r"^## .*$", doc, re.M))
     assert len(headings) >= len(S.BLOCKS)
+    # The preamble too. The fix-round re-review found that a heading-only walk
+    # leaves the introduction — the first thing a reader sees, and the only
+    # part of the document a skimmer may read — with no coverage at all:
+    # deleting its label passed. A span nobody checks is where the label goes
+    # missing.
+    assert "DRY RUN" in doc[:headings[0].start()], (
+        "the introduction, before the first '## ' heading, is missing the "
+        "DRY RUN label")
     for i, heading in enumerate(headings):
         start = heading.end()
         end = headings[i + 1].start() if i + 1 < len(headings) else len(doc)
