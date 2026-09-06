@@ -15,7 +15,7 @@
 - **No `delhi_psi/` behaviour change.** All new code is `scripts/` + `tests/` + `docs/`. No new shipped profile, no fixture change, no expected-value change.
 - **READ-ONLY over the data directory.** `~/delhi_data` is bisynced to the shared drive; nothing is ever written there. Scratch goes under `--work-dir`, which every script refuses to place inside the data directory.
 - **CLI shape, the THREE NEW scripts:** `--config` (default `code-2025`), `--data-dir`, `--work-dir`, plus the script-specific `--verify-dir` / `--baseline-dir` / `--all-candidates`. `measure_layer_pathologies.py` keeps its historic `--cache-dir` flag name and its documented command line (spec § 3); the guard behind both names is the same `resolve_work_dir`.
-- **A warm dedup cache upcasts Polygon → MultiPolygon.** `pipeline._dedup_cached` returns the in-memory frame on a COLD cache but re-reads its own GeoPackage on a WARM one, and a GeoPackage layer has a single geometry type: the raw layer's 3,801 Polygon + 556 MultiPolygon all come back as MultiPolygon after a round trip. So any count that inspects `geom_type` — today only `multipolygons` in the pathology block — is valid ONLY on a cold cache. Rule (spec § 3): `measure_layer_pathologies.py` always runs cold (its default fresh temp `--cache-dir`; the run step never points it at a staged cache), and `_measure_common.load_settlements` says so in its docstring. The other scripts' predicates (`intersects`, intersection length, `touch` adjacency, barrier flags) are type-agnostic and may share a warm cache.
+- **A warm dedup cache upcasts Polygon → MultiPolygon.** `pipeline._dedup_cached` returns the in-memory frame on a COLD cache but re-reads its own GeoPackage on a WARM one, and a GeoPackage layer has a single geometry type: the raw layer's 3,801 Polygon + 556 MultiPolygon all come back as MultiPolygon after a round trip. So any count that inspects `geom_type` — today only `multipolygons` in the pathology block — is valid ONLY on a cold cache. Rule (spec § 3): `measure_layer_pathologies.py` always runs cold (its default fresh temp `--cache-dir`; the run step never points it at a staged cache), and `_measure_common.load_settlements` says so in its docstring. **Task 1 also rewrites the `--cache-dir` sentence in `measure_layer_pathologies.py`'s module docstring and `--help` text**: today they recommend passing a persistent cache dir "to reuse it", which is exactly the warm reuse that corrupts `multipolygons`; the new wording says a warm cache is only safe for scripts that never inspect `geom_type`, and that this script must run cold. The other scripts' predicates (`intersects`, intersection length, `touch` adjacency, barrier flags) are type-agnostic and may share a warm cache.
 - **Every script exposes** `measure(...)` (or `inventory(...)`) returning an ordered dict, a `render`, and `main(argv=None)`. A script with ONE block returns a flat ordered dict and renders it unlabeled (the pathology script's shape). A script with MORE THAN ONE block returns an ordered dict of *block name → block dict* and renders each with `name=`. "Ordered dict" means a plain `dict` (insertion-ordered since 3.7) — never `collections.OrderedDict`.
 - **Tests call the functions, not `main`** — with exactly one argparse smoke test per script. The one other place a script is invoked as a whole is the data-gated doc-drift test, which runs it as a subprocess and compares its stdout with the committed block: that comparison is spec § 4's requirement ("it equals the script's output on this machine"), and it is the shape `tests/test_layer_pathologies.py` already uses.
 - **Imports:** the repo root is on `sys.path` (editable install), so `from scripts._measure_common import ...` works both under pytest and when a script is run as `uv run python scripts/<name>.py`. Tests import scripts as `from scripts.<name> import ...` — the mechanism `tests/test_layer_pathologies.py` already uses.
@@ -2616,13 +2616,23 @@ Three things about that, all load-bearing:
    roads script benefits from is the one in `--work-dir` itself, for the
    `access` block's `load_settlements`.
 
-`DELHI_PSI_MEASURE_CACHE` must stay exported for Steps 2, 8 and 9 — Step 8's
-two real-data drift tests skip without it. Nothing is written under
-`~/delhi_data` at any point in this task.
+**Shell state does NOT persist between the controller's commands** (plan
+review R2, 5 Sep 2026): an `export` in one fenced block is gone by the
+next. So every command below that needs the cache passes the LITERAL path
+`~/measure_work/cache` as `--work-dir`, and every pytest invocation that
+needs the env var sets it inline on the same command line
+(`DELHI_PSI_MEASURE_CACHE=~/measure_work/cache uv run pytest …`). The
+`export` in Step 1 is a convenience for an interactive shell only; nothing
+depends on it. Each script prints a `work-dir:` line — check it names
+`~/measure_work/cache`, not a `/tmp/delhi_psi_…` directory, before
+trusting a run's timing. Nothing is written under `~/delhi_data` at any
+point in this task.
 
 - [ ] **Step 2: Run the four measurements (spec § 4)**
 
-Run each in the foreground, keep the whole stdout:
+Run each as its own command, keep the whole stdout. The pathology run is
+~5 min cold; the roads run is a few minutes with the warm cache; each is
+its own command with a 600 s timeout, never chained with `&&`:
 
 ```bash
 # COLD, deliberately: no --cache-dir. ~4.5 min of dedup, and the only way
@@ -2630,7 +2640,7 @@ Run each in the foreground, keep the whole stdout:
 uv run python scripts/measure_layer_pathologies.py --config code-2025
 
 uv run python scripts/inventory_barriers.py \
-    --config code-2025 --all-candidates --work-dir "$DELHI_PSI_MEASURE_CACHE"
+    --config code-2025 --all-candidates --work-dir ~/measure_work/cache
 
 uv run python scripts/measure_psi_columns.py \
     --baseline-dir ~/delhi_data/psi_2020_results \
@@ -2639,8 +2649,12 @@ uv run python scripts/measure_psi_columns.py \
 
 uv run python scripts/measure_roads_access.py \
     --config code-2025 --verify-dir ~/delhi_data/phase3_verify \
-    --work-dir "$DELHI_PSI_MEASURE_CACHE"
+    --work-dir ~/measure_work/cache
 ```
+
+Check the `work-dir:` line of the barriers and roads output reads
+`~/measure_work/cache` (expanded). If either shows a temp directory, the
+literal path did not reach the script — fix the command, do not proceed.
 
 Checks before pasting anything:
 - the pathology run's existing key VALUES are unchanged from the committed
@@ -2862,8 +2876,9 @@ a foreground command's timeout, so run it detached and read the log:
 
 ```bash
 mkdir -p ~/measure_work/logs
-export DELHI_PSI_MEASURE_CACHE=~/measure_work/cache   # still, if the shell is new
-uv run pytest -q -W error -rs \
+# The variable is set INLINE on the same command line — shell state does not
+# survive between the controller's commands (plan review R2).
+DELHI_PSI_MEASURE_CACHE=$HOME/measure_work/cache uv run pytest -q -W error -rs \
     tests/test_measure_common.py tests/test_layer_pathologies.py \
     tests/test_inventory_barriers.py tests/test_measure_psi_columns.py \
     tests/test_measure_roads_access.py \
@@ -2892,16 +2907,17 @@ Expected in the log:
 - [ ] **Step 9: Run the full suite — also in the BACKGROUND, to a log**
 
 ```bash
-uv run pytest -q -W error > ~/measure_work/logs/full.log 2>&1
+DELHI_PSI_MEASURE_CACHE=$HOME/measure_work/cache uv run pytest -q -W error -rs \
+    > ~/measure_work/logs/full.log 2>&1
 ```
 
-Same rule as Step 8, same reason: with `DELHI_PSI_MEASURE_CACHE` exported the
-full suite is **15–20 minutes**, not the 6.5 that Tasks 1–5 budget (they run
-with the variable unset, so the two real-data drift tests skip). Run it
+Same rule as Step 8, same reason: with `DELHI_PSI_MEASURE_CACHE` set inline
+the full suite is **15–20 minutes**, not the 6.5 that Tasks 1–5 budget (they
+run with the variable unset, so the two real-data drift tests skip). Run it
 detached, wait for the exit, read `~/measure_work/logs/full.log`, and commit
 only on a green result you have read. If the log shows the
-"set DELHI_PSI_MEASURE_CACHE" skips, the suite did not prove what this step
-claims — re-export and re-run.
+"set DELHI_PSI_MEASURE_CACHE" skips, the variable did not reach pytest —
+fix the command line and re-run.
 
 - [ ] **Step 10: Commit**
 

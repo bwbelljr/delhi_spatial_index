@@ -481,7 +481,7 @@ is drafted AFTER the merge from the final docs and is never sent.
    sees what his own text says.
 8. **The popdensity finding may reverse Bob's proposed default.** The spec
    commits to writing that reversal into the docs if the data says so
-   (§ 2.4 item 2), because the owner's instruction was "best
+   (§ 2.4 item 3), because the owner's instruction was "best
    recommendations", and a recommendation contradicted by the paper's own
    axis label is not one.
 9. **`FIGURE_4_BARS` lives in the script**, not a data file — eight numbers
