@@ -133,6 +133,32 @@ def test_minmax_is_eq2():
     assert list(got["idx"]) == pytest.approx([0.0, 0.25, 1.0], abs=1e-12)
 
 
+def test_minmax_raises_on_a_constant_column():
+    """Eq. 2 is undefined when every settlement scores the same: (v-lo)/(hi-lo)
+    is 0/0. A constant column means something upstream is wrong — an empty
+    service layer, or an exclusion set that removed every settlement that had
+    the service — so the guard names the column instead of dividing."""
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "bank_pcen": [0.25, 0.25]},
+        geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:7760")
+    with pytest.raises(ValueError) as excinfo:
+        index.minmax(frame, source_col="bank_pcen", target_col="bank_idx")
+    message = str(excinfo.value)
+    assert "'bank_pcen'" in message
+    assert "0.25" in message
+    assert "max == min" in message
+
+
+def test_minmax_raises_on_a_single_row_frame():
+    """One reported settlement is the degenerate case that reaches this in
+    practice (an exclusion set that leaves one row)."""
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A"], "bank_pcen": [0.4]},
+        geometry=[Point(0, 0)], crs="EPSG:7760")
+    with pytest.raises(ValueError, match="'bank_pcen'"):
+        index.minmax(frame, source_col="bank_pcen", target_col="bank_idx")
+
+
 def test_service_index_adds_pcen_and_idx():
     got = index.service_index(city_with_neighbours(), "clinic_count",
                               service="clinic", denominator="pop")
@@ -152,6 +178,33 @@ def test_overall_psi_omits_norm_psi_when_second_normalization_is_false():
     got = index.overall_psi(frame, second_normalization=False)
     assert "unnorm_psi" in got.columns
     assert "norm_psi" not in got.columns
+
+
+def test_service_index_propagates_the_guard():
+    """service_index = pcen then minmax; a constant PCEN column must surface
+    as the same ValueError, not as a NaN idx column."""
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "bank_count": [1, 1],
+         "population": [100.0, 100.0], "area_km2": [1.0, 1.0],
+         "nbrs_dist_bbox": [[], []]},
+        geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:7760")
+    with pytest.raises(ValueError, match="'bank_pcen'"):
+        index.service_index(frame, "bank_count", service="bank",
+                            denominator="pop")
+
+
+def test_overall_psi_second_normalization_propagates_the_guard():
+    """The second min-max is the other caller: a frame whose per-service
+    indices average to the same value everywhere now names unnorm_psi. Also
+    proves the guard does NOT fire when second_normalization=False."""
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "bank_idx": [0.5, 0.5]},
+        geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:7760")
+    with pytest.raises(ValueError, match="'unnorm_psi'"):
+        index.overall_psi(frame, second_normalization=True)
+
+    got = index.overall_psi(frame, second_normalization=False)
+    assert list(got["unnorm_psi"]) == pytest.approx([0.5, 0.5], abs=1e-12)
 
 
 # --- 3D: the four decay forms (spec § 2.2) -----------------------------
