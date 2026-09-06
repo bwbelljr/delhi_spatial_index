@@ -33,7 +33,7 @@ name each item's ticket; keep the two in sync when either changes.
 | 0 Environment & data | done | data synced, `gh` working |
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
 | 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
-| 3 Refactor & bug audit | **in progress** — cycles 3A–3D merged (PRs #10, #13, #14, #15); 3E next | delhi_psi package, 540 tests; every methodology choice is a profile value; code-2025 reproduces July 2025 at zero deviation |
+| 3 Refactor & bug audit | **in progress** — cycles 3A–3D merged (PRs #10, #13, #14, #15); 3E's three tickets (DEL-54, DEL-48, DEL-20) all code-complete on their own branches, pending merge and the real-data run step | delhi_psi package, 540 tests; every methodology choice is a profile value; code-2025 reproduces July 2025 at zero deviation |
 | 4 Categorization | **decisions received 28 Aug 2026** — measurements, then the ratified profile | `docs/decisions/2026-08-28-raj-methodology-decisions.md` |
 | 5–7 | not started | — |
 
@@ -367,9 +367,15 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
             outside it, and strictly > 0. Both cities' `expected_values.csv`
             and every `production/*.csv` byte-identical; the two variants
             CSVs changed by addition only.
-      - [ ] (b) the overlap neighbour rule — a neighbour lends only services
-            not already inside the receiving settlement [DEL-20], on its own
-            branch after DEL-48 merges.
+      - [x] (b) the overlap neighbour rule — a neighbour lends only services
+            not already inside the receiving settlement [DEL-20] — done
+            6 Sep 2026, branch `del-20-overlap-lending`. Shipped as the
+            `overlap_outside` VARIANT with `whole` in both shipped profiles,
+            so **no existing expected value moved**: both cities'
+            `expected_values.csv` and every `production/*.csv` byte-identical,
+            the two variants CSVs changed by addition only. The pin: on the
+            messy city's one overlapping pair, O1's clinic PCEN falls from
+            (1 + 1/1.8)/600 today to 1/600 under `outside_receiver`.
       Decision log §§ 4, 5, 12.
 - [x] Pre-recalculation measurements (no code; feed the batched reply to
       Raj): corner-only contact pairs on the real layer [DEL-50]; barrier
@@ -442,8 +448,10 @@ Epic DEL-5. All decisions: `docs/decisions/2026-08-28-raj-methodology-decisions.
       written; `outputs.denominators` — the figures use popdensity (DEL-52),
       so it stays reported unless Raj switches to per-population Eq. 3;
       identity mapping. Procedure: `docs/methodology-config.md` § 3.
-      DEL-48 is no longer a blocker (merged); still blocked by DEL-20 and
-      Raj's two DEL-52 answers.
+      DEL-48 and DEL-20 are no longer blockers (both merged); still blocked
+      by Raj's two DEL-52 answers and his answer on `overlap.lending` — the
+      counting half is ratified, but whether `outside_receiver` becomes the
+      ratified profile's value awaits him.
 - [ ] **Bob:** recalculate all indexes with the ratified profile
       (supersedes the current "no RV" run) — gated on cycle 3E, the
       measurements above, and the ratified profile [DEL-32]. Hand
