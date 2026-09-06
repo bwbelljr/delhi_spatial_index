@@ -189,14 +189,35 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
     # that are dropped a moment later cannot change a kept row's value.
     amounts = universe
     layout = service_layout(services)
+    projected = {}
     for service, kind, amount_col in layout:
-        projected = geometry.reproject(services[service], epsg_code)
+        projected[service] = geometry.reproject(services[service], epsg_code)
         if kind == "point":
-            amounts = index.point_counts(amounts, projected,
+            amounts = index.point_counts(amounts, projected[service],
                                          count_col=amount_col, id_col=id_col)
         else:
-            amounts = index.road_lengths(amounts, projected,
+            amounts = index.road_lengths(amounts, projected[service],
                                          length_col=amount_col, id_col=id_col)
+
+    # `outside_receiver`: what a neighbour lends is |S_j \ S_i|, so each
+    # service needs its own {(i, j): shared} table. Built HERE — compute
+    # locally, on the FULL universe (pre-row-drop, so under
+    # absent_neighbor: contributes an excluded overlapping neighbour's
+    # lending is adjusted too), never stored and never in the methodology
+    # stamp: the overlap rule is downstream of the neighbour structure, like
+    # decay and roads, so one artifact serves both values. Under `whole`
+    # this dict stays empty, `shared.get(service)` is None, and the
+    # neighbour loop is bit-identical to today's.
+    shared = {}
+    if methodology.overlap.lending == "outside_receiver":
+        for service, kind, amount_col in layout:
+            shared[service] = index.shared_amounts(
+                amounts, projected[service], kind=kind,
+                amount_col=amount_col, neighbor_col=NBRS_COL, id_col=id_col)
+        log.info("overlap: lending=%s shared_pairs=%s",
+                 methodology.overlap.lending,
+                 {name: len(table) for name, table in shared.items()
+                  if table})
 
     out = amounts[~amounts[id_col].isin(dropped)] if dropped else amounts
 
@@ -206,6 +227,7 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
         out = index.service_index(
             out, amount_col, service=service, denominator=denominator,
             nbr_dist_col=nbr_dist_col, nbr_weight_col=nbr_weight_col,
+            shared_amounts=shared.get(service),
             lookup_frame=amounts,
             absent_neighbor=exclusion.absent_neighbor,
             include_neighbors=include_neighbors,

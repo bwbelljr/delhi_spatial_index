@@ -163,14 +163,15 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
     § 4.1 pins name.
 
     A block the variant does not mention keeps `base`'s: today the band
-    variants override `adjacency` and `partial_5m` overrides `barrier`, and
-    every variant states each block it does override IN FULL.
+    variants override `adjacency`, `partial_5m` overrides `barrier`,
+    `overlap_outside` overrides `overlap` and `partial_5m_outside` overrides
+    both, and every variant states each block it does override IN FULL.
     """
     from dataclasses import replace
 
     from delhi_psi.config import (
         AdjacencyConfig, AdjacencyRule, BarrierConfig, BarrierRule,
-        DecayConfig, DecayDistance, DecayForm,
+        DecayConfig, DecayDistance, DecayForm, OverlapConfig, OverlapLending,
     )
     from tests.variants import VARIANTS
 
@@ -187,6 +188,10 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
             rule=BarrierRule(block["rule"]),
             combine=block["combine"],
             buffer_m=block.get("buffer_m")))
+    if "overlap" in spec:
+        block = spec["overlap"]
+        methodology = replace(methodology, overlap=OverlapConfig(
+            lending=OverlapLending(block["lending"])))
     if "decay" in spec:
         block = spec["decay"]
         methodology = replace(methodology, decay=DecayConfig(

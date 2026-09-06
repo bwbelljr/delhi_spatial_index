@@ -7,6 +7,28 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **`methodology.overlap.lending`** — a new required switch: what a
+  NEIGHBOUR lends. `whole` (today's rule) lends the neighbour's whole
+  amount of a service; `outside_receiver` lends `|S_j \ S_i|` — the amount
+  minus whatever of the same service already lies inside the receiver — so
+  a service sitting in the overlap of two colony polygons is not counted
+  twice for the same settlement (DEL-20, Bob's proposal of 5 Sep 2026;
+  cycle 3E, the third and last of three per-ticket PRs after DEL-54 and
+  DEL-48). Raj ratified only the COUNTING half of this on 28 Aug 2026 — a
+  service inside k overlapping colonies counts for each of the k, which is
+  today's behaviour on both sides and does not move — so `overlap.counting`
+  is a reserved key with no knob, and the lending half awaits his answer.
+  - Both shipped profiles gain the key with today's value `whole`, and
+    **nothing either profile computes moves**: both cities'
+    `expected_values.csv` and every `production/*.csv` are byte-identical,
+    and the two `variants_expected_values.csv` files changed by **addition
+    only** (322 new rows per rule on oraculum, 460 on messy, zero
+    deletions).
+  - The shared structure `{(i, j): amount}` is built compute-locally from
+    service containment and is sparse — it costs nothing on a clean,
+    non-overlapping pair.
+  - The rule is **not** in the methodology stamp, so one stored neighbours
+    artifact serves both values of the switch.
 - **`methodology.barrier.rule: partial_weighted`** — a barrier that covers
   only part of a shared boundary now discounts that neighbour's contribution
   by the covered share, `w_ij = 1 − L_blocked/L_shared`, instead of severing

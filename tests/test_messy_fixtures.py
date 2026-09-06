@@ -148,6 +148,68 @@ def test_the_overlap_clinic_is_counted_for_both_owners():
         assert got.loc["O2", "clinic_count"] == 1, profile
 
 
+# --- the overlap lending rule (DEL-20, second half) ---------------------
+def overlap_outside_frame(denom="pop"):
+    """The messy city under the `overlap_outside` variant methodology.
+
+    Not memoised through `frame`: that helper keys on a PROFILE name, and
+    this is a derived methodology, not a shipped profile.
+    """
+    from delhi_psi.pipeline import compute_frames
+    from tests.oraculum_fixtures import variant_methodology
+
+    scenario = SCENARIOS["nopop_only"]
+    methodology = variant_methodology(
+        BBOX_PROFILE, "overlap_outside", city=MESSY,
+        types=scenario.exclusion_types, stage=scenario.stage)
+    return compute_frames(MESSY.load_settlements(),
+                          {"canal": MESSY.load_barriers()},
+                          MESSY.load_services(), None, methodology, denom,
+                          mapping=MESSY.mapping(),
+                          scheme=MESSY.scheme).set_index("USO_AREA_U")
+
+
+def test_the_overlap_clinic_is_lent_back_today_and_not_under_the_switch():
+    """The two halves of memo § 6, side by side on one pair.
+
+    Raj RATIFIED the counting half: the clinic strictly inside O1 n O2 is
+    O1's own AND O2's own, so `clinic_count` is 1 for each under BOTH
+    values — that is `test_the_overlap_clinic_is_counted_for_both_owners`
+    above, and it does not move.
+
+    Bob ADDED the lending half, still out for Raj's answer: under
+    `code-2025` the same clinic also arrives at O1 as O2's, decayed over the
+    0.8 km between the centroids, so it reaches O1 twice. Under
+    `overlap.lending: outside_receiver` O2 lends |S_O2 \\ S_O1| = 0 of it and
+    O1 keeps only its own.
+    """
+    today = frame(BBOX_PROFILE, "nopop_only", "pop")
+    assert today.loc["O1", "clinic_pcen"] == pytest.approx(
+        (1 + 1 / 1.8) / 600, abs=1e-12)
+    switched = overlap_outside_frame()
+    assert switched.loc["O1", "clinic_count"] == 1
+    assert switched.loc["O2", "clinic_count"] == 1
+    assert switched.loc["O1", "clinic_pcen"] == pytest.approx(
+        1 / 600, abs=1e-12)
+    assert switched.loc["O2", "clinic_pcen"] == pytest.approx(
+        1 / 700, abs=1e-12)
+
+
+def test_only_the_shared_service_moves_on_the_overlapping_pair():
+    """O2's school at (11400, 500) is OUTSIDE O1, so it is lent in full and
+    O1's school row does not move by a single bit. The rule is about what is
+    shared, not about who is an overlapping neighbour."""
+    today = frame(BBOX_PROFILE, "nopop_only", "pop")
+    switched = overlap_outside_frame()
+    assert switched.loc["O1", "school_pcen"] == today.loc["O1", "school_pcen"]
+    assert switched.loc["O1", "police_pcen"] == today.loc["O1", "police_pcen"]
+    # and no settlement without an overlapping neighbour is touched at all
+    for sid in ("H", "L", "T", "M", "G", "I", "S"):
+        for column in [c for c in today.columns if c.endswith("_pcen")]:
+            assert switched.loc[sid, column] == today.loc[sid, column], (sid,
+                                                                        column)
+
+
 # --- the isolated settlement -------------------------------------------
 def test_isolated_settlement_has_no_neighbours_under_either_rule():
     for profile in PROFILES:

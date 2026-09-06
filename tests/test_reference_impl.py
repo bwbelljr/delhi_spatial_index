@@ -588,7 +588,8 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
     from delhi_psi.config import (
         AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
         BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
-        ExclusionStage, MethodologyConfig, RoadsFormula,
+        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
+        RoadsFormula,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -598,6 +599,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         adjacency=AdjacencyConfig(rule=AdjacencyRule.BBOX),
         barrier=BarrierConfig(rule=BarrierRule.PARTIAL_WEIGHTED,
                               combine="any", buffer_m=5.0),
+        overlap=OverlapConfig(lending=OverlapLending.WHOLE),
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
         roads=RoadsFormula.DECAYED,
@@ -637,3 +639,93 @@ def test_the_synthetic_city_really_carries_a_fractional_weight():
     fractional = [w for w in weights.values() if 0.0 < w < 1.0]
     assert fractional, weights
     assert weights[("P", "R")] == weights[("R", "P")]
+
+
+# --- 3E: production == reference with the overlap rule ON (spec § 6.4) --
+def synthetic_overlap_city():
+    """`synthetic_partial_city()` with ONE clinic added inside the P/Q
+    overlap, at (1100, 500) — strictly interior to both, so production's
+    boundary-inclusive `intersects` and the reference's strict `within`
+    agree on it (rule-set gap #6 stays out of scope).
+
+    That one point is what makes the overlap rule bite: P and Q each own it,
+    and each must stop lending it to the other. The road already crosses the
+    overlap (100 m of it lies in Q as well as P), so the LINE branch of the
+    shared structure is exercised in the same run. Clinic counts become
+    P 2, Q 2, R 1 — two distinct values, so no column is constant
+    and DEL-54's guard cannot fire.
+    """
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    settlements, barriers, services = synthetic_partial_city()
+    clinics = services["clinic"]
+    services = dict(services)
+    services["clinic"] = gpd.GeoDataFrame(
+        {"service": ["clinic"] * (len(clinics) + 1)},
+        geometry=[*clinics.geometry, Point(1100, 500)], crs="EPSG:7760")
+    return settlements, barriers, services
+
+
+def test_production_matches_the_reference_with_both_3e_rules_on():
+    """The fractional weight x overlap-lending x MultiPolygon case, scored
+    by BOTH implementations at 1e-12. It is the only place the two 3E
+    multipliers are simultaneously non-trivial: no fixture city has a
+    barrier across an overlap, and adding one would move an existing
+    expected value (spec § 12 item 3).
+    """
+    from delhi_psi.config import (
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
+        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
+        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
+        RoadsFormula,
+    )
+    from delhi_psi.pipeline import compute_frames
+    from tests.test_profiles_match_reference import METRIC_MAP
+
+    settlements, barriers, services = synthetic_overlap_city()
+    methodology = MethodologyConfig(
+        adjacency=AdjacencyConfig(rule=AdjacencyRule.BBOX),
+        barrier=BarrierConfig(rule=BarrierRule.PARTIAL_WEIGHTED,
+                              combine="any", buffer_m=5.0),
+        overlap=OverlapConfig(lending=OverlapLending.OUTSIDE_RECEIVER),
+        decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
+                          distance=DecayDistance.CENTROID),
+        roads=RoadsFormula.DECAYED,
+        second_normalization=True,
+        exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
+                                  absent_neighbor=AbsentNeighbor.SWALLOWED))
+
+    for denom in ("pop", "popdensity"):
+        got = compute_frames(settlements, {"canal": barriers}, services, None,
+                             methodology, denom,
+                             mapping={"Planned": "Planned"},
+                             scheme="synthetic").set_index("USO_AREA_U")
+        exp = compute_city(
+            settlements, services, barriers, adjacency_rule="bbox",
+            barrier_rule="partial_weighted", barrier_buffer_m=5.0,
+            overlap_lending="outside_receiver",
+            roads_formula="decayed", scenario="none", denom=denom,
+            second_norm=True, absent_neighbor_contribution="swallowed",
+            scenarios={"none": (frozenset(), False)})
+        assert set(got.index) == set(exp.index)
+        for prod_col, metric in METRIC_MAP.items():
+            for sid in exp.index:
+                assert got.loc[sid, prod_col] == pytest.approx(
+                    exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)
+
+
+def test_the_synthetic_city_really_shares_a_point_and_a_road():
+    """The test above would still pass if the shared structure were empty —
+    that is exactly the failure mode it exists to rule out. Both branches:
+    one clinic inside P n Q, and 100 m of the road inside it too."""
+    from tests.reference_impl import adjacency, apply_barrier, shared_amounts
+
+    settlements, barriers, services = synthetic_overlap_city()
+    nbrs = apply_barrier(adjacency(settlements, "bbox"), settlements,
+                         barriers, "partial_weighted", 5.0)
+    got = shared_amounts(nbrs, settlements, services)
+    assert got["clinic"] == {("P", "Q"): 1, ("Q", "P"): 1}
+    assert got["road"][("P", "Q")] == pytest.approx(0.1, abs=1e-12)
+    assert got["road"][("Q", "P")] == got["road"][("P", "Q")]
+    assert got["school"] == {}          # every other service is clean

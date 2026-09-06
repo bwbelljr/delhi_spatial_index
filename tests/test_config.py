@@ -34,6 +34,7 @@ MINIMAL = """profile: minimal
 """ + CATEGORIES_BLOCK + """methodology:
   adjacency: {rule: bbox}
   barrier: {rule: global_asymmetric, combine: any}
+  overlap: {lending: whole}
   decay: {form: inverse_linear, distance: centroid, distance_unit: km}
   roads: decayed
   second_normalization: true
@@ -467,6 +468,8 @@ def test_conditional_parameters_are_rejected_naming_the_key(tmp_path, key,
     ("methodology.decay.distance", "  decay:",
      "  decay: {form: inverse_linear, distance: as_the_crow_flies, "
      "distance_unit: km}"),
+    ("methodology.overlap.lending", "  overlap:",
+     "  overlap: {lending: sideways}"),
 ])
 def test_new_enums_name_the_key_and_the_allowed_values(tmp_path, key,
                                                        line_start, bad):
@@ -522,6 +525,7 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
 
     enum_key = {("adjacency", "rule"): "methodology.adjacency.rule",
                 ("barrier", "rule"): "methodology.barrier.rule",
+                ("overlap", "lending"): "methodology.overlap.lending",
                 ("decay", "form"): "methodology.decay.form",
                 ("decay", "distance"): "methodology.decay.distance"}
     for block, values in VARIANTS[variant].items():
@@ -539,3 +543,64 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
         loaded = getattr(cfg.methodology, block)
         for key, value in values.items():
             assert getattr(loaded, key) == value, (variant, block, key)
+
+
+# --- 3E: the overlap lending switch (spec § 1, § 3) --------------------
+OVERLAP_OUTSIDE_BLOCK = "  overlap: {lending: outside_receiver}"
+
+
+def test_overlap_lending_loads_both_values(tmp_path):
+    outside = load_config(write(tmp_path, swap("  overlap:",
+                                               OVERLAP_OUTSIDE_BLOCK)),
+                          data_dir=str(tmp_path))
+    assert outside.methodology.overlap.lending == "outside_receiver"
+    whole = load_config(write(tmp_path, MINIMAL, name="whole.yaml"),
+                        data_dir=str(tmp_path))
+    assert whole.methodology.overlap.lending == "whole"
+
+
+@pytest.mark.parametrize("profile", ["code-2025", "manuscript"])
+def test_shipped_profiles_name_todays_lending_rule_explicitly(profile,
+                                                              tmp_path):
+    """The one key both profiles gain this cycle. `whole` names the
+    arithmetic they have always run — a record, not a change. Raj has
+    confirmed only the COUNTING half of memo § 6; the lending half is Bob's
+    proposal and DEL-31 decides whether the ratified profile carries it."""
+    cfg = load_config(profile, data_dir=str(tmp_path))
+    assert cfg.methodology.overlap.lending == "whole"
+
+
+def test_overlap_is_required_like_every_methodology_block(tmp_path):
+    without = MINIMAL.replace("  overlap: {lending: whole}\n", "")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, without))
+    assert "methodology.overlap" in str(exc.value)
+
+
+def test_lending_is_required_inside_the_overlap_block(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap("  overlap:", "  overlap: {}")))
+    assert "methodology.overlap.lending" in str(exc.value)
+
+
+def test_an_unknown_overlap_key_is_rejected(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap(
+            "  overlap:", "  overlap: {lending: whole, share: half}")))
+    assert "methodology.overlap.share" in str(exc.value)
+
+
+@pytest.mark.parametrize("value", ["each", "single", "true"])
+def test_reserved_key_overlap_counting_rejects_every_value(tmp_path, value):
+    """A KNOWN optional key: any value takes the reserved path, never the
+    unknown-key path. It is where the reader learns why only ONE half of
+    memo § 6 is a switch — the counting half was ratified as today's
+    behaviour, so there is nothing to choose."""
+    text = swap("  overlap:",
+                f"  overlap: {{lending: whole, counting: {value}}}")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text))
+    message = str(exc.value)
+    assert "unknown key" not in message
+    assert message.endswith(RESERVED_KEYS["methodology.overlap.counting"])
+    assert "28 Aug 2026" in message

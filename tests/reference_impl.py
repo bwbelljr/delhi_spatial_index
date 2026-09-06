@@ -49,6 +49,7 @@ VARIANT_KNOBS = {
     ("decay", "distance"): "decay_distance",
     ("decay", "exponent"): "exponent",
     ("decay", "scale_km"): "scale_km",
+    ("overlap", "lending"): "overlap_lending",
 }
 # `barrier.combine` has no reference knob: the reference uses EVERY barrier
 # row, which is what `any` means on a one-layer city, and both fixture cities
@@ -254,6 +255,63 @@ def _service_amounts(settlements, services):
     return amounts
 
 
+OVERLAP_LENDINGS = ("whole", "outside_receiver")
+
+
+def shared_amounts(nbrs, settlements, services):
+    """{svc: {(i, j): amount}} — how much of `svc` lies inside BOTH i and j.
+
+    Points: the number of that service's points `within` both, the same
+    strict predicate `_service_amounts` uses — so `shared_ij <= amount_j` by
+    construction and the subtraction in `compute_city` can never go
+    negative. Roads: the clipped length in km of every road row inside
+    `geom_i n geom_j`, summed, which is `_service_amounts`' own road
+    arithmetic restricted to the intersection.
+
+    SPARSE and SYMMETRIC. Only pairs that actually share something get an
+    entry, in both orders; `compute_city` reads it with `.get((i, j), 0)`
+    and that 0 IS the representation of "nothing shared", not a swallowed
+    miss. On a city with no overlapping polygons every table comes back
+    empty (Oraculum), which is why `overlap_outside` is degenerate there.
+
+    The point tables are built from the SERVICE POINTS' containment, never
+    from the pair list: a point inside one settlement — every point on a
+    clean layer — is looked at once and contributes nothing.
+    """
+    idx = settlements.set_index("USO_AREA_U").geometry
+    out = {}
+    for svc in POINT_SERVICES:
+        gdf = services.get(svc)
+        table = {}
+        if gdf is not None:
+            for point in gdf.geometry:
+                inside = [i for i in idx.index if point.within(idx[i])]
+                if len(inside) < 2:
+                    continue
+                for i in inside:
+                    for j in inside:
+                        if i != j:
+                            table[(i, j)] = table.get((i, j), 0) + 1
+        out[svc] = table
+    road_geoms = list(services["road"].geometry)
+    table = {}
+    # Sorted UNDIRECTED pairs: each is measured once and written both ways,
+    # so the table is symmetric by construction and the order a set would
+    # have iterated in cannot reach the arithmetic.
+    for i, j in sorted({tuple(sorted((i, j)))
+                        for i, js in nbrs.items() for j in js}):
+        overlap = idx[i].intersection(idx[j])
+        if overlap.is_empty:
+            continue
+        length = sum(road.intersection(overlap).length
+                     for road in road_geoms) / 1000
+        if length > 0:
+            table[(i, j)] = length
+            table[(j, i)] = length
+    out["road"] = table
+    return out
+
+
 DECAY_FORMS = ("inverse_linear", "none", "inverse_power", "exponential")
 DECAY_DISTANCES = ("centroid", "boundary")
 
@@ -263,7 +321,7 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                  absent_neighbor_contribution, scenarios=None,
                  max_distance_km=None, barrier_buffer_m=None,
                  decay_form="inverse_linear", exponent=None, scale_km=None,
-                 decay_distance="centroid"):
+                 decay_distance="centroid", overlap_lending="whole"):
     # Every parameter a form does not use is REJECTED, not ignored — the
     # mapped-knob test relies on an unimplemented combination raising.
     if decay_form not in DECAY_FORMS:
@@ -272,6 +330,9 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     if decay_distance not in DECAY_DISTANCES:
         raise ValueError(f"unknown decay distance {decay_distance!r}; "
                          f"allowed values: {list(DECAY_DISTANCES)}")
+    if overlap_lending not in OVERLAP_LENDINGS:
+        raise ValueError(f"unknown overlap lending {overlap_lending!r}; "
+                         f"allowed values: {list(OVERLAP_LENDINGS)}")
     if decay_form == "inverse_power":
         if exponent is None:
             raise ValueError("decay form 'inverse_power' requires exponent")
@@ -305,6 +366,10 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     cent = _centroid_km(universe)
     geom = universe.set_index("USO_AREA_U").geometry
     amounts = _service_amounts(universe, services)
+    # Built on the post-barrier links, which are exactly the pairs the
+    # neighbour sum below looks up. Nothing is built at all under `whole`.
+    shared = (shared_amounts(nbrs, universe, services)
+              if overlap_lending == "outside_receiver" else None)
 
     indexed = [i for i in universe["USO_AREA_U"]
                if drop_before or i not in dropped]
@@ -344,7 +409,10 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                         and absent_neighbor_contribution == "swallowed"):
                     continue
                 w = 1.0 if barrier_w is None else barrier_w[(i, j)]
-                decayed_sum += w * amounts[svc][j] * contribution_weight(i, j)
+                lent = amounts[svc][j]
+                if shared is not None:
+                    lent -= shared[svc].get((i, j), 0)
+                decayed_sum += w * lent * contribution_weight(i, j)
             if svc == "road":
                 row["road_length_km"] = own
                 pcen = (own if roads_formula == "eq4"

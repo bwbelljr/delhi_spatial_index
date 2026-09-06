@@ -34,7 +34,7 @@ Vocabulary `messy-2` = `(Planned, RV)`. There are no barriers in this tier.
 | `M` | Planned | 400 | 2.0 | two-part MultiPolygon | its centroid `(6500, 500)` lies **outside** it, in the gap; its envelope spans the gap |
 | `G` | Planned | 50 | 0.01 | 100 m square in `M`'s gap | centred **exactly** on `M`'s centroid: `M ∈ nbrs_bbox(G)` but `G ∉ nbrs_bbox(M)` (an axis-aligned square *is* its own envelope), and `d = 0` → decay weight exactly 1, the undecayed maximum |
 | `O1` | Planned | 600 | 1.0 | rectangle | overlaps `O2` in a 200 m × 1000 m strip |
-| `O2` | Planned | 700 | 1.0 | rectangle | one clinic strictly inside the overlap is counted for **both** (DEL-20); the pair are `touch` neighbours because an overlap polygon's `.length` is its perimeter (DEL-19) |
+| `O2` | Planned | 700 | 1.0 | rectangle | one clinic strictly inside the overlap is counted for **both** (DEL-20, ratified — that pin does not move); under the `overlap_outside` variant O2 lends O1 none of it, because it is already inside O1, while O2's own school at (11400, 500) is outside the overlap and is lent in full; the pair are `touch` neighbours because an overlap polygon's `.length` is its perimeter (DEL-19) |
 | `I` | Planned | 800 | 1.0 | far-away square | **isolated**: an empty neighbour list under both rules |
 | `N` | **RV** | 900 | 1.0 | square beside `O2` | the settlement `code-2025` excludes by **category** — and it *has* a population, so exclusion is what removes it |
 | `U` | Planned | **none** | 1.0 | square beside `O1` | **no population row**: production drops it unconditionally, under every profile and scenario |
@@ -70,8 +70,16 @@ whether `N` and `U` stay in other settlements' neighbour lists.
 - **Barriers.** `barriers.geojson` is an empty collection; multi-layer
   `combine` coverage needs a second barrier layer and is its own follow-up.
 - **Hand anchors.** By design (see above).
-- **Any rule change.** Edge-only adjacency, single-assignment overlap and
-  `partial_weighted` are DEL-19/20/22, after Raj. This tier records today.
+- **Any rule change to the base profiles.** Edge-only adjacency is DEL-19,
+  after Raj. `partial_weighted` (DEL-48) and `overlap.lending:
+  outside_receiver` (DEL-20) landed in cycle 3E as VARIANTS, so this city's
+  `expected_values.csv` and `production/*.csv` still record TODAY: the two
+  new rules appear only as extra rule blocks in
+  `variants_expected_values.csv`, and the lending pin lives in
+  `tests/test_messy_fixtures.py` beside the counting pin it must not move.
+  Barriers are still absent — the fixture's barrier file is shared by every
+  rule-set, so any barrier touching a settlement with a `bbox` neighbour
+  would change an existing expected value (spec 3E § 12 item 3).
 - **`L` has no `touch` neighbours** either, which is fine: it owns a school,
   so it is not part of the zero-tie that the schools in `T` and `G` exist to
   break (only `I` sits at exactly 0).

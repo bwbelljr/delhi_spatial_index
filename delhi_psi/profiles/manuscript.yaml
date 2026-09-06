@@ -18,6 +18,8 @@ methodology:
                                     # max_distance_km: required iff rule is
                                     # within_distance (>= 0 km, polygon-to-polygon)
   barrier: {rule: pairwise, combine: any}
+  overlap: {lending: whole}         # whole | outside_receiver (DEL-20); the
+                                    # manuscript is silent, so today's rule
   decay:
     form: inverse_linear            # inverse_linear | none | inverse_power | exponential
                                     # exponent: required iff form is inverse_power (> 0)

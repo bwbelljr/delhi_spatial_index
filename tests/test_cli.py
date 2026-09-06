@@ -428,6 +428,26 @@ def test_changing_only_the_decay_does_not_invalidate_an_artifact():
     pipeline.check_methodology_stamp(frame, other)    # must not raise
 
 
+def test_changing_only_the_overlap_rule_does_not_invalidate_an_artifact():
+    """The overlap rule is applied downstream in `compute` — it changes what
+    a neighbour LENDS, never who a neighbour IS — so one stored artifact
+    serves both values and nobody has to re-preprocess 4,357 polygons to try
+    the switch. The decay precedent, pinned (spec § 3.2, § 12 item 7)."""
+    from dataclasses import replace
+
+    from delhi_psi import pipeline
+    from delhi_psi.config import OverlapConfig, OverlapLending
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    frame = _stamped(cfg.methodology)
+    other = replace(cfg, methodology=replace(
+        cfg.methodology,
+        overlap=OverlapConfig(lending=OverlapLending.OUTSIDE_RECEIVER)))
+    pipeline.check_methodology_stamp(frame, other)    # must not raise
+    assert "overlap" not in pipeline.methodology_stamp(other.methodology)
+
+
 # --- 3E: the buffer is part of the stamp (spec § 6.5) ------------------
 def _partial_config(buffer_m):
     from dataclasses import replace

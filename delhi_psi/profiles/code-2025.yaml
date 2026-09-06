@@ -53,6 +53,19 @@ methodology:
                                     # point within buffer_m of a barrier is blocked
     combine: any                    # any | [layer names]; which flags OR into `barrier`
                                     # (every configured layer's flag column is always computed)
+  overlap:
+    lending: whole                  # whole | outside_receiver — what a
+                                    # NEIGHBOUR lends. `whole` is today's
+                                    # rule: the neighbour's whole amount S_j.
+                                    # `outside_receiver` lends |S_j \ S_i|,
+                                    # so a service inside the overlap of two
+                                    # colonies is not counted a second time
+                                    # through the neighbour term (DEL-20;
+                                    # Raj has confirmed the counting half
+                                    # only, so `whole` ships)
+                                    # counting: reserved — a service inside k
+                                    # overlapping colonies counts for each of
+                                    # the k (ratified 28 Aug 2026; no knob)
   decay:
     form: inverse_linear            # inverse_linear | none | inverse_power | exponential
                                     # exponent: required iff form is inverse_power (> 0)

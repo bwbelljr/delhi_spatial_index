@@ -18,7 +18,8 @@ from delhi_psi import cli
 from scripts import measure_rule_effects
 from scripts._measure_common import FENCE, parse_block
 from scripts.measure_rule_effects import (
-    WEIGHT_CLASSES, derived_profile, weight_classes,
+    BLOCKS, WEIGHT_CLASSES, derived_profile, overlapping_neighbours,
+    pcen_changes, shared_pair_counts, weight_classes,
 )
 from tests.oraculum_fixtures import oracle_profile_path
 from tests.test_cli import data_dir  # noqa: F401 — the Oraculum data dir
@@ -112,11 +113,21 @@ def test_the_stamp_records_the_buffer_on_the_derived_run(data_dir,  # noqa: F811
         "rule": "partial_weighted", "combine": "any", "buffer_m": 5.0}
 
 
-def committed_block():
-    if not DOC.exists() or FENCE not in DOC.read_text():
-        pytest.skip(f"{DOC} carries no measured block yet — the run step "
-                    "pastes it")
-    return parse_block(DOC.read_text(), name="partial_barriers")
+def committed_block(name="partial_barriers"):
+    text = DOC.read_text() if DOC.exists() else ""
+    if FENCE not in text or f"block: {name}" not in text:
+        pytest.skip(f"{DOC} carries no measured `{name}` block yet — the run "
+                    "step pastes it")
+    return parse_block(text, name=name)
+
+
+def committed_blocks():
+    """Every block the document actually carries, for the prose-number
+    guard: it must see all of them, or a number quoted from the second
+    block reads as an invention."""
+    text = DOC.read_text() if DOC.exists() else ""
+    return [parse_block(text, name=name) for name in BLOCKS
+            if f"block: {name}" in text]
 
 
 def test_the_doc_block_has_every_required_key():
@@ -132,7 +143,7 @@ def test_the_doc_records_its_provenance_and_quotes_only_block_numbers():
     for label in ("**Run date:**", "**Inputs:**", "**Commit:**",
                   "**Command:**"):
         assert label in text, label
-    assert_prose_numbers_come_from_the_blocks(text, (committed_block(),))
+    assert_prose_numbers_come_from_the_blocks(text, committed_blocks())
 
 
 @needs_measure_cache
@@ -144,7 +155,8 @@ def test_a_fresh_run_reproduces_the_committed_block():
     proc = subprocess.run(
         [sys.executable, "scripts/measure_rule_effects.py",
          "--config", "code-2025", "--data-dir", str(DATA_DIR),
-         "--verify-dir", str(VERIFY_DIR), "--work-dir", MEASURE_CACHE],
+         "--verify-dir", str(VERIFY_DIR), "--work-dir", MEASURE_CACHE,
+         "--only", "partial_barriers"],
         cwd=REPO, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-4000:]
     assert parse_block(proc.stdout, name="partial_barriers") == block
@@ -154,3 +166,91 @@ def test_main_requires_a_verify_dir(capsys):
     with pytest.raises(SystemExit) as exc:
         measure_rule_effects.main(["--config", "code-2025"])
     assert exc.value.code == 2
+
+
+# --- the overlap block (DEL-20) ----------------------------------------
+def _overlap_frame():
+    """Two overlapping settlements and a disjoint third, in the shape a
+    stored neighbours artifact has: ids, lists, geometry and NO amount
+    columns — `shared_pair_counts` computes those itself, and a frame that
+    already carried them would make `point_counts`' merge add suffixes."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    return gpd.GeoDataFrame(
+        {"USO_AREA_U": ["P", "Q", "Z"],
+         "nbrs_bbox": [["Q"], ["P"], []]},
+        geometry=[box(0, 0, 1200, 1000), box(1000, 0, 2000, 1000),
+                  box(5000, 0, 6000, 1000)], crs="EPSG:7760")
+
+
+def test_overlapping_neighbours_finds_only_the_positive_area_pair():
+    """The overlap rule cannot move any other settlement's PCEN, so this set
+    is the containment bound the run is checked against."""
+    assert overlapping_neighbours(_overlap_frame()) == {"P", "Q"}
+
+
+def test_shared_pair_counts_counts_ordered_entries_per_service():
+    """The size of the sparse structure, per service — one physical clinic
+    inside both P and Q makes TWO ordered entries."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    clinics = gpd.GeoDataFrame(
+        {"service": ["clinic", "clinic"]},
+        geometry=[Point(1100, 500), Point(600, 500)], crs="EPSG:7760")
+    got = shared_pair_counts(_overlap_frame(), {"clinic": clinics},
+                             point_names=("clinic",))
+    assert got == {"shared_pairs_clinic": 2, "shared_pairs_total": 2}
+
+
+def test_pcen_changes_counts_the_fall_and_reports_a_rise():
+    """Lending is only ever REDUCED, so a risen PCEN is a bug, not a
+    finding: `settlements_pcen_rose` must be 0 in the run."""
+    before = pd.DataFrame({"USO_AREA_U": ["P", "Q", "Z"],
+                           "clinic_pcen": [1.0, 2.0, 3.0]})
+    after = pd.DataFrame({"USO_AREA_U": ["P", "Q", "Z"],
+                          "clinic_pcen": [0.5, 2.0, 3.5]})
+    report, changed = pcen_changes(before, after, id_col="USO_AREA_U")
+    assert report == {"settlements_pcen_changed": 2,
+                      "settlements_pcen_rose": 1}
+    assert changed == {"P", "Z"}
+
+
+def test_the_oraculum_shared_structure_is_empty(data_dir, tmp_path):  # noqa: F811
+    """Oraculum has no overlapping polygons and no point inside two
+    settlements, so every count is 0 — which is exactly why overlap_outside
+    is degenerate there. The fixture proves the plumbing; the number that
+    matters is the real layer's, and it comes from the run step."""
+    from delhi_psi.config import load_config
+
+    from scripts.measure_rule_effects import service_layers
+
+    profile = oracle_profile_path("code-2025", tmp_path)
+    cfg = load_config(profile, data_dir=str(data_dir))
+    run_dir = tmp_path / "overlap"
+    assert cli.main(["preprocess", "--config", str(profile),
+                     "--data-dir", str(data_dir),
+                     "--out-dir", str(run_dir)]) == 0
+    from delhi_psi import io
+    frame = io.read_neighbors(run_dir / cfg.paths.neighbors_artifact)
+    got = shared_pair_counts(frame, service_layers(cfg),
+                             point_names=tuple(cfg.services.point))
+    assert got["shared_pairs_total"] == 0, got
+    assert overlapping_neighbours(frame) == set()
+
+
+@needs_measure_cache
+def test_a_fresh_overlap_run_reproduces_the_committed_block():
+    """The real-data drift check for the second block. It stages the proven
+    artifact and runs `compute` only, so it is far cheaper than the barrier
+    block's — but it still needs the layers, hence the cache gate."""
+    block = committed_block("overlap_lending")
+    proc = subprocess.run(
+        [sys.executable, "scripts/measure_rule_effects.py",
+         "--config", "code-2025", "--data-dir", str(DATA_DIR),
+         "--verify-dir", str(VERIFY_DIR), "--work-dir", MEASURE_CACHE,
+         "--only", "overlap_lending"],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    assert parse_block(proc.stdout, name="overlap_lending") == block
