@@ -467,7 +467,11 @@ Expected: PASS.
 
 - [ ] **Step 5: Register and generate**
 
-Append the six names to both `PROFILES` lists, then:
+Append the six names to **three** lists — `PROFILES` in
+`scripts/generate_production_fixtures.py`, `PROFILES` in
+`tests/test_production_fixtures.py`, and `SHIPPED` in `tests/test_config.py`
+(Task 1 left it holding seven names and a comment saying the decay profiles
+append here). Then:
 
 ```bash
 uv run python scripts/generate_production_fixtures.py
