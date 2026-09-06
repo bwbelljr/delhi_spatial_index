@@ -212,8 +212,11 @@ denominator — the one the paper's figures use (`psi_columns.md`) — JJC moves
 from `0.000914278` to `0.000821261` (−10.2 %) and Planned from `0.0304103`
 to `0.0283075` (−6.9 %). The JJC mean road index itself collapses, from
 `0.016615` to `0.000512098` under population, because `422` of the `749`
-reported JJCs (56 %) fall to a road index of exactly zero; `1682` of the
-`4131` reported settlements do. The JJC-versus-Planned ordering does not
+JJCs in today's output (56 %) fall to a road index of exactly zero;
+`1682` of the `4131` settlements in today's output do (today's `code-2025`
+output drops RV only, so Industrial and Other are still in that total
+though the block reports only the seven types the ratified profile will
+keep). The JJC-versus-Planned ordering does not
 flip under either denominator: under population density JJC stays lowest
 and Planned highest, as the paper says; under population JJC's mean is
 above Planned's both before and after, which is a property of that

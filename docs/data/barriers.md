@@ -131,11 +131,11 @@ railway layers do not.
 
 The extra copies are not different data. The root-level `canal.data/`,
 `railway.data/` and `drain.data/` shapefiles have the same feature counts,
-the same lengths to the metre and flag the same settlements as the clipped
+the same lengths to the metre and flag the same number of settlements as the clipped
 layers; they carry two extra columns (`index`, `geom_type`) that mark them
 as re-exports of the same frames, not unclipped originals.
 `checked_Canal.shp` has `45` features against the canal layer's `43`, with
-the same total length and the same `28` flagged settlements, so the
+the same total length and the same count of `28` flagged settlements, so the
 difference is two split features, not new geometry. The ESRI sidecars agree
 on the date: both the canal and the railway layer were created on
 `20200802`; the drain layer and the copies have no sidecar.

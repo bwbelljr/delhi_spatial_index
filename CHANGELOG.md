@@ -13,7 +13,7 @@ section accumulates changes on in-flight branches.
   `count_corner_only_pairs` added to `measure_layer_pathologies.py` — with
   a shared `scripts/_measure_common.py` (the read-only work-dir guard, the
   settlement loader, and a labelled fenced-block `render`/`parse_block`),
-  53 fixture-level tests, and four `docs/data/` documents that carry each
+  55 new tests (52 fixture-level, 3 real-data-gated), and four `docs/data/` documents that carry each
   script's block verbatim under a drift test (`roads_access.md`,
   `barriers.md`, `psi_columns.md`, and two new keys in
   `layer_pathologies.md`). Findings, one clause each: **DEL-49** 17 of 764

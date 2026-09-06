@@ -137,9 +137,11 @@ sub-question — pairs touching only at a corner point — was expected to be
 "zero or near zero".
 
 **Measured (5 Sep 2026, DEL-50; `docs/data/layer_pathologies.md`).** It is
-not: 656 pairs, involving 955 settlements, meet only at a point. On a
-tessellated layer that is what four-way corners produce (the two diagonal
-polygons of an X-junction touch only there). Under `touch` none of them
+not: 656 pairs, involving 955 settlements, meet only at a point. The
+likely reading — an interpretation, not something the measurement verifies
+— is that these are the diagonal polygons of four-way corners on a
+tessellated layer; T-junction vertices and digitisation near-misses would
+count the same way. Under `touch` none of them
 are neighbours; under a 0 km distance band all of them would be. **Bob's
 ruling: a corner is not a border — `touch` stands.** For Raj: one FYI
 sentence, so the methods can say "sharing a border of positive length";

@@ -65,9 +65,13 @@ multi_settlement_points_transport: 41
   and under a 0 km distance band, and NOT under `touch`. The messy city's
   `T`/`L` is the hand-checkable case (`docs/oracle/messy-city.md`); Oraculum
   has none. **Measured 5 Sep 2026: `656` corner-only pairs involving `955`
-  settlements** — not the "zero or near zero" the 28 Aug call assumed. On a
-  tessellated layer this is what four-way corners produce: where four
-  polygons meet at a point, the two diagonal ones touch only there. Under
+  settlements** — not the "zero or near zero" the 28 Aug call assumed. The
+  likely reading, NOT verified by this measurement (which tests only that a
+  pair's intersection has zero length and zero area, never how many
+  polygons meet at the point): on a tessellated layer four-way corners
+  produce exactly this, the two diagonal polygons touching only there;
+  T-junction vertices and digitisation near-misses would count the same
+  way. Under
   `touch` (shared border, Raj's rule) none of the 656 pairs are neighbours;
   under a 0 km distance band all of them would be, on top of the
   positive-length pairs. Bob's ruling for the ratified profile: a corner is

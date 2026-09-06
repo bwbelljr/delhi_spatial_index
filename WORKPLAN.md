@@ -350,8 +350,9 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       layer provenance [DEL-51]. (The roads and `norm_psi` measurements are
       Phase 4 items, DEL-49/52.)
       — done 5 Sep 2026. **DEL-50** (`docs/data/layer_pathologies.md`):
-      656 pairs involving 955 settlements touch only at a corner (four-way
-      junctions on a tessellated layer); not neighbours under `touch`, all
+      656 pairs involving 955 settlements touch only at a corner (most
+      plausibly four-way junctions on a tessellated layer — an
+      interpretation, not measured); not neighbours under `touch`, all
       neighbours under a 0 km band — a corner is not a border, `touch`
       stands. **DEL-51** (`docs/data/barriers.md`): 43 canal / 5,356
       railway / 616 drain features flagging 28 / 240 / 390 settlements
