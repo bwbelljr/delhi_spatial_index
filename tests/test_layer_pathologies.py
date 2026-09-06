@@ -16,9 +16,9 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon, box
 
+from scripts._measure_common import parse_block, resolve_work_dir
 from scripts.measure_layer_pathologies import (count_isolated_bbox,
-                                               count_isolated_touch,
-                                               parse_block, resolve_cache_dir)
+                                               count_isolated_touch)
 
 REPO = Path(__file__).resolve().parent.parent
 DOC = REPO / "docs" / "data" / "layer_pathologies.md"
@@ -110,8 +110,10 @@ def test_the_doc_records_its_provenance():
 
 def test_the_cache_dir_default_is_a_fresh_directory_outside_the_data_dir():
     """~/delhi_data is bisynced to the shared drive: a cache written there
-    propagates to everyone. The default must never be derived from it."""
-    made = [resolve_cache_dir(), resolve_cache_dir()]
+    propagates to everyone. The default must never be derived from it. The
+    guard now lives in scripts/_measure_common.resolve_work_dir; this script
+    keeps its historic --cache-dir flag name."""
+    made = [resolve_work_dir(), resolve_work_dir()]
     try:
         assert made[0] != made[1], "each run must get its own cache"
         for path in made:
@@ -120,7 +122,7 @@ def test_the_cache_dir_default_is_a_fresh_directory_outside_the_data_dir():
     finally:
         for path in made:
             shutil.rmtree(path, ignore_errors=True)
-    assert resolve_cache_dir("/somewhere/else") == Path("/somewhere/else")
+    assert resolve_work_dir("/somewhere/else") == Path("/somewhere/else")
 
 
 @needs_data
