@@ -389,3 +389,21 @@ def test_partial_5m_leaves_no_constant_column_on_oraculum():
         got = scored(ORACULUM, PARTIAL_5M, denom)
         for column in [c for c in got.columns if c.endswith("_pcen")]:
             assert got[column].max() > got[column].min(), (denom, column)
+
+
+def test_the_partial_5m_variant_is_the_code_base_plus_the_barrier_rule():
+    """The table, the knob map and the hand anchors are one thing: the
+    variant's rule-set must BE the dict the § 6.1 anchors were derived
+    under."""
+    assert VARIANT_RULESETS["partial_5m"] == PARTIAL_5M
+
+
+def test_partial_5m_is_degenerate_on_the_messy_city():
+    """No barriers, so every weight is 1 and the rows are the `code` base's
+    — stated, like `boundary` on Oraculum, so the CSV rows are not mistaken
+    for a proof they are not."""
+    base = scored(MESSY, RULESETS["code"])
+    got = variant(MESSY, "partial_5m")
+    for column in base.columns:
+        assert list(got[column]) == pytest.approx(list(base[column]),
+                                                  abs=1e-12), column

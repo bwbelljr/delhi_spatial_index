@@ -521,6 +521,7 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
     import yaml
 
     enum_key = {("adjacency", "rule"): "methodology.adjacency.rule",
+                ("barrier", "rule"): "methodology.barrier.rule",
                 ("decay", "form"): "methodology.decay.form",
                 ("decay", "distance"): "methodology.decay.distance"}
     for block, values in VARIANTS[variant].items():

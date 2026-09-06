@@ -68,6 +68,16 @@ VARIANTS = {
         "decay": {"form": "inverse_linear", "distance": "boundary",
                   "distance_unit": "km"},
     },
+    # DEL-48: the only genuinely fractional weight either fixture city can
+    # produce. Oraculum's canal is [25, 475] on the 500 m A-D edge; its 5 m
+    # round-capped buffer covers [20, 480], so w_AD = 1 - 460/500 = 0.08 and
+    # every other link is untouched (spec § 6.1). Degenerate on the messy
+    # city — it has no barriers, so every weight is 1 and its rows equal the
+    # `code` base, exactly as `boundary` is degenerate on Oraculum.
+    "partial_5m": {
+        "barrier": {"rule": "partial_weighted", "combine": "any",
+                    "buffer_m": 5.0},
+    },
 }
 
 BAND_RADII_KM = (0.0, 0.25, 0.75)
