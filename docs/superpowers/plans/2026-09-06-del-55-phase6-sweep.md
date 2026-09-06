@@ -616,6 +616,60 @@ Check the arithmetic before you rely on it: each city's added-pair counts must
 sum with the row below to the `EXPECTED_BAND_PAIRS` total — Oraculum
 10+2+2+2+5+0 = 21, messy 5+3+2+3+14+21 = 48.
 
+- [ ] **Step 1c: Widen the two consumers, which today hard-code exactly three
+      radii**
+
+`BAND_RADII_KM` is not a private constant. Two places destructure it into
+exactly three names and will raise `ValueError: too many values to unpack` the
+moment it holds six:
+
+- `scripts/check_oraculum_invariants.py:122` — `zero, small, large = BAND_RADII_KM`
+- `tests/test_variant_rules.py:24` — `B0, B1, B2 = BAND_RADII_KM`
+
+Generalise both to walk consecutive pairs instead:
+
+```python
+BANDS = BAND_RADII_KM
+for lower, upper in zip(BANDS, BANDS[1:]):
+    ...
+```
+
+**The invariant changes shape, and this is the decision to get right.**
+`check_bands` today requires each band to be a **strict** subset of the next —
+"the three neighbourhoods must be pairwise distinct". That cannot hold for the
+new radii: **Oraculum saturates.** 21 pairs is the complete graph on its seven
+settlements, so its 5 km and 10 km bands are equal, and `ADDED_BAND_PAIRS`
+records that as an empty set. A naive `zip` over consecutive pairs would report
+a violation on a city that is behaving exactly as measured.
+
+So the generalised invariant is:
+
+1. `pairs[lower] <= pairs[upper]` always — a wider radius never drops a pair.
+2. **Strict** growth iff `added[upper]` is non-empty; where it is empty, assert
+   the two bands are **equal** and that the lower one is already the complete
+   graph (`len(pairs[lower]) == n*(n-1)//2`). Saturation is then pinned as a
+   fact about the city rather than tolerated as a gap.
+3. `pairs[upper] - pairs[lower] == added[upper]` unchanged.
+
+The guard keeps its teeth under this rewrite: move a vertex so two bands
+accidentally coincide and the added-set literal stops matching, which is
+violation 3. Verify that by mutation before you commit — perturb one
+`ADDED_BAND_PAIRS` entry and confirm `check_bands` returns a violation.
+
+`tests/test_variant_rules.py` keeps `B0, B1, B2` as names for the three
+original radii (`test_bands_are_nested_and_strictly_growing` and the `G`/`M`
+assertion at line 236 use them), so define them explicitly rather than by
+unpacking:
+
+```python
+B0, B1, B2 = 0.0, 0.25, 0.75      # the three 3D pinned in a distance GAP
+B3, B4, B5 = 1.0, 5.0, 10.0       # DEL-55's sweep radii, ON the boundary
+assert BAND_RADII_KM == (B0, B1, B2, B3, B4, B5)
+```
+
+and generalise `test_pre_barrier_pair_counts_and_the_pairs_each_radius_adds`
+to the same consecutive-pair loop so all six radii get the check, not three.
+
 - [ ] **Step 1b: Pin the `<=` boundary explicitly**
 
 The three radii sit on ties, so the inclusive comparison stops being an
