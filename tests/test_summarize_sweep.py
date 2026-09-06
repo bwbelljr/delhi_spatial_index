@@ -154,6 +154,31 @@ def test_the_bootstrap_is_seeded_and_reproducible():
     assert got1["point_rank"] == {"A": 1, "B": 2, "C": 3}
 
 
+def test_the_bootstrap_breaks_ties_randomly_not_by_category_order():
+    """The tie-break inside a resample must be a per-draw coin flip, not a
+    fixed function of which category's block was concatenated first.
+
+    Two categories, A and B, share EVERY value (all zero) — so within any
+    draw the only way to say which one "wins" is arbitrary, and a fair
+    tie-break should split roughly 50/50 across many draws. Run against the
+    UNFIXED code (stable argsort over columns concatenated in a fixed,
+    point-estimate order) this printed:
+        category_order: ['A', 'B']
+        A got rank 2 in 20000 / 20000 draws
+        B got rank 2 in 0 / 20000 draws
+    i.e. the category listed earlier (A, whose block sorts first) lost the
+    tie in literally every draw — not sampling noise, a deterministic
+    artifact of column order. A genuine random tie-break must land far from
+    that 100/0 split.
+    """
+    f = frame(category=["A"] * 50 + ["B"] * 50, norm_psi=[0.0] * 100)
+    got = S.bootstrap_rank_intervals(f, seed=0, n=20000)
+    first = got["categories"][0]
+    i_first = got["categories"].index(first)
+    frac_first_gets_worse_rank = (got["draws"][:, i_first] == 2).mean()
+    assert 0.3 < frac_first_gets_worse_rank < 0.7
+
+
 def test_bootstrap_p_greater_is_one_when_a_strictly_dominates_b():
     """Hand-computable extreme: A's values are all above B's, so every
     resampled mean of A (with replacement, from {0.9, 0.8}) is at least 0.8,
@@ -185,6 +210,19 @@ def test_an_oversized_tie_block_gates_the_cell():
     assert gated
     assert S.decile_jaccard(pd.Series([0]*8 + [1, 2]),
                             pd.Series([0]*8 + [1, 2]), top=False) is None
+
+
+def test_the_gate_multiplier_is_1_5x_specifically():
+    """Pins the 1.5x constant itself, not just the two real-data shapes
+    (ratio 1.09, not gated; ratio 4.44, gated) that pass under 1.5x OR a
+    looser constant like 2.0x alike. 1,000 rows, 170 tied at the cut against
+    a decile of k = int(0.10 * 1000) = 100 -> ratio 1.7: past 1.5x (150) but
+    under 2.0x (200), so this case gates under the documented rule and would
+    NOT gate under a 2.0x rule — the one case that tells the two apart."""
+    s = pd.Series([0.0] * 170 + list(np.linspace(0.1, 1.0, 830)))
+    got, gated = S.decile_set(s, top=False)
+    assert len(got) == 170
+    assert gated
 
 
 def test_the_real_baseline_shape_ties_but_does_not_gate():

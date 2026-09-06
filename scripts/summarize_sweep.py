@@ -390,6 +390,43 @@ def decile_jaccard(a, b, *, top=True):
     return len(set_a & set_b) / len(union)
 
 
+def _tied_random_rank(values, rng):
+    """Ascending rank (1..n_cols) of each row of a 2D array, ties broken by
+    an INDEPENDENT RANDOM permutation of column order per row, not by
+    column position.
+
+    `values` is shaped so that a fixed meaning attaches to each column
+    across every row (e.g. one column per resampled settlement position, or
+    one column per category) — so a plain `numpy.argsort(..., kind="stable")`
+    would resolve every tie the same way, every row, because a stable sort
+    keeps tied elements in their original column order. When the columns
+    are concatenated in a fixed order upstream (as `bootstrap_rank_intervals`
+    does, in point-estimate order), that turns "which side wins a tie" into
+    a deterministic function of column position rather than a per-draw coin
+    flip — see `test_the_bootstrap_breaks_ties_randomly_not_by_category_order`,
+    which reproduces the resulting ~100%/0% split on a fully-tied
+    two-category frame under a plain stable argsort.
+
+    The fix: permute each row's column order with `rng` BEFORE the stable
+    sort, then map the sorted positions back through that same permutation
+    to recover the original column indices. Non-tied values still sort
+    correctly (the permutation only changes which of several EQUAL values a
+    stable sort sees first); tied values now land in a genuinely random
+    order, independently per row.
+    """
+    n_rows, n_cols = values.shape
+    col_order = np.tile(np.arange(n_cols), (n_rows, 1))
+    shuffled_cols = rng.permuted(col_order, axis=1)
+    shuffled_values = np.take_along_axis(values, shuffled_cols, axis=1)
+    sorted_pos = np.argsort(shuffled_values, axis=1, kind="stable")
+    orig_col_by_ascending_rank = np.take_along_axis(shuffled_cols, sorted_pos,
+                                                      axis=1)
+    ranks = np.empty((n_rows, n_cols), dtype=int)
+    row_idx = np.arange(n_rows)[:, None]
+    ranks[row_idx, orig_col_by_ascending_rank] = np.arange(n_cols)[None, :] + 1
+    return ranks
+
+
 def bootstrap_rank_intervals(frame, *, psi_col="norm_psi",
                              category_col="category", seed=0, n=1000):
     """A 95% bootstrap rank interval per category (spec § 6.4).
@@ -398,14 +435,16 @@ def bootstrap_rank_intervals(frame, *, psi_col="norm_psi",
     category resampled with replacement to its OWN size, so every draw is
     the same total size as `frame` — vectorised across draws via
     `numpy.random.default_rng(seed).integers`. Within a draw, rows are
-    ranked by `psi_col` using a plain (not tie-averaged) ordinal rank: the
-    point estimate (`category_order`, which DOES average-tie) only needs
-    computing once, and averaging ties inside every one of 1,000 resamples
-    would smooth over exactly the instability a tie mass point should
-    produce. Composition-driven rank flips ARE the signal a wide interval
-    is reporting (spec § 6.4: "honesty about ties is the interval itself"),
-    so leaving ties to fall where the resample's row order puts them is the
-    intended behaviour here, not an approximation of `category_order`.
+    ranked by `psi_col` using a plain (not tie-averaged) ordinal rank via
+    `_tied_random_rank`, which breaks ties with a genuinely random per-draw
+    permutation (see that function's docstring for why a plain stable
+    argsort is NOT an acceptable substitute here): the point estimate
+    (`category_order`, which DOES average-tie) only needs computing once,
+    and averaging ties inside every one of 1,000 resamples would smooth
+    over exactly the instability a tie mass point should produce.
+    Composition-driven rank flips ARE the signal a wide interval is
+    reporting (spec § 6.4: "honesty about ties is the interval itself"), so
+    a random per-draw tie-break is what makes that signal honest.
 
     Returns a dict:
       - "categories": the category labels, in the point-estimate order.
@@ -445,10 +484,7 @@ def bootstrap_rank_intervals(frame, *, psi_col="norm_psi",
     draw_positions = np.concatenate(blocks, axis=1)
     draw_psi = psi[draw_positions]
 
-    order_idx = np.argsort(draw_psi, axis=1, kind="stable")
-    ranks = np.empty_like(order_idx)
-    row_idx = np.arange(n)[:, None]
-    ranks[row_idx, order_idx] = np.arange(total)[None, :] + 1
+    ranks = _tied_random_rank(draw_psi, rng)
 
     mean_ranks = np.full((n, n_cat), np.nan)
     for j, (lo, hi) in enumerate(boundaries):
@@ -456,11 +492,13 @@ def bootstrap_rank_intervals(frame, *, psi_col="norm_psi",
             mean_ranks[:, j] = ranks[:, lo:hi].mean(axis=1)
 
     # Rank the categories themselves by mean rank, descending (highest
-    # mean rank = most PSI = category rank 1), ties broken by original
-    # `categories` order via a stable sort.
-    cat_order_idx = np.argsort(-mean_ranks, axis=1, kind="stable")
-    draws = np.empty((n, n_cat), dtype=int)
-    draws[row_idx, cat_order_idx] = np.arange(n_cat)[None, :] + 1
+    # mean rank = most PSI = category rank 1). An exact tie here is rare
+    # once row-level ties are resolved randomly (it needs entire
+    # categories' mean ranks to coincide), but is broken the same random
+    # way for the same reason: `_tied_random_rank` on the negated
+    # mean_ranks gives an ascending rank of `-mean_ranks`, i.e. a
+    # descending rank of `mean_ranks`.
+    draws = _tied_random_rank(-mean_ranks, rng)
 
     point_rank = {c: i + 1 for i, c in enumerate(categories)}
     ci = {}
