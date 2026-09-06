@@ -56,10 +56,11 @@ def write(tmp_path, text, name="p.yaml"):
 # is exactly what this test exists to catch, so it stays an equality: adding a
 # profile means adding it here, and `docs/methodology-config.md` § 3 step 2
 # says so.
-# Task 2 (DEL-55) appends the six decay-* profiles here.
 SHIPPED = [
     "adj-touch", "band-0km", "band-10km", "band-1km", "band-5km", "code-2025",
     "manuscript",
+    "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
+    "decay-exp5km", "decay-boundary",
 ]
 
 

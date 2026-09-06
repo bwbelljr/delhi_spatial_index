@@ -25,12 +25,20 @@ SWEEP_PROFILES = {
                  "adjacency.max_distance_km": 5.0},
     "band-10km": {"adjacency.rule": "within_distance",
                   "adjacency.max_distance_km": 10.0},
+    "decay-none": {"decay.form": "none"},
+    "decay-power05": {"decay.form": "inverse_power", "decay.exponent": 0.5},
+    "decay-power2": {"decay.form": "inverse_power", "decay.exponent": 2.0},
+    "decay-exp2km": {"decay.form": "exponential", "decay.scale_km": 2.0},
+    "decay-exp5km": {"decay.form": "exponential", "decay.scale_km": 5.0},
+    "decay-boundary": {"decay.distance": "boundary"},
 }
 
 # The profiles whose neighbourhood differs from `code-2025`, so each needs its
 # own artifact and must NOT pin a name (the per-profile default keeps two
-# points from overwriting each other).
-OWN_ARTIFACT = set(SWEEP_PROFILES)
+# points from overwriting each other). Task 1's five ADJACENCY points only —
+# decay does not change who the neighbours are, so the six decay profiles
+# added below share one artifact instead (SHARED_ARTIFACT, below).
+OWN_ARTIFACT = {"adj-touch", "band-0km", "band-1km", "band-5km", "band-10km"}
 
 
 def flatten(obj, prefix=""):
@@ -87,3 +95,25 @@ def test_a_profile_with_its_own_neighbourhood_does_not_pin_an_artifact(profile):
         pytest.skip("shares the bbox artifact; Task 2 pins that case")
     cfg = load_config(profile)
     assert str(cfg.paths.neighbors_artifact) == f"colonies_neighbors_{profile}.joblib"
+
+
+SHARED_ARTIFACT = "colonies_neighbors_sweep-bbox.joblib"
+DECAY_PROFILES = sorted(set(SWEEP_PROFILES) - OWN_ARTIFACT)
+
+
+@pytest.mark.parametrize("profile", DECAY_PROFILES)
+def test_every_decay_point_pins_the_one_shared_artifact(profile):
+    """`methodology_stamp` covers the adjacency and barrier blocks only, so a
+    decay change leaves a neighbours artifact valid. Six identical
+    preprocesses of an identical neighbourhood would be six identical answers
+    at six times the cost, so all six read one file — and
+    `check_methodology_stamp` is what makes that safe rather than merely
+    conventional: it refuses an artifact whose adjacency or barrier differs.
+    """
+    assert str(load_config(profile).paths.neighbors_artifact) == SHARED_ARTIFACT
+
+
+def test_the_shared_artifact_is_not_the_baseline_artifact():
+    """A typo here would point the decay sweep at the PROVEN code-2025
+    artifact and let a sweep run overwrite the July 2025 correctness proof."""
+    assert SHARED_ARTIFACT != str(load_config(BASE).paths.neighbors_artifact)

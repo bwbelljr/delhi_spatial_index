@@ -15,7 +15,9 @@ from scripts.generate_production_fixtures import (
 from tests.cities import CITIES, ORACULUM
 
 PROFILES = ["code-2025", "manuscript",
-            "adj-touch", "band-0km", "band-1km", "band-5km", "band-10km"]
+            "adj-touch", "band-0km", "band-1km", "band-5km", "band-10km",
+            "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
+            "decay-exp5km", "decay-boundary"]
 
 
 @pytest.mark.parametrize("profile", PROFILES)
