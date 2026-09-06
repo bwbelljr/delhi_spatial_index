@@ -7,6 +7,26 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- `index.minmax` raises instead of dividing 0/0 on a degenerate group
+  (DEL-54, WORKPLAN bug-audit item 6; cycle 3E, the first of three
+  per-ticket PRs). Eq. 2 is undefined when every reported settlement scores
+  the same on a service; the original computed `(v − lo) / (hi − lo)`
+  regardless, which is a silent NaN column outside a `-W error` run and an
+  unattributed numpy `RuntimeWarning` inside one. The guard precedes the
+  division and names the column, the row count and the value, so both
+  callers — every service's `service_index` and `overall_psi`'s second
+  normalisation — surface the same `ValueError`. **The independent
+  reference implementation now raises at both of its min-max sites too**,
+  instead of returning `0.0`: the equations do not define a value at
+  hi == lo, and a reference that invents one is a rule-set divergence
+  waiting to be relied on. Deliberately out of scope, and stated in the
+  docstring: an all-NaN column does not trigger it, because `NaN == NaN` is
+  False and an all-NaN PCEN column is an upstream NaN that belongs to the
+  population join and `validate`. **No config value, no profile change, no
+  fixture change** — all three generators re-run byte-identical, because
+  `scripts/check_oraculum_invariants.py` already refuses to write a city
+  with a degenerate min-max group, and the real-data `code-2025` verify is
+  unchanged at `0.000e+00`.
 - Pre-recalculation measurements (DEL-49, DEL-50, DEL-51, DEL-52): four
   re-runnable scripts under `scripts/` — `measure_roads_access.py`,
   `inventory_barriers.py`, `measure_psi_columns.py`, and
