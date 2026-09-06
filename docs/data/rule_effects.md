@@ -81,152 +81,6 @@ down.
   zero settlements is never mistaken for a mean of zero PSI.
 
 ```text
-block: overlap_lending
-shared_pairs_bank: 194
-shared_pairs_health: 48
-shared_pairs_police: 4
-shared_pairs_ration: 156
-shared_pairs_school: 44
-shared_pairs_transport: 64
-shared_pairs_road: 248
-shared_pairs_total: 758
-settlements_with_an_overlapping_neighbour: 2427
-settlements_pcen_changed_pop: 385
-settlements_pcen_rose_pop: 0
-pcen_changed_outside_the_overlap_set_pop: 0
-n_pop_Planned: 964
-n_pop_UAC: 1684
-n_pop_RUAC: 393
-n_pop_JJC: 749
-n_pop_JJR: 48
-n_pop_UV: 138
-n_pop_SDA: 86
-n_pop_total: 4131
-psi_code_pop_Planned: 0.00901129
-psi_code_pop_UAC: 0.0106064
-psi_code_pop_RUAC: 0.00440786
-psi_code_pop_JJC: 0.0176336
-psi_code_pop_JJR: 0.00269464
-psi_code_pop_UV: 0.0103199
-psi_code_pop_SDA: 0.0190069
-psi_code_pop_total: 0.0109748
-psi_outside_pop_Planned: 0.00901039
-psi_outside_pop_UAC: 0.010473
-psi_outside_pop_RUAC: 0.00440775
-psi_outside_pop_JJC: 0.0176297
-psi_outside_pop_JJR: 0.0026894
-psi_outside_pop_UV: 0.0103197
-psi_outside_pop_SDA: 0.0190069
-psi_outside_pop_total: 0.0109195
-norm_code_pop_Planned: 0.0109918
-norm_code_pop_UAC: 0.0129375
-norm_code_pop_RUAC: 0.0053766
-norm_code_pop_JJC: 0.021509
-norm_code_pop_JJR: 0.00328685
-norm_code_pop_UV: 0.0125879
-norm_code_pop_SDA: 0.0231841
-norm_code_pop_total: 0.0133868
-norm_outside_pop_Planned: 0.0109907
-norm_outside_pop_UAC: 0.0127747
-norm_outside_pop_RUAC: 0.00537646
-norm_outside_pop_JJC: 0.0215042
-norm_outside_pop_JJR: 0.00328046
-norm_outside_pop_UV: 0.0125877
-norm_outside_pop_SDA: 0.0231841
-norm_outside_pop_total: 0.0133193
-settlements_pcen_changed_popdensity: 382
-settlements_pcen_rose_popdensity: 0
-pcen_changed_outside_the_overlap_set_popdensity: 0
-n_popdensity_Planned: 964
-n_popdensity_UAC: 1684
-n_popdensity_RUAC: 393
-n_popdensity_JJC: 749
-n_popdensity_JJR: 48
-n_popdensity_UV: 138
-n_popdensity_SDA: 86
-n_popdensity_total: 4131
-psi_code_popdensity_Planned: 0.0304103
-psi_code_popdensity_UAC: 0.0118991
-psi_code_popdensity_RUAC: 0.0148165
-psi_code_popdensity_JJC: 0.000914278
-psi_code_popdensity_JJR: 0.0257077
-psi_code_popdensity_UV: 0.0261655
-psi_code_popdensity_SDA: 0.0191333
-psi_code_popdensity_total: 0.015886
-psi_outside_popdensity_Planned: 0.0304087
-psi_outside_popdensity_UAC: 0.0113169
-psi_outside_popdensity_RUAC: 0.0148076
-psi_outside_popdensity_JJC: 0.000911273
-psi_outside_popdensity_JJR: 0.0256916
-psi_outside_popdensity_UV: 0.0261655
-psi_outside_popdensity_SDA: 0.0191333
-psi_outside_popdensity_total: 0.0156467
-norm_code_popdensity_Planned: 0.0443043
-norm_code_popdensity_UAC: 0.0173356
-norm_code_popdensity_RUAC: 0.021586
-norm_code_popdensity_JJC: 0.001332
-norm_code_popdensity_JJR: 0.0374532
-norm_code_popdensity_UV: 0.0381201
-norm_code_popdensity_SDA: 0.027875
-norm_code_popdensity_total: 0.023144
-norm_outside_popdensity_Planned: 0.0443019
-norm_outside_popdensity_UAC: 0.0164874
-norm_outside_popdensity_RUAC: 0.0215729
-norm_outside_popdensity_JJC: 0.00132762
-norm_outside_popdensity_JJR: 0.0374296
-norm_outside_popdensity_UV: 0.0381201
-norm_outside_popdensity_SDA: 0.027875
-norm_outside_popdensity_total: 0.0227954
-```
-
-## Finding — overlap lending
-
-**Every bound stated before the run held.** `settlements_pcen_rose_pop` and
-`settlements_pcen_rose_popdensity` are both `0`: the rule only ever
-subtracts, and nothing rose. `pcen_changed_outside_the_overlap_set_pop` and
-its density twin are both `0`: nothing moved that had no overlapping
-neighbour, so the rule reaches exactly as far as the shared structure it is
-built from and no further.
-
-**The double count is real but small.** `758` ordered pairs share at least
-one unit of a service — `194` for banks, `156` for ration shops, `248` for
-roads, the rest smaller — and `2427` settlements have at least one
-overlapping neighbour. Of those, `385` have a PCEN that actually moves
-under the population denominator and `382` under population density. So
-roughly one settlement in eleven is affected, and every one of them was
-previously counting some service twice: once as its own, once decayed as a
-neighbour's.
-
-**It does not move the headline.** Under the density denominator the paper's
-figures use, the means barely shift: Planned `0.0304103` → `0.0304087`,
-JJC `0.000914278` → `0.000911273`, and the largest mover is UAC at
-`0.0118991` → `0.0113169`, about −4.9 %. Every type falls or holds; none
-rises; no ordering changes. This is a correction that removes a real
-arithmetic error without disturbing what the paper says — the opposite
-profile from the barrier rule above, which is small in mechanism and large
-in effect.
-
-**Why it is `whole` in both shipped profiles anyway.** Raj ratified that a
-service in an overlap counts for every colony containing it; he has not been
-asked about the lending half, which is Bob's proposal. The measurement is
-what the question should be asked with: it costs about 5 % of one settlement
-type's mean and nothing of the argument.
-
-## A caveat this run earned
-
-The first attempt at this measurement **failed**, and the failure was a real
-defect rather than a flaky run. A road's own clipped length and its shared
-part are two independent GEOS clips of the same line, so the shared part can
-exceed the whole by an ulp; one pair out of the 4,069 overlapping ones did,
-by `1.1102230246251565e-16` km — a tenth of a picometre — and the
-over-subtraction guard aborted the whole run. The guard was right to exist
-and too strict by one bit: it now clamps below a tolerance and still raises
-above it, because a genuine mismatch between the amounts frame and the
-shared structure is off by a length, not by an ulp. Both sides of that
-boundary are tested (`tests/test_index.py`). Point services are integer
-counts and were never exposed to this.
-
-```text
 block: partial_barriers
 links_w_one: 27482
 links_fractional: 1636
@@ -568,10 +422,11 @@ built from and no further.
 one unit of a service — `194` for banks, `156` for ration shops, `248` for
 roads, the rest smaller — and `2427` settlements have at least one
 overlapping neighbour. Of those, `385` have a PCEN that actually moves
-under the population denominator and `382` under population density. So
-roughly one settlement in eleven is affected, and every one of them was
-previously counting some service twice: once as its own, once decayed as a
-neighbour's.
+under the population denominator and `382` under population density — that
+is `385` of the `4131` reported settlements, roughly one in eleven, and
+about one in six of the `2427` that have an overlapping neighbour at all.
+Every one of them was previously counting some service twice: once as its
+own, once decayed as a neighbour's.
 
 **It does not move the headline.** Under the density denominator the paper's
 figures use, the means barely shift: Planned `0.0304103` → `0.0304087`,
@@ -598,6 +453,15 @@ by `1.1102230246251565e-16` km — a tenth of a picometre — and the
 over-subtraction guard aborted the whole run. The guard was right to exist
 and too strict by one bit: it now clamps below a tolerance and still raises
 above it, because a genuine mismatch between the amounts frame and the
-shared structure is off by a length, not by an ulp. Both sides of that
-boundary are tested (`tests/test_index.py`). Point services are integer
-counts and were never exposed to this.
+shared structure is off by a length, not by an ulp. Point services are
+integer counts and were never exposed to this.
+
+The final review then caught the test written to pin that fix: adding
+1.1e-16 to 2.0 rounds straight back to 2.0 in double precision, so the
+"one ulp" case was never negative and the clamp never ran — reviewers
+proved it by reverting the fix and watching the test still pass. It now
+uses `math.nextafter` for a genuine one-ulp excess, and two further tests
+sit either side of the tolerance itself so the constant cannot be changed
+unnoticed. The tolerance was also tightened from an arbitrary `1e-9` to a
+derived multiple of machine epsilon, and the clamp now logs when it fires
+rather than absorbing silently.

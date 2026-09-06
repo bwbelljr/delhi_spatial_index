@@ -4,6 +4,7 @@ The exclusion axes are tested here directly, because this is where DEL-21's
 `except: pass` becomes an explicit lookup.
 """
 import math
+import sys
 
 import geopandas as gpd
 import pandas as pd
@@ -450,27 +451,73 @@ def test_a_shared_amount_larger_than_the_neighbours_own_raises():
                    shared_amounts={("Y", "X"): 5})
 
 
-def test_an_ulp_of_over_subtraction_is_clamped_not_raised():
+def _lend_with_shared(shared_xy):
+    """Y's clinic_pcen when X's shared amount toward Y is `shared_xy`."""
+    got = index.pcen(city_with_a_shared_clinic(), amount_col="clinic_count",
+                     pcen_col="clinic_pcen", denominator="pop",
+                     shared_amounts={("Y", "X"): shared_xy})
+    return got.set_index("USO_AREA_U")["clinic_pcen"]["Y"]
+
+
+def test_a_true_ulp_of_over_subtraction_is_clamped_not_raised():
     """A LINE service's own amount and its shared part are two independent
     GEOS clips of the same road, so the shared part can exceed the whole by
     an ulp. The real layer produced exactly this: one pair of 4,069
     overlapping ones lent -1.1102230246251565e-16 km of road, a tenth of a
-    picometre. That is float noise, not a mismatch between frames, and it
-    must clamp to zero rather than abort a 4,357-settlement run.
+    picometre, and the unclamped guard aborted a 4,357-settlement run.
 
-    The guard above still fires on a real mismatch, which is off by a
-    length rather than by an ulp — the two tests are the two sides of
-    `_SHARED_TOLERANCE`.
+    `math.nextafter`, NOT `own + 1.1e-16`: adding a literal smaller than
+    half an ulp rounds straight back to `own`, so the earlier version of
+    this test compared equal values, never reached the clamp, and passed
+    identically with the fix reverted. The final review of 6 Sep 2026
+    proved that by reverting it.
+
+    What this test DOES pin, verified by mutation: reverting to the pre-fix
+    strict `if lent < 0: raise` fails it. What no test can pin, and it is
+    honest to say so: deleting the `lent = 0.0` clamp while KEEPING the
+    tolerance changes no observable number, because a one-ulp negative
+    propagated into the sum lands ~1e-18 from the answer — below any
+    tolerance worth asserting. The clamp is hygiene against a negative
+    reaching `validate.check_no_negative`, not an arithmetic correction.
     """
-    frame = city_with_a_shared_clinic()
-    over = frame.set_index("USO_AREA_U").loc["X", "clinic_count"] + 1.1e-16
-    got = index.pcen(frame, amount_col="clinic_count",
-                     pcen_col="clinic_pcen", denominator="pop",
-                     shared_amounts={("Y", "X"): over})
-    values = got.set_index("USO_AREA_U")["clinic_pcen"]
-    # X lends Y nothing: the clamp took the tiny negative to exactly 0.0,
-    # so Y keeps only its own clinic.
-    assert values["Y"] == pytest.approx(1 / 200, abs=1e-12)
+    own = city_with_a_shared_clinic().set_index("USO_AREA_U").loc[
+        "X", "clinic_count"]
+    over = math.nextafter(own, math.inf)
+    assert over > own, "the perturbation must survive rounding"
+    # X's whole amount minus a hair more than itself: a real negative.
+    assert own - over < 0.0
+    # Y keeps only its own clinic — the clamp took the deficit to exactly 0.
+    assert _lend_with_shared(over) == pytest.approx(1 / 200, abs=1e-15)
+
+
+def test_the_tolerance_boundary_is_pinned_on_both_sides():
+    """The constant itself, not just the mechanism. A deficit just inside
+    `_SHARED_TOLERANCE` clamps; one just outside raises. Without this, the
+    tolerance could be widened by orders of magnitude — silently absorbing
+    a real mismatch — and every other test would still pass.
+    """
+    own = city_with_a_shared_clinic().set_index("USO_AREA_U").loc[
+        "X", "clinic_count"]
+    band = index._SHARED_TOLERANCE * max(1.0, abs(own))
+
+    inside = own + band * 0.5
+    assert own - inside < 0.0, "must be a real over-subtraction"
+    assert _lend_with_shared(inside) == pytest.approx(1 / 200, abs=1e-15)
+
+    outside = own + band * 2.0
+    with pytest.raises(ValueError, match="would lend"):
+        _lend_with_shared(outside)
+
+
+def test_the_tolerance_is_a_derived_multiple_of_machine_epsilon():
+    """Not an arbitrary round number: it is sized to a few dozen rounding
+    steps of a double, which is what two GEOS clip orders can differ by.
+    An arbitrary 1e-9 — the first value shipped — would have absorbed a
+    nanometre-scale REAL error without a word."""
+    assert index._SHARED_TOLERANCE == 64 * sys.float_info.epsilon
+    assert index._SHARED_TOLERANCE < 1e-13
+    # comfortably above the 1.1e-16 the real layer actually produced
+    assert index._SHARED_TOLERANCE > 1.1e-16 * 10
 
 
 def test_service_index_forwards_the_shared_structure():

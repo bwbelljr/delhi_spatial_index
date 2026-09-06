@@ -16,6 +16,7 @@ The one behavioural change is DEL-21: `calc_pcen_mobile`'s bare
 
 import logging
 import math
+import sys
 
 import geopandas as gpd
 from shapely import STRtree
@@ -34,7 +35,13 @@ ABSENT_NEIGHBOR = ("swallowed", "contributes")
 # real layer, for one pair out of 4,069 overlapping ones. Below this
 # tolerance the difference is clamped to zero; above it, it is a real
 # mismatch between the amounts frame and the shared structure and raises.
-_SHARED_TOLERANCE = 1e-9
+#
+# The bound is DERIVED, not picked: a length computed by two different GEOS
+# clip orders differs by a handful of rounding steps, so a few dozen machine
+# epsilons is the right order. 64 * eps is 1.4e-14 — a hundred times the
+# 1.1e-16 actually observed, and eleven orders TIGHTER than an arbitrary
+# 1e-9, which would have silently absorbed a nanometre-scale real error.
+_SHARED_TOLERANCE = 64 * sys.float_info.epsilon
 
 
 def point_counts(polygon_gdf, point_gdf, *, count_col, id_col="USO_AREA_U"):
@@ -282,6 +289,11 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
     _decay(0.0, decay_form, distance_unit, exponent=exponent,
            scale_km=scale_km)
 
+    # Pairs whose shared amount exceeded the neighbour's own by less than
+    # _SHARED_TOLERANCE and were clamped to zero. Reported once at the end
+    # rather than swallowed: see the clamp below.
+    clamped = []
+
     gdf_copy[pcen_col] = -1.0
 
     for idx, row in gdf_copy.iterrows():
@@ -329,13 +341,27 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                     # noise, not a mismatch: clamp it. The guard above still
                     # catches a real mismatch, which is off by a length, not
                     # by an ulp.
-                    lent = max(lent, 0.0)
+                    if lent < 0.0:
+                        # Never silent: a run where this fires more than the
+                        # handful of times GEOS noise explains, or at a
+                        # magnitude above it, is worth knowing about.
+                        clamped.append((row[id_col], nbr_id, lent))
+                        lent = 0.0
                 poly_count += w * lent * _decay(nbr_dist, decay_form,
                                                 distance_unit,
                                                 exponent=exponent,
                                                 scale_km=scale_km)
 
         gdf_copy.loc[idx, pcen_col] = poly_count / denom
+
+    if clamped:
+        worst = min(deficit for _, _, deficit in clamped)
+        log.info(
+            "overlap lending: clamped %d over-subtraction(s) of %r to zero; "
+            "worst %r (tolerance %r). This is GEOS clip noise if the "
+            "magnitude is near machine epsilon; anything larger means the "
+            "amounts frame and the shared structure disagree.",
+            len(clamped), amount_col, worst, _SHARED_TOLERANCE)
 
     return gdf_copy
 
