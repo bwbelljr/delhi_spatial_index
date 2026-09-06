@@ -25,7 +25,8 @@ column is what the Phase 4 profile, DEL-31, will carry):
 | switch | today (`code-2025`) | paper (`manuscript`) | **ratified (28 Aug 2026)** | context |
 |---|---|---|---|---|
 | `adjacency.rule` | `bbox` | `touch` | **`touch`** — shared border; corner-only pairs being counted (DEL-50) | memo § 1 (DEL-19) — bbox adjacency invents neighbours. A third value, `within_distance`, is the Phase 6 distance band (§ 6, DEL-36/39) |
-| `barrier.rule` | `global_asymmetric` | `pairwise` | **`partial_weighted`** — weight by the unblocked share of the shared boundary; **reserved until cycle 3E lands (DEL-48)** | memo § 2 (DEL-22) — `pairwise` severs the crossing pair only; `partial_weighted` generalises it |
+| `barrier.rule` | `global_asymmetric` | `pairwise` | **`partial_weighted`** — a barrier covering part of a shared boundary discounts that neighbour by the covered share, w_ij = 1 − L_blocked/L_shared, instead of severing it. Landed in cycle 3E (DEL-48) | memo § 2 (DEL-22) — `pairwise` severs the crossing pair only; `partial_weighted` generalises it |
+| `barrier.buffer_m` | — (unused) | — (unused) | `5` m, pending ratification | DEL-48 — how close a barrier has to be to block a boundary point, in metres (EPSG:7760 is metric). **Required** iff `barrier.rule: partial_weighted`, **rejected** otherwise, and strictly **> 0**: `LineString.buffer(0)` is EMPTY in shapely, so a 0 m buffer would silently make every weight 1. It is a DISTANCE with round caps, so the blocked span extends `buffer_m` past each end of the barrier *where the shared boundary continues past it* — on the oracle city that makes w_AD 0.08, not the memo's buffer-free 0.1 |
 | `roads` | `decayed` | `eq4_own_only` | **`eq4_own_only`** — each colony counts only its own roads. NB a change from the published numbers; effect measured first (DEL-49) | memo § 3 (DEL-22) — Eq. 4 has no neighbour term |
 | `second_normalization` | `true` | `false` | **Raj to choose** — measured 5 Sep 2026 (DEL-52, `docs/data/psi_columns.md`): the paper's Figure 4 reports `norm_psi`, so `true` unless Raj switches the figures to Eq. 1 as written; Bob's earlier `false` recommendation withdrawn | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1 |
 | `outputs.denominators` | `[pop, popdensity]` | `[pop]` | **Raj to choose** — measured 5 Sep 2026 (DEL-52): Figure 4 uses the popdensity denominator, so it stays reported unless Raj switches to per-population Eq. 3; Bob's earlier `[pop]` default withdrawn | memo "Popdensity denominator" (DEL-22) |
@@ -51,12 +52,12 @@ overlap service is not counted a second time through the neighbour term
 (DEL-20, cycle 3E).
 
 **Reserved — the loader refuses these and tells you why:**
-`barrier.rule: partial_weighted` (**Raj's choice** — needs the reference
-rule, a hand anchor and the production implementation first: cycle 3E,
-DEL-48; see § 5), `outputs.denominators: one` (reference does not model
-it), and the key `exclusion.minmax_universe` (Open Decision A.2 was
-decided as today's behaviour, so no knob is needed). A reserved value is a
-cycle-3x ticket, not a YAML edit.
+`outputs.denominators: one` (reference does not model it), and the key
+`exclusion.minmax_universe` (Open Decision A.2 was decided as today's
+behaviour, so no knob is needed). A reserved value is a cycle-3x ticket,
+not a YAML edit. `barrier.rule: partial_weighted` was reserved until cycle
+3E (DEL-48) supplied the reference rule, the anchors and the production
+implementation; it is now a loadable value, and it is what Raj chose.
 
 ## 2. Categories — the settlement-type mapping
 
@@ -266,14 +267,24 @@ Work on a branch; `main` requires the CI check.
   the corner-only `L`/`T` pair), the bands are strictly nested,
   `inverse_power` 1 reproduces `inverse_linear` on every PCEN, and `pow2` /
   `exp1` / `none` / `boundary` are pinned at closed-form arithmetic written
-  out in the test. Plus the loader's rejection table: a parameter its form or
-  rule does not use is an error, never an ignored value.
+  out in the test, and **`partial_5m`** pins the fractional barrier weight —
+  w_AD = 0.08 on the only partly-blocked edge either fixture city has, its
+  symmetry (w_AD == w_DA bit for bit), and the comparison against a 1 m
+  buffer (0.096) that shows the buffer is a distance and not a flag. Plus the
+  loader's rejection table: a parameter its form or rule does not use is an
+  error, never an ignored value.
 - `tests/test_variants_match_reference.py` — **both** cities: production ==
-  the independent reference at 1e-12 on all eight derived variants × both
+  the independent reference at 1e-12 on all nine derived variants × both
   denominators (`tests/fixtures/<city>/variants_expected_values.csv`,
   generator-emitted and covered by the CI drift guard), plus a CLI round trip
   through a derived variant profile YAML — config file → stamped artifact →
-  `compute` → CSV — and the stamp refusing an artifact built at another band.
+  `compute` → CSV — for a band and for `partial_5m`, and the stamp refusing
+  an artifact built at another band OR at another `buffer_m`.
+- `tests/test_reference_impl.py` — the synthetic production-vs-reference
+  city: a fractional barrier weight on an overlapping pair with a
+  MultiPolygon neighbour, scored by BOTH implementations at 1e-12. It cannot
+  live in a fixture city without moving an existing expected value, so it
+  lives in in-test geometry.
 - `tests/test_messy_fixtures.py` — **messy**-only: what production does on
   each real-layer pathology today (bbox-invented neighbours, the overlap
   double count, the no-population drop). A pin here flips when DEL-19/DEL-20

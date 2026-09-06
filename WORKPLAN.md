@@ -348,17 +348,29 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
       oracle suite under `-W error`, fixture-drift guard); spec
       `docs/superpowers/specs/2026-08-24-ci-workflow-design.md`. Owner
       follow-up: make `test` a required check in branch protection.
-- [ ] **Cycle 3E — the last code Phase 4 needs** (brainstorm → spec →
-      `/ship`, one branch): (a) `barrier.rule: partial_weighted` — weight a
-      neighbour's contribution by the unblocked share of the shared
-      boundary, linear, symmetric; reference rule, hand anchor (Oraculum's
-      canal redrawn to cover the full A–D edge), a partial-coverage pair on
-      the messy city, production implementation, the buffer width as config
-      [DEL-48]; (b) the overlap neighbour rule — a neighbour lends only
-      services not already inside the receiving settlement [DEL-20];
-      (c) the `hi == lo` guard in `index.minmax` (raise) — bug-audit 6.
-      Spec brainstorm questions are listed on DEL-48. Decision log §§ 4, 5,
-      12.
+- [ ] **Cycle 3E — the last code Phase 4 needs.** One spec
+      (`docs/superpowers/specs/2026-09-05-cycle-3e-partial-barriers-design.md`),
+      **three tickets on three branches off `main`**, merged in order:
+      - [x] (c) the `hi == lo` guard in `index.minmax` (raise) — bug-audit 6
+            [DEL-54] — done 5 Sep 2026, PR #18 → `bcc557c`. Both sides of the
+            oracle raise; no fixture moved; real-data verify `0.000e+00`.
+      - [x] (a) `barrier.rule: partial_weighted` — weight a neighbour's
+            contribution by the unblocked share of the shared boundary,
+            linear and symmetric [DEL-48] — done 6 Sep 2026, branch
+            `del-48-partial-barriers`. Shipped as the `partial_5m` VARIANT,
+            not as a change to the `ideal`/`code` rule-sets, so **the canal
+            was NOT redrawn and no messy geometry was added** — the owner's
+            fixture authority was granted but proved unnecessary, and the
+            canal at x ∈ [25, 475] is itself the fractional anchor:
+            **w_AD = 0.08** at the 5 m buffer (460 of the 500 m A–D edge
+            blocked). `barrier.buffer_m` is required by that rule, rejected
+            outside it, and strictly > 0. Both cities' `expected_values.csv`
+            and every `production/*.csv` byte-identical; the two variants
+            CSVs changed by addition only.
+      - [ ] (b) the overlap neighbour rule — a neighbour lends only services
+            not already inside the receiving settlement [DEL-20], on its own
+            branch after DEL-48 merges.
+      Decision log §§ 4, 5, 12.
 - [x] Pre-recalculation measurements (no code; feed the batched reply to
       Raj): corner-only contact pairs on the real layer [DEL-50]; barrier
       layer provenance [DEL-51]. (The roads and `norm_psi` measurements are
@@ -421,14 +433,17 @@ Epic DEL-5. All decisions: `docs/decisions/2026-08-28-raj-methodology-decisions.
       withdrawn and the two choices go to Raj.
 - [ ] **Bob:** write the **ratified profile** [DEL-31] — one YAML, a copy of
       `code-2025.yaml` with the 28 Aug decisions: `adjacency.rule: touch`,
-      `barrier.rule: partial_weighted` (after 3E), `roads: eq4_own_only`,
+      `barrier.rule: partial_weighted` with `barrier.buffer_m` (loadable
+      since DEL-48; the buffer value itself is Raj's to ratify),
+      `roads: eq4_own_only`,
       `exclusion: {types: [RV, Industrial, Other], stage: post_neighbors,
       absent_neighbor: contributes}`; `second_normalization` — the figures
       report `norm_psi` (DEL-52), so `true` unless Raj switches to Eq. 1 as
       written; `outputs.denominators` — the figures use popdensity (DEL-52),
       so it stays reported unless Raj switches to per-population Eq. 3;
       identity mapping. Procedure: `docs/methodology-config.md` § 3.
-      Blocked by DEL-48 and Raj's two DEL-52 answers.
+      DEL-48 is no longer a blocker (merged); still blocked by DEL-20 and
+      Raj's two DEL-52 answers.
 - [ ] **Bob:** recalculate all indexes with the ratified profile
       (supersedes the current "no RV" run) — gated on cycle 3E, the
       measurements above, and the ratified profile [DEL-32]. Hand

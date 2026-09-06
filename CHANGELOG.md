@@ -7,6 +7,37 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **`methodology.barrier.rule: partial_weighted`** — a barrier that covers
+  only part of a shared boundary now discounts that neighbour's contribution
+  by the covered share, `w_ij = 1 − L_blocked/L_shared`, instead of severing
+  the link outright (DEL-48, Raj's 28 Aug 2026 decision; cycle 3E, the second
+  of three per-ticket PRs after DEL-54). Implemented independently on both
+  sides of the oracle, and pinned by the new `partial_5m` variant on both
+  fixture cities.
+  - **`barrier.buffer_m`** is how close a barrier must be to block a boundary
+    point, in metres. Required by, and rejected outside of, this rule, and
+    strictly **> 0**: `LineString.buffer(0)` is empty in shapely, so a zero
+    buffer would silently make every weight 1. It is a DISTANCE with round
+    caps, so the blocked span extends past each end of the barrier *where the
+    shared boundary continues past it* — which is why the oracle city's canal
+    gives w_AD = 0.08 rather than the memo's buffer-free 0.1.
+  - The weight travels in a new neighbours-frame column that exists **only**
+    under this rule and never leaves `index_frames`, so the output column set
+    is identical under every barrier rule and the pruned-neighbour-list
+    contract every other consumer depends on is untouched. Links are pruned
+    only at w == 0 exactly. `buffer_m` joins the methodology stamp, because it
+    shapes the stored lists; artifacts written before this change still load.
+  - A corner-only pair has no boundary to block, so its weight is 1 — which
+    differs from `pairwise`, deliberately.
+  - **Behaviour change worth noting:** `barrier.combine` now selects the
+    layers the geometry-based rules see, not just the flag column. Previously
+    `pairwise` severed across every configured layer whatever `combine` said.
+    No profile, fixture or output uses a non-`any` combine, so nothing moved.
+  - **No existing expected value moved.** Both cities' `expected_values.csv`
+    and every `production/*.csv` are byte-identical; the two
+    `variants_expected_values.csv` files changed by **addition only** (322 new
+    rows on oraculum, 460 on messy, zero deletions). The shipped profiles are
+    untouched — `code-2025` still carries `global_asymmetric`.
 - `index.minmax` raises instead of dividing 0/0 on a degenerate group
   (DEL-54, WORKPLAN bug-audit item 6; cycle 3E, the first of three
   per-ticket PRs). Eq. 2 is undefined when every reported settlement scores
