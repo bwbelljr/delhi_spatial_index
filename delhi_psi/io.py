@@ -19,8 +19,13 @@ log = logging.getLogger(__name__)
 DEFAULT_DATA_DIR = "~/delhi_data"
 
 # Shapefiles cannot hold list or geometry-valued columns; production drops
-# exactly these three before to_file (spec § 5).
-SHAPEFILE_DROP_COLUMNS = ("nbrs_bbox", "nbrs_dist_bbox", "centroid")
+# these before to_file (spec § 5). `nbrs_barrier_weight` is present only
+# under `barrier.rule: partial_weighted` and only on the neighbours frame —
+# `index_frames` drops it before returning, so it never reaches a CSV, but
+# `missing_population.csv` is cut from the neighbours frame, where it IS
+# present.
+SHAPEFILE_DROP_COLUMNS = ("nbrs_bbox", "nbrs_dist_bbox", "centroid",
+                          "nbrs_barrier_weight")
 
 
 def resolve_data_dir(cli_value=None):

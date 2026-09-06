@@ -296,7 +296,8 @@ def test_neighbors_artifact_carries_the_methodology_stamp(data_dir, tmp_path):
     assert frame.attrs["profile"] == "code-2025"
     assert frame.attrs["methodology"] == {
         "adjacency": {"rule": "bbox", "max_distance_km": None},
-        "barrier": {"rule": "global_asymmetric", "combine": "any"},
+        "barrier": {"rule": "global_asymmetric", "combine": "any",
+                    "buffer_m": None},
     }
 
 

@@ -258,7 +258,8 @@ def stamp_forms():
     `stamp.values()`-only guard cannot see.
     """
     real = {"adjacency": {"rule": "bbox", "max_distance_km": None},
-            "barrier": {"rule": "global_asymmetric", "combine": "any"}}
+            "barrier": {"rule": "global_asymmetric", "combine": "any",
+                        "buffer_m": None}}
     return {
         "top_level": {**real, "roads": {"formula": "eq4_own_only"}},
         "nested": {**real,
