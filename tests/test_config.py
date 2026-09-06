@@ -525,6 +525,7 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
 
     enum_key = {("adjacency", "rule"): "methodology.adjacency.rule",
                 ("barrier", "rule"): "methodology.barrier.rule",
+                ("overlap", "lending"): "methodology.overlap.lending",
                 ("decay", "form"): "methodology.decay.form",
                 ("decay", "distance"): "methodology.decay.distance"}
     for block, values in VARIANTS[variant].items():

@@ -503,3 +503,26 @@ def test_an_unknown_lending_value_raises():
     values."""
     with pytest.raises(ValueError, match="overlap lending"):
         scored(MESSY, dict(RULESETS["code"], overlap_lending="halves"))
+
+
+def test_the_overlap_outside_variant_is_the_code_base_plus_the_lending_rule():
+    """The table, the knob map and the hand pins are one thing: the
+    variant's rule-set must BE the dict the § 6.2 pins were derived under."""
+    assert VARIANT_RULESETS["overlap_outside"] == OVERLAP_OUTSIDE
+
+
+def test_partial_5m_outside_is_each_of_its_halves_on_the_city_that_shows_it():
+    """No fixture city has a barrier across an overlap, so the combined
+    variant is `partial_5m` on Oraculum (no overlaps) and `overlap_outside`
+    on the messy city (no barriers). Its job in the table is to prove the
+    two kwargs are accepted together, not to add a third number."""
+    both = variant(ORACULUM, "partial_5m_outside")
+    barrier_only = variant(ORACULUM, "partial_5m")
+    for column in barrier_only.columns:
+        assert list(both[column]) == pytest.approx(
+            list(barrier_only[column]), abs=1e-12), ("oraculum", column)
+    both = variant(MESSY, "partial_5m_outside")
+    overlap_only = variant(MESSY, "overlap_outside")
+    for column in overlap_only.columns:
+        assert list(both[column]) == pytest.approx(
+            list(overlap_only[column]), abs=1e-12), ("messy", column)

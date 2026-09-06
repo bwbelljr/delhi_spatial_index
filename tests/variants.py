@@ -78,6 +78,27 @@ VARIANTS = {
         "barrier": {"rule": "partial_weighted", "combine": "any",
                     "buffer_m": 5.0},
     },
+    # DEL-20: a neighbour lends only |S_j \ S_i|. Degenerate on Oraculum —
+    # no overlapping polygons and no point inside two settlements, so the
+    # shared structure is empty and the rows equal the `code` base, exactly
+    # as `boundary` is degenerate there. The messy city carries the pin: its
+    # O1/O2 clinic is inside both, so O1's clinic PCEN falls from
+    # (1 + 1/1.8)/600 to 1/600 while its school PCEN does not move at all
+    # (spec § 6.2).
+    "overlap_outside": {
+        "overlap": {"lending": "outside_receiver"},
+    },
+    # Both 3E switches at once: proves the two kwargs are accepted together
+    # and both paths run in one compute_frames/compute_city call. It equals
+    # `partial_5m` on Oraculum (no overlaps) and `overlap_outside` on the
+    # messy city (no barriers) — no fixture city has a barrier across an
+    # overlap, so the two multipliers are only simultaneously non-trivial in
+    # the synthetic in-test geometry (spec § 5, § 6.4).
+    "partial_5m_outside": {
+        "barrier": {"rule": "partial_weighted", "combine": "any",
+                    "buffer_m": 5.0},
+        "overlap": {"lending": "outside_receiver"},
+    },
 }
 
 BAND_RADII_KM = (0.0, 0.25, 0.75)
