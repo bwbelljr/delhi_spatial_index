@@ -324,3 +324,139 @@ def test_service_index_forwards_the_weight_column():
     # min-max still runs: X is the max, Y the min
     assert values.loc["X", "clinic_idx"] == 1.0
     assert values.loc["Y", "clinic_idx"] == 0.0
+
+
+# --- 3E: overlap lending (spec § 3.1-3.3, § 6.4) -----------------------
+def overlap_city():
+    """P and Q OVERLAP in x in [1000, 1200]; Z is 4 km away and disjoint.
+
+    One clinic sits in the overlap (so it is P's own AND Q's own), one in P
+    alone; one road runs from x = 500 to x = 1500 at y = 200, so 200 m of it
+    lie inside BOTH P and Q. The amount columns are the ones
+    `index_frames` would have computed: clinic P 2, Q 1, Z 0; road P 0.7 km,
+    Q 0.5 km, Z 0.
+    """
+    return gpd.GeoDataFrame(
+        {"USO_AREA_U": ["P", "Q", "Z"],
+         "nbrs_bbox": [["Q"], ["P"], []],
+         "clinic_count": [2, 1, 0],
+         "road_length": [0.7, 0.5, 0.0]},
+        geometry=[box(0, 0, 1200, 1000), box(1000, 0, 2000, 1000),
+                  box(5000, 0, 6000, 1000)],
+        crs="EPSG:7760")
+
+
+def overlap_clinics():
+    return gpd.GeoDataFrame(
+        {"service": ["clinic", "clinic"]},
+        geometry=[Point(1100, 500), Point(600, 500)], crs="EPSG:7760")
+
+
+def overlap_roads():
+    from shapely.geometry import LineString
+
+    return gpd.GeoDataFrame(
+        {"service": ["road"]},
+        geometry=[LineString([(500, 200), (1500, 200)])], crs="EPSG:7760")
+
+
+def test_shared_amounts_counts_a_point_inside_two_settlements():
+    """One ENTRY per ordered pair that shares something, and nothing at all
+    for the point inside P alone or for the disjoint third settlement — the
+    sparse representation the cost argument rests on."""
+    got = index.shared_amounts(overlap_city(), overlap_clinics(),
+                               kind="point", amount_col="clinic_count")
+    assert got == {("P", "Q"): 1, ("Q", "P"): 1}
+
+
+def test_shared_amounts_measures_the_road_inside_the_overlap():
+    """200 m of the road lie in P n Q, so 0.2 km is lent by neither side."""
+    got = index.shared_amounts(overlap_city(), overlap_roads(),
+                               kind="line", amount_col="road_length")
+    assert got == {("P", "Q"): pytest.approx(0.2, abs=1e-12),
+                   ("Q", "P"): pytest.approx(0.2, abs=1e-12)}
+
+
+def test_shared_amounts_is_empty_when_nothing_is_shared():
+    """A clean layer costs nothing: every point inside one settlement, every
+    neighbour pair a plain border. The dict is EMPTY, not full of zeroes."""
+    city = overlap_city()
+    only_p = gpd.GeoDataFrame({"service": ["clinic"]},
+                              geometry=[Point(600, 500)], crs="EPSG:7760")
+    assert index.shared_amounts(city, only_p, kind="point",
+                                amount_col="clinic_count") == {}
+
+
+def test_shared_amounts_rejects_an_unknown_kind():
+    with pytest.raises(ValueError, match="polygon"):
+        index.shared_amounts(overlap_city(), overlap_clinics(),
+                             kind="polygon", amount_col="clinic_count")
+
+
+def city_with_a_shared_clinic():
+    """X and Y, 1 km apart (decay 1/2), each owning the SAME one clinic —
+    X owns a second of its own. This is the O1/O2 shape at the pcen level."""
+    gdf = city_with_neighbours()
+    gdf["clinic_count"] = [2.0, 1.0]
+    return gdf
+
+
+def test_pcen_subtracts_what_the_receiver_already_holds():
+    """Y already holds the shared clinic, so X lends it (2 - 1) = 1; X holds
+    Y's only clinic, so Y lends it nothing at all."""
+    shared = {("X", "Y"): 1, ("Y", "X"): 1}
+    got = index.pcen(city_with_a_shared_clinic(), amount_col="clinic_count",
+                     pcen_col="clinic_pcen", denominator="pop",
+                     shared_amounts=shared)
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["Y"] == pytest.approx((1 + (2 - 1) * 0.5) / 200, abs=1e-12)
+    assert values["X"] == pytest.approx((2 + (1 - 1) * 0.5) / 100, abs=1e-12)
+
+
+def test_an_empty_shared_structure_is_bit_identical_to_no_structure():
+    """A pair with no entry is `|S_j \\ S_i| == |S_j|` EXACTLY: the sparse 0
+    is the representation of 'nothing shared', not a swallowed miss."""
+    sparse = index.pcen(city_with_a_shared_clinic(),
+                        amount_col="clinic_count", pcen_col="clinic_pcen",
+                        denominator="pop", shared_amounts={})
+    plain = index.pcen(city_with_a_shared_clinic(),
+                       amount_col="clinic_count", pcen_col="clinic_pcen",
+                       denominator="pop")
+    assert list(sparse["clinic_pcen"]) == list(plain["clinic_pcen"])
+
+
+def test_the_barrier_weight_and_the_overlap_rule_compose():
+    """The one place both multipliers act on one pair: a half-blocked shared
+    boundary halves what is left after the overlap subtraction."""
+    frame = city_with_a_shared_clinic()
+    frame["nbrs_barrier_weight"] = [[("Y", 0.5)], [("X", 0.5)]]
+    got = index.pcen(frame, amount_col="clinic_count",
+                     pcen_col="clinic_pcen", denominator="pop",
+                     nbr_weight_col="nbrs_barrier_weight",
+                     shared_amounts={("X", "Y"): 1, ("Y", "X"): 1})
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["Y"] == pytest.approx(
+        (1 + 0.5 * (2 - 1) * 0.5) / 200, abs=1e-12)
+
+
+def test_a_shared_amount_larger_than_the_neighbours_own_raises():
+    """S_j n S_i is part of S_j, so shared_ij <= amount_j on both sides by
+    construction. A negative lent means the two frames came from different
+    runs; validate.check_no_negative would report it much later as a data
+    problem, so it is caught here instead."""
+    with pytest.raises(ValueError, match="would lend"):
+        index.pcen(city_with_a_shared_clinic(), amount_col="clinic_count",
+                   pcen_col="clinic_pcen", denominator="pop",
+                   shared_amounts={("Y", "X"): 5})
+
+
+def test_service_index_forwards_the_shared_structure():
+    got = index.service_index(city_with_a_shared_clinic(), "clinic_count",
+                              service="clinic", denominator="pop",
+                              shared_amounts={("X", "Y"): 1, ("Y", "X"): 1})
+    values = got.set_index("USO_AREA_U")
+    assert values.loc["Y", "clinic_pcen"] == pytest.approx(
+        (1 + (2 - 1) * 0.5) / 200, abs=1e-12)
+    # min-max still runs: X is the max, Y the min
+    assert values.loc["X", "clinic_idx"] == 1.0
+    assert values.loc["Y", "clinic_idx"] == 0.0

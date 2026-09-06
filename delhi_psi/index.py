@@ -18,6 +18,7 @@ import logging
 import math
 
 import geopandas as gpd
+from shapely import STRtree
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +90,86 @@ def service_amount_column(service, kind):
         f"unknown service kind {kind!r}; allowed values: ['point', 'line']")
 
 
+def shared_amounts(polygon_gdf, service_gdf, *, kind, amount_col,
+                   neighbor_col="nbrs_bbox", id_col="USO_AREA_U"):
+    """{(i, j): amount} — how much of ONE service lies inside BOTH i and j.
+
+    This is the `shared_ij` of `|S_j \\ S_i| = amount_j - shared_ij`
+    (`overlap.lending: outside_receiver`). Sparse and symmetric: only pairs
+    that actually share something get an entry, in both orders, and `pcen`
+    reads it with `.get((i, j), 0)`. That 0 IS the representation of
+    "nothing shared" — for every pair whose polygons do not overlap,
+    `|S_j \\ S_i| == |S_j|` exactly and no arithmetic happens.
+
+    point: ONE sjoin — the same boundary-inclusive `intersects` join
+        `point_counts` does, so `shared_ij <= amount_j` by construction —
+        grouped by POINT. A point inside k settlements contributes 1 to each
+        of the k(k-1) ordered pairs among them; a point inside one
+        settlement, which is every point on a clean layer, contributes
+        nothing and is never looked at again. Neighbour status is irrelevant
+        here: recording every sharing pair is cheaper than filtering it, and
+        `pcen` only ever looks up neighbour pairs.
+    line: the clipped length in km inside `geom_i n geom_j`, over the stored
+        NEIGHBOUR lists only, skipping any pair where either side owns none
+        of the service (it can then share none of it) and any pair whose
+        intersection is empty. The road rows are indexed once in an STRtree,
+        so each surviving pair clips only the candidates its own
+        intersection returns.
+
+    Never call this under `overlap.lending: whole`: there is nothing to
+    subtract, and the caller passes `shared_amounts=None` so the neighbour
+    loop stays bit-identical to today's.
+    """
+    if kind == "point":
+        # Two columns only, so a service layer that happens to carry a
+        # column of the same name cannot make sjoin add suffixes; and a
+        # plain RangeIndex on the right, so the join column is always
+        # `index_right` (geopandas names it after the right index when that
+        # index HAS a name).
+        left = polygon_gdf[[id_col, polygon_gdf.geometry.name]]
+        joined = gpd.sjoin(left, service_gdf.reset_index(drop=True))
+        table = {}
+        for _, group in joined.groupby("index_right"):
+            owners = list(group[id_col])
+            if len(owners) < 2:
+                continue
+            for i in owners:
+                for j in owners:
+                    if i != j:
+                        table[(i, j)] = table.get((i, j), 0) + 1
+        return table
+    if kind == "line":
+        geoms = polygon_gdf.set_index(id_col).geometry
+        amounts = polygon_gdf.set_index(id_col)[amount_col]
+        lines = list(service_gdf.geometry)
+        tree = STRtree(lines)
+        pairs = set()
+        for _, row in polygon_gdf.iterrows():
+            i = row[id_col]
+            for j in row[neighbor_col]:
+                # An id with no row here lends nothing anyway — `pcen` skips
+                # it under `swallowed` and reads it from the lookup frame
+                # under `contributes`, where the amount is 0 for a row this
+                # frame does not have.
+                if j in geoms.index and amounts[i] > 0 and amounts[j] > 0:
+                    pairs.add((i, j) if i < j else (j, i))
+        table = {}
+        # Sorted UNDIRECTED pairs: each is measured once and written both
+        # ways, so the table is symmetric by construction.
+        for i, j in sorted(pairs):
+            overlap = geoms[i].intersection(geoms[j])
+            if overlap.is_empty:
+                continue
+            length = sum(lines[k].intersection(overlap).length
+                         for k in tree.query(overlap)) / 1000
+            if length > 0:
+                table[(i, j)] = length
+                table[(j, i)] = length
+        return table
+    raise ValueError(
+        f"unknown service kind {kind!r}; allowed values: ['point', 'line']")
+
+
 DECAY_FORMS = ("inverse_linear", "none", "inverse_power", "exponential")
 
 
@@ -137,6 +218,7 @@ def _decay(distance_km, decay_form, distance_unit, *, exponent=None,
 
 def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
          nbr_dist_col="nbrs_dist_bbox", nbr_weight_col=None,
+         shared_amounts=None,
          lookup_frame=None,
          absent_neighbor="swallowed", include_neighbors=True,
          decay_form="inverse_linear", distance_unit="km", exponent=None,
@@ -156,6 +238,13 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
         under `barrier.rule: partial_weighted`. The neighbour's contribution
         is multiplied by w; None means every weight is 1, which is bit
         identical because 1.0 * x is exact.
+    shared_amounts: the {(i, j): amount} structure `shared_amounts()` builds
+        under `overlap.lending: outside_receiver`. A neighbour then lends
+        |S_j \\ S_i| — its amount minus whatever of the same service already
+        lies inside the receiver — so a service in the overlap of two
+        colonies is never counted twice for one of them. None means today's
+        rule (`whole`), and then no subtraction happens at all, which is
+        what keeps the default path bit-identical.
     """
     if denominator not in DENOMINATORS:
         raise ValueError(
@@ -210,6 +299,16 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                             "row in the pre-exclusion lookup frame")
                     continue
                 lent = match[amount_col].array[0]
+                if shared_amounts is not None:
+                    lent = lent - shared_amounts.get((row[id_col], nbr_id), 0)
+                    if lent < 0:
+                        raise ValueError(
+                            f"overlap lending: {nbr_id!r} would lend "
+                            f"{lent} of {amount_col!r} to {row[id_col]!r}. "
+                            "S_j n S_i is part of S_j, so the shared amount "
+                            "can never exceed the neighbour's own — the "
+                            "amounts frame and the shared structure came "
+                            "from different runs.")
                 poly_count += w * lent * _decay(nbr_dist, decay_form,
                                                 distance_unit,
                                                 exponent=exponent,
@@ -260,6 +359,7 @@ def minmax(polygon_gdf, *, source_col, target_col):
 
 def service_index(polygon_gdf, amount_col, *, service, denominator,
                   nbr_dist_col="nbrs_dist_bbox", nbr_weight_col=None,
+                  shared_amounts=None,
                   lookup_frame=None,
                   absent_neighbor="swallowed", include_neighbors=True,
                   decay_form="inverse_linear", distance_unit="km",
@@ -272,7 +372,7 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
     idx_col = f"{service}_idx"
     out = pcen(polygon_gdf, amount_col=amount_col, pcen_col=pcen_col,
                denominator=denominator, nbr_dist_col=nbr_dist_col,
-               nbr_weight_col=nbr_weight_col,
+               nbr_weight_col=nbr_weight_col, shared_amounts=shared_amounts,
                lookup_frame=lookup_frame, absent_neighbor=absent_neighbor,
                include_neighbors=include_neighbors, decay_form=decay_form,
                distance_unit=distance_unit, exponent=exponent,
