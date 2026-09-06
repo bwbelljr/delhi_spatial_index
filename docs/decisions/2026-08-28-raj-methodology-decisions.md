@@ -266,6 +266,26 @@ open with this scope and ships in cycle 3E with DEL-48. Quantify against
 services are counted for each colony, with the count
 (`docs/data/layer_pathologies.md`).
 
+**Measured (6 Sep 2026, DEL-20; `docs/data/rule_effects.md`).** The double
+count is real, and small. 758 ordered pairs share at least one unit of a
+service (194 banks, 156 ration shops, 248 roads, the rest smaller); 2,427
+settlements have an overlapping neighbour, and 385 of them have a PCEN that
+actually moves — about one settlement in eleven, each of which was counting
+some service twice, once as its own and once decayed as a neighbour's.
+Nothing rose and nothing outside the overlapping set moved, which is the
+containment the rule promises.
+
+**It does not move the headline.** Under the density denominator the
+figures use: Planned 0.0304103 → 0.0304087, JJC 0.000914278 → 0.000911273,
+largest mover UAC at −4.9 %. No ordering changes. So this is the opposite
+profile from the barrier rule — small in effect, and a correction of a real
+arithmetic error rather than a change of method.
+
+**Still Bob's proposal, not Raj's decision.** Both shipped profiles carry
+`whole` (today's behaviour); `outside_receiver` is available and proven.
+The question for Raj now comes with its price attached: about 5 % of one
+settlement type's mean, and nothing of the argument.
+
 ## 6. Settlement categories — keep all, drop three (DEL-28/29/30/31)
 
 **Transcript 14:40–14:42.** Raj: "I spent a lot of time actually thinking
