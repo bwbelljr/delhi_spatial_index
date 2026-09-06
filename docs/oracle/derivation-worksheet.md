@@ -107,3 +107,60 @@ deltas) are asserted equal, to 1e-12, between the reference implementation
 and the production code by `uv run pytest` — their authority derives from
 these hand anchors plus the reviewed independence of the reference
 implementation.
+
+## partial_weighted (variant `partial_5m`, 6 Sep 2026 — machine-derived, ratification is the owner's)
+
+NOT RATIFIED. Everything above this heading was hand-checked and signed off
+on 2026-08-24; this section was derived by the DEL-48 implementation and is
+pinned by `tests/test_variant_rules.py`, which is what makes it re-derivable
+rather than authoritative.
+
+**The weight.** For a directed link i→j, w_ij = 1 − L_blocked / L_shared,
+where L_shared is the length of the boundary i and j share and L_blocked is
+the part of it within `buffer_m` metres of a barrier. The buffer is a
+DISTANCE with round caps, so the blocked span extends `buffer_m` past each
+end of the barrier — but only where the shared boundary actually continues
+past it. A barrier whose endpoints coincide with the shared segment's own
+endpoints blocks exactly that segment and no more.
+
+**On this city.** The canal is the segment x ∈ [25, 475] at y = 1000, which
+lies strictly inside the 500 m A–D edge x ∈ [0, 500] — so both caps land on
+real boundary. At `buffer_m: 5` it blocks x ∈ [20, 480]:
+
+    L_shared  = 500 m
+    L_blocked = 460 m
+    w_AD = w_DA = 1 − 460/500 = 0.08     (float 0.07999999999999996)
+
+At `buffer_m: 1` it blocks [24, 476] and w_AD = 0.096. The buffer-free limit
+is the memo's 0.1, which is deliberately not offered: `LineString.buffer(0)`
+is EMPTY in shapely, so a 0 m buffer would silently make every weight 1.
+
+Every other shared boundary on this city is at least 20 m from the canal's
+ends — A–E begins at x = 500, and the buffer stops at 480 — so **A–D is the
+only fractional link, in both directions**, and nothing is pruned. The lists
+are therefore the plain `bbox` lists, and A and D are back in everyone's,
+because the `global_asymmetric` flag severing is gone:
+
+    A:[B,D,E]  B:[A,C,E,RV]  C:[B,E,IND]  RV:[B]
+    D:[A,E]    E:[A,B,C,D,IND]  IND:[C,E]
+
+**Decays.** 1 km → ½; 1.5 km → 0.4; √2 km → √2−1; A and D centroids are
+(500, 1500) and (0, 500), i.e. √5/2 km apart → 1/(1+√5/2) = 0.4721359549995794.
+
+**Anchors** (`pop` denominator, the `code` base — decayed roads, `swallowed`,
+nothing dropped):
+
+| row | arithmetic | value |
+|---|---|---|
+| D clinic | (0 + 0.08·2·0.4721359550 [A] + 1·0.4 [E]) / 100 | 0.0047554175279993 |
+| D school | (1 + 0.08·1·0.4721359550 [A] + 1·0.4 [E]) / 100 | 0.0143777087639997 |
+| A school | (1 + 0.08·1·0.4721359550 [D] + 1·(√2−1) [E]) / 100 | 0.0145198443877306 |
+| A clinic | unchanged — D owns no clinic: (2 + ½ + (√2−1))/100 | 0.0291421356237309 |
+| D road (decayed) | (0 + 0.08·0.75·0.4721359550 [A] + 0.75·0.4 [E]) / 100 | 0.0032832815729997 |
+| B clinic | A is back: (1 + 2·½ + 0 + 2·½ + 1·½)/200 — the `ideal` 0.0175, not `code`'s 0.0125 | 0.0175 |
+| E clinic | (1 + 2·(√2−1) + ½)/300 — the `ideal` value | 0.0077614237491540 |
+
+`popdensity` changes only the denominators (D and A have area 1.0 km², so
+their rows are identical; E divides by 150). No service column is constant
+under either denominator, which is what lets the invariants guard write the
+fixture at all — and, since DEL-54, what keeps `index.minmax` from raising.

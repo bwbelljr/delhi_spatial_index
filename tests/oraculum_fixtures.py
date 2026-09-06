@@ -162,14 +162,15 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
     frame while the variants CSV keeps them — and RV is the settlement the
     § 4.1 pins name.
 
-    A block the variant does not mention keeps `base`'s: today only the band
-    variants override `adjacency`, and every variant states each block it
-    does override IN FULL.
+    A block the variant does not mention keeps `base`'s: today the band
+    variants override `adjacency` and `partial_5m` overrides `barrier`, and
+    every variant states each block it does override IN FULL.
     """
     from dataclasses import replace
 
     from delhi_psi.config import (
-        AdjacencyConfig, AdjacencyRule, DecayConfig, DecayDistance, DecayForm,
+        AdjacencyConfig, AdjacencyRule, BarrierConfig, BarrierRule,
+        DecayConfig, DecayDistance, DecayForm,
     )
     from tests.variants import VARIANTS
 
@@ -180,6 +181,12 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
         methodology = replace(methodology, adjacency=AdjacencyConfig(
             rule=AdjacencyRule(block["rule"]),
             max_distance_km=block.get("max_distance_km")))
+    if "barrier" in spec:
+        block = spec["barrier"]
+        methodology = replace(methodology, barrier=BarrierConfig(
+            rule=BarrierRule(block["rule"]),
+            combine=block["combine"],
+            buffer_m=block.get("buffer_m")))
     if "decay" in spec:
         block = spec["decay"]
         methodology = replace(methodology, decay=DecayConfig(

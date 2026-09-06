@@ -281,3 +281,81 @@ def test_exclusion_type_outside_the_mapping_raises_on_the_in_memory_path():
     message = str(excinfo.value)
     assert "non-urban" in message
     assert "RV" in message, "the message lists the categories the mapping produces"
+
+
+# --- 3E: the compute-local weight column (spec § 2.3) ------------------
+def test_the_stamp_records_the_buffer():
+    """The buffer SHAPES the stored lists — a barrier 3 m off an edge blocks
+    at 5 m and not at 2 m — so an artifact built at another buffer must be
+    refused. It is None for the two rules that have no buffer."""
+    from dataclasses import replace
+
+    from delhi_psi.config import BarrierConfig, BarrierRule
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    assert pipeline.methodology_stamp(cfg.methodology)["barrier"] == {
+        "rule": "global_asymmetric", "combine": "any", "buffer_m": None}
+    partial = replace(cfg.methodology, barrier=BarrierConfig(
+        rule=BarrierRule.PARTIAL_WEIGHTED, combine="any", buffer_m=5.0))
+    assert pipeline.methodology_stamp(partial)["barrier"] == {
+        "rule": "partial_weighted", "combine": "any", "buffer_m": 5.0}
+
+
+def test_the_weight_column_is_dropped_before_index_frames_returns():
+    """Like NBRS_DIST_BOUNDARY_COL: compute-local, so the CSV/shapefile
+    column set is identical under every barrier rule."""
+    from dataclasses import replace
+
+    from delhi_psi.config import BarrierConfig, BarrierRule
+    from delhi_psi.pipeline import compute_frames
+    from tests.cities import ORACULUM
+    from tests.oraculum_fixtures import methodology_with
+
+    methodology = methodology_with("code-2025", types=(), stage=None)
+    methodology = replace(methodology, barrier=BarrierConfig(
+        rule=BarrierRule.PARTIAL_WEIGHTED, combine="any", buffer_m=5.0))
+    got = compute_frames(ORACULUM.load_settlements(),
+                         {"canal": ORACULUM.load_barriers()},
+                         ORACULUM.load_services(), None, methodology, "pop",
+                         mapping=ORACULUM.mapping(), scheme=ORACULUM.scheme)
+    assert pipeline.NBRS_WEIGHT_COL not in got.columns
+
+    baseline = compute_frames(ORACULUM.load_settlements(),
+                              {"canal": ORACULUM.load_barriers()},
+                              ORACULUM.load_services(), None,
+                              methodology_with("code-2025", types=(),
+                                               stage=None),
+                              "pop", mapping=ORACULUM.mapping(),
+                              scheme=ORACULUM.scheme)
+    assert list(got.columns) == list(baseline.columns)
+
+
+def test_the_weight_column_is_in_the_shapefile_drop_list():
+    """`compute` cuts missing_population.csv from the NEIGHBOURS frame,
+    where the column IS present, using this list."""
+    from delhi_psi import io
+
+    assert pipeline.NBRS_WEIGHT_COL in io.SHAPEFILE_DROP_COLUMNS
+
+
+def test_pre_neighbours_exclusion_strips_the_weight_column_too():
+    """An id removed from nbrs_bbox must leave the weight list as well, or
+    pcen's KeyError guard fires on a legitimate run."""
+    import geopandas as gpd
+    from shapely.geometry import box
+
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B", "C"],
+         "nbrs_bbox": [["B", "C"], ["A"], ["A"]],
+         "nbrs_dist_bbox": [[("B", 1.0), ("C", 2.0)], [("A", 1.0)],
+                            [("A", 2.0)]],
+         pipeline.NBRS_WEIGHT_COL: [[("B", 0.5), ("C", 1.0)], [("A", 0.5)],
+                                    [("A", 1.0)]]},
+        geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1), box(2, 0, 3, 1)],
+        crs="EPSG:7760")
+    got = pipeline.apply_exclusion(frame, dropped={"C"},
+                                   stage="pre_neighbors")
+    row = got[got["USO_AREA_U"] == "A"].iloc[0]
+    assert row["nbrs_bbox"] == ["B"]
+    assert row[pipeline.NBRS_WEIGHT_COL] == [("B", 0.5)]

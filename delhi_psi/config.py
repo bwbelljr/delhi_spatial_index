@@ -35,7 +35,8 @@ REFERENCE_KNOBS = {
     "methodology.adjacency.rule": {"bbox": "bbox", "touch": "border",
                                    "within_distance": "within_distance"},
     "methodology.barrier.rule": {"global_asymmetric": "global",
-                                 "pairwise": "pair"},
+                                 "pairwise": "pair",
+                                 "partial_weighted": "partial_weighted"},
     "methodology.decay.form": {"inverse_linear": "inverse_linear",
                                "none": "none",
                                "inverse_power": "inverse_power",
@@ -96,15 +97,6 @@ ENUMS = {
 
 # --- reserved values and keys (spec §§ 3, 4, 9) ------------------------
 RESERVED_VALUES = {
-    "methodology.barrier.rule": {
-        "partial_weighted":
-            "reserved: w_ij = 1 - L_blocked/L_shared "
-            "(docs/oracle/suggested-fixes-memo.md § 2) is config-ready but "
-            "reference-pending. Unblock it by adding the reference rule to "
-            "tests/reference_impl.py, a hand anchor in "
-            "docs/oracle/derivation-worksheet.md, and regenerating "
-            "tests/fixtures/oraculum/expected_values.csv (cycle 3C).",
-    },
     "outputs.denominators[]": {
         "one":
             "reserved: production supports denom='one' but the reference does "
@@ -190,6 +182,11 @@ class AdjacencyConfig:
 class BarrierConfig:
     rule: BarrierRule
     combine: object                # "any" or a tuple of layer names
+    # None is "not applicable", never a default for the YAML key: it is
+    # required by partial_weighted and rejected by the other two rules,
+    # which have no buffer at all (global_asymmetric reads the per-polygon
+    # flag, pairwise uses `intersects`).
+    buffer_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -410,7 +407,11 @@ def _methodology(raw, *, allowed_categories):
             minimum=0, strict=False))
 
     barrier_raw = _require(raw, "barrier", "methodology")
-    _reject_unknown(barrier_raw, {"rule", "combine"}, "methodology.barrier")
+    _reject_unknown(barrier_raw, {"rule", "combine", "buffer_m"},
+                    "methodology.barrier")
+    barrier_rule = _coerce_enum(
+        "methodology.barrier.rule",
+        _require(barrier_raw, "rule", "methodology.barrier"))
     combine = _require(barrier_raw, "combine", "methodology.barrier")
     if combine != "any":
         if not isinstance(combine, list) or not all(
@@ -420,9 +421,13 @@ def _methodology(raw, *, allowed_categories):
                 f"layer names, got {combine!r}")
         combine = tuple(combine)
     barrier = BarrierConfig(
-        rule=_coerce_enum("methodology.barrier.rule",
-                          _require(barrier_raw, "rule", "methodology.barrier")),
-        combine=combine)
+        rule=barrier_rule,
+        combine=combine,
+        buffer_m=_conditional_number(
+            barrier_raw, "buffer_m", "methodology.barrier",
+            used_by="methodology.barrier.rule: partial_weighted",
+            applies=barrier_rule == BarrierRule.PARTIAL_WEIGHTED,
+            minimum=0, strict=True))
 
     decay_raw = _require(raw, "decay", "methodology")
     _reject_unknown(decay_raw, {"form", "distance_unit", "distance",

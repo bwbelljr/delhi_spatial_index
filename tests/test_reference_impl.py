@@ -368,3 +368,272 @@ def test_band_guard_reports_a_wrong_count(city):
     violations = check_bands(city, expected={km: 0 for km in BAND_RADII_KM})
     assert len(violations) == len(BAND_RADII_KM)
     assert all("pair count" in violation for violation in violations)
+
+
+# --- DEL-48: partial_weighted, reference side (spec § 2.1, § 6.4) ------
+def _pair_city(geom_a, geom_b):
+    """Two settlements A and B with the given geometries, no services."""
+    import geopandas as gpd
+
+    return gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "population": [100.0, 200.0],
+         "area_km2": [1.0, 1.0]},
+        geometry=[geom_a, geom_b], crs="EPSG:7760")
+
+
+def _barrier_frame(*geoms):
+    import geopandas as gpd
+
+    return gpd.GeoDataFrame(geometry=list(geoms), crs="EPSG:7760")
+
+
+def _w(geom_a, geom_b, *barrier_geoms, buffer_m=5.0):
+    """w(A, B) under partial_weighted, asserted symmetric."""
+    from tests.reference_impl import partial_weights
+
+    weights = partial_weights({"A": {"B"}, "B": {"A"}},
+                              _pair_city(geom_a, geom_b),
+                              _barrier_frame(*barrier_geoms), buffer_m)
+    assert weights[("A", "B")] == weights[("B", "A")], "w must be symmetric"
+    return weights[("A", "B")]
+
+
+def test_reference_partial_weight_on_a_fully_covered_edge_is_zero():
+    """A barrier lying along the whole shared edge blocks all 1000 m, so
+    partial_weighted agrees with pairwise: the pair is severed."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1000, 0), (1000, 1000)])) == 0.0
+
+
+def test_reference_partial_weight_on_a_half_covered_edge_is_not_one_half():
+    """The 5 m round caps extend the blocked span 5 m past each end, so the
+    middle 500 m of a 1000 m edge blocks 510 m, not 500. Pinned so nobody
+    'fixes' 0.49 into 0.5."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1000, 250), (1000, 750)])) == pytest.approx(
+                  0.49, abs=1e-12)
+    # from the corner: one cap falls off the end of the edge, so 505 m
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1000, 0), (1000, 500)])) == pytest.approx(
+                  0.495, abs=1e-12)
+
+
+def test_reference_a_perpendicular_crossing_blocks_only_the_buffer():
+    """The owner's 'a point crossing severs nothing': a barrier crossing the
+    shared edge at right angles blocks 2 x 5 m, so w = 0.99 and the link is
+    KEPT — where pairwise severs it outright."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(900, 500), (1100, 500)])) == pytest.approx(
+                  0.99, abs=1e-12)
+
+
+def test_reference_a_barrier_just_off_the_edge_still_blocks_it():
+    """The buffer's purpose: a canal drawn 4 m off a sliver gap is within
+    5 m of every boundary point, so w = 0. A barrier 200 m away is not."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(996, 0), (996, 1000)])) == 0.0
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1200, 0), (1200, 1000)])) == 1.0
+
+
+def test_reference_an_overlapping_pair_uses_the_intersection_boundary():
+    """The owner's overlap rule made numeric: O1 and O2 overlap in a
+    200 x 1000 m strip whose BOUNDARY is its 2400 m perimeter. A barrier
+    crossing the strip end to end cuts that perimeter twice (20 m); a barrier
+    lying along the strip's own long edge blocks 1000 m + 2 caps."""
+    from shapely.geometry import LineString, box
+
+    o1, o2 = box(10000, 0, 11000, 1000), box(10800, 0, 11800, 1000)
+    assert _w(o1, o2, LineString([(10900, 0), (10900, 1000)])) == \
+        pytest.approx(1 - 20 / 2400, abs=1e-12)
+    assert _w(o1, o2, LineString([(11000, 0), (11000, 1000)])) == \
+        pytest.approx(1 - 1010 / 2400, abs=1e-12)
+
+
+def test_reference_a_multipolygon_neighbour_sums_both_shared_edges():
+    """A two-part neighbour shares 400 m along each part, so L_shared is
+    800 m; a barrier over one part's edge blocks 400 of them."""
+    from shapely.geometry import LineString, MultiPolygon, box
+
+    multi = MultiPolygon([box(1000, 0, 2000, 400), box(1000, 600, 2000, 1000)])
+    assert _w(box(0, 0, 1000, 1000), multi,
+              LineString([(1000, 0), (1000, 400)])) == pytest.approx(
+                  0.5, abs=1e-12)
+
+
+def test_reference_a_mixed_intersection_is_decomposed_part_by_part():
+    """The one place a naive `shared.boundary` is WRONG: a neighbour that
+    overlaps on one side and shares an edge on another intersects in a
+    GeometryCollection, whose `.boundary` is None in shapely 2.1. SB is the
+    overlap polygon's 1000 m perimeter plus the 400 m shared line."""
+    from shapely.geometry import MultiPolygon, box
+
+    mixed = MultiPolygon([box(900, 0, 1900, 400), box(1000, 600, 1900, 1000)])
+    square = box(0, 0, 1000, 1000)
+    assert square.intersection(mixed).geom_type == "GeometryCollection"
+    assert square.intersection(mixed).boundary is None
+    assert _w(square, mixed) == 1.0          # no barrier: SB length 1400, w 1
+
+
+def test_reference_a_corner_only_contact_is_never_severed():
+    """L_shared == 0, so there is no boundary to block and w = 1 even with a
+    barrier straight through the corner (spec § 2.1 step 3). pairwise severs
+    this pair; this is the documented difference between the two rules."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 1000, 2000, 2000),
+              LineString([(900, 1100), (1100, 900)])) == 1.0
+
+
+def test_reference_partial_weighted_requires_a_positive_buffer():
+    from shapely.geometry import box
+
+    from tests.reference_impl import apply_barrier
+
+    city = _pair_city(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000))
+    nbrs = {"A": {"B"}, "B": {"A"}}
+    with pytest.raises(ValueError, match="barrier_buffer_m"):
+        apply_barrier(nbrs, city, _barrier_frame(), "partial_weighted")
+    with pytest.raises(ValueError, match="barrier_buffer_m"):
+        apply_barrier(nbrs, city, _barrier_frame(), "partial_weighted",
+                      buffer_m=0)
+
+
+@pytest.mark.parametrize("rule", ["global", "pair"])
+def test_reference_the_other_rules_reject_a_buffer(rule):
+    """An unimplemented combination must RAISE — the mapped-knob test relies
+    on it."""
+    from shapely.geometry import box
+
+    from tests.reference_impl import apply_barrier
+
+    city = _pair_city(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000))
+    with pytest.raises(ValueError, match="barrier_buffer_m"):
+        apply_barrier({"A": {"B"}, "B": {"A"}}, city, _barrier_frame(), rule,
+                      buffer_m=5.0)
+
+
+# --- 3E: production == reference on synthetic geometry (spec § 6.4) ----
+def synthetic_partial_city():
+    """Three settlements built for the case no fixture city can carry.
+
+    P and Q OVERLAP (so their shared boundary is the intersection polygon's
+    perimeter); R is a two-part MultiPolygon TOUCHING P along both parts
+    (a MultiLineString shared boundary); a canal partially covers the P-R
+    boundary, so at least one weight is strictly between 0 and 1.
+
+    EVERY point service the reference scores gets a layer, because
+    `compute_city` min-maxes all six of `POINT_SERVICES` plus road and
+    DEL-54's guard raises on a constant column — a city with only a clinic
+    layer would make school/bank/police/ration/transport all-zero and stop
+    the comparison before it started. One point per settlement, reused for
+    every service: the three denominators (100, 200, 400) are distinct, so
+    no PCEN column can be constant. Each point is strictly interior to
+    exactly one settlement and none lies in the P-Q overlap, so
+    production's boundary-inclusive `intersects` and the reference's strict
+    `within` agree on every one (rule-set gap #6 is not in scope here).
+    """
+    import geopandas as gpd
+    from shapely.geometry import LineString, MultiPolygon, Point, box
+
+    settlements = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["P", "Q", "R"], "USO_FINAL": ["Planned"] * 3,
+         "population": [100.0, 200.0, 400.0],
+         "area_km2": [1.2, 1.0, 0.8]},
+        geometry=[box(0, 0, 1200, 1000),
+                  box(1000, 0, 2000, 1000),
+                  MultiPolygon([box(-400, 0, 0, 400),
+                                box(-400, 600, 0, 1000)])],
+        crs="EPSG:7760")
+    # The canal covers y in [0, 400] of the x = 0 boundary P shares with R's
+    # lower part: 400 of the 800 m shared boundary, so w_PR is strictly
+    # fractional (0.5). The round cap adds nothing — the canal's endpoints
+    # coincide with that segment's own endpoints and the shared boundary
+    # does not continue past them; the test asserts 0 < w_PR < 1, so this
+    # comment is description, not a pin.
+    barriers = gpd.GeoDataFrame(
+        {"name": ["canal"]},
+        geometry=[LineString([(0, 0), (0, 400)])], crs="EPSG:7760")
+    # P only, Q only, R's upper part only — none in the P-Q overlap.
+    hosts = [Point(600, 500), Point(1600, 500), Point(-200, 800)]
+    services = {
+        name: gpd.GeoDataFrame({"service": [name] * 3},
+                               geometry=list(hosts), crs="EPSG:7760")
+        for name in ("clinic", "school", "bank", "police", "ration",
+                     "transport")
+    }
+    # 300 m inside R's lower part, 1100 m inside P, 100 m inside Q (the
+    # overlap stretch counts for both owners, on both sides) — three
+    # distinct lengths, so road_pcen is not constant either.
+    services["road"] = gpd.GeoDataFrame(
+        {"service": ["road"]},
+        geometry=[LineString([(-300, 200), (1100, 200)])], crs="EPSG:7760")
+    return settlements, barriers, services
+
+
+def test_production_matches_the_reference_on_synthetic_partial_geometry():
+    """The fractional-weight x overlap x MultiPolygon case, scored by BOTH
+    implementations at 1e-12. It cannot live in a fixture city without
+    moving an existing expected value (spec § 12 item 3), so it lives here
+    and costs no fixture file.
+    """
+    from delhi_psi.config import (
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
+        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
+        ExclusionStage, MethodologyConfig, RoadsFormula,
+    )
+    from delhi_psi.pipeline import compute_frames
+    from tests.test_profiles_match_reference import METRIC_MAP
+
+    settlements, barriers, services = synthetic_partial_city()
+    methodology = MethodologyConfig(
+        adjacency=AdjacencyConfig(rule=AdjacencyRule.BBOX),
+        barrier=BarrierConfig(rule=BarrierRule.PARTIAL_WEIGHTED,
+                              combine="any", buffer_m=5.0),
+        decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
+                          distance=DecayDistance.CENTROID),
+        roads=RoadsFormula.DECAYED,
+        second_normalization=True,
+        exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
+                                  absent_neighbor=AbsentNeighbor.SWALLOWED))
+
+    for denom in ("pop", "popdensity"):
+        got = compute_frames(settlements, {"canal": barriers}, services, None,
+                             methodology, denom,
+                             mapping={"Planned": "Planned"},
+                             scheme="synthetic").set_index("USO_AREA_U")
+        exp = compute_city(
+            settlements, services, barriers, adjacency_rule="bbox",
+            barrier_rule="partial_weighted", barrier_buffer_m=5.0,
+            roads_formula="decayed", scenario="none", denom=denom,
+            second_norm=True, absent_neighbor_contribution="swallowed",
+            scenarios={"none": (frozenset(), False)})
+        assert set(got.index) == set(exp.index)
+        # Every METRIC_MAP column exists on both sides: the city carries all
+        # six point services plus road, and second_norm is on, so nothing is
+        # skipped and the comparison cannot pass by omission.
+        for prod_col, metric in METRIC_MAP.items():
+            for sid in exp.index:
+                assert got.loc[sid, prod_col] == pytest.approx(
+                    exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)
+
+
+def test_the_synthetic_city_really_carries_a_fractional_weight():
+    """The test above would still pass if every weight were 1 or 0 — that is
+    exactly the failure mode it exists to rule out."""
+    from tests.reference_impl import adjacency, partial_weights
+
+    settlements, barriers, _ = synthetic_partial_city()
+    weights = partial_weights(adjacency(settlements, "bbox"), settlements,
+                              barriers, 5.0)
+    fractional = [w for w in weights.values() if 0.0 < w < 1.0]
+    assert fractional, weights
+    assert weights[("P", "R")] == weights[("R", "P")]

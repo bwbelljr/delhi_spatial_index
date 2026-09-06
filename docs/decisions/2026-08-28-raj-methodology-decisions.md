@@ -172,15 +172,48 @@ code's global/asymmetric flag is retired from the ratified profile.
 **Bob's rulings (5 Sep 2026):**
 - **Sequence:** build before DEL-32 (595 of 4,357 settlements are
   barrier-flagged today; recalculating twice means two rounds of figures).
-- **Oraculum:** the canal covers 90% of the A–D edge, which would make
+- **Oraculum:** ~~the canal covers 90% of the A–D edge, which would make
   w_AD = 0.1 and move the hand-ratified anchors. Redraw the canal to cover
-  the full edge (worksheet unchanged); add a partial-coverage pair to the
-  messy city to pin the fraction.
-- **Deferred to the DEL-48 spec brainstorm:** buffer width for "lies along
-  the boundary" (a config value; look at the real layer first); the shared
-  boundary of an overlapping pair (the intersection is a polygon); a
-  perpendicular point crossing severs ~nothing (memo argues correct —
-  confirm).
+  the full edge; add a partial-coverage pair to the messy city.~~
+  **Superseded 5 Sep 2026:** the rule ships as a `tests/variants.py` VARIANT,
+  not as a change to the `ideal`/`code` rule-sets, so no existing expected
+  value moves and NOTHING was redrawn. The canal where it is *is* the
+  fractional anchor: **w_AD = 0.08** at a 5 m buffer (460 of the 500 m edge
+  blocked; the memo's 0.1 is the buffer-free limit). Adding a messy barrier
+  would in fact have violated the byte-identity condition.
+- **Deferred to the DEL-48 spec brainstorm — settled there:** the buffer is
+  `barrier.buffer_m`, a DISTANCE with round caps, 5 m, required by the rule
+  and strictly > 0 (a zero-width buffer is empty in shapely and would make
+  every weight 1); the shared boundary of an overlapping pair is the
+  boundary of the intersection polygon; a point crossing blocks zero length
+  and therefore severs nothing (w = 1).
+
+**Measured (6 Sep 2026, DEL-48; `docs/data/rule_effects.md`).** Two findings,
+and the second is the one for Raj.
+
+1. **The partial rule severs 57× fewer links than today's.** Of 29,258
+   directed links that exist before any barrier rule runs, today's
+   `global_asymmetric` keeps 21,211 (severing 8,047, 27.5 %) while
+   `partial_weighted` keeps 29,118 (severing 140, 0.5 %). Of the links it
+   keeps, 1,636 are partly blocked with a median retained weight of 0.94.
+   Barriers in Delhi mostly clip shared boundaries rather than closing them
+   — though 140 boundaries ARE fully covered, so "none" would be wrong.
+2. **Most of the effect is not the partial weighting — it is retiring the
+   global flag**, which deletes every link INTO a flagged settlement whether
+   or not a barrier lies between that pair. 3,155 of 4,357 settlements
+   (72 %) get a different neighbour list. Under the population-density
+   denominator the paper's figures use, every reported type gains except
+   SDA: Planned +8.8 %, JJC +199 %, UAC +67 %, RUAC +61 %, UV +44 %,
+   JJR +27 %, SDA −16 %.
+3. **Two consequences for the headline, and the second is a reordering.**
+   The gap narrows: JJC stays lowest and Planned-over-JJC falls from about
+   33× to about 12×. But **urban villages overtake planned colonies** under
+   the new rule (0.0549 against 0.0482, where today Planned leads UV 0.0443
+   to 0.0381) — a change of RANK, not just of degree, in the exact variant
+   the figures are drawn from. That is the one result here that could change
+   a sentence in the paper rather than a number, and it belongs in the
+   batched reply. Neither consequence is a reason on its own to abandon the
+   decision; both are Raj's to weigh. Rebuilding the artifact cost 14.4 min.
 
 **Raj's question (14:30–14:31):** where did the barrier layers come from —
 city data or drawn by Bijoy? Bob to check (**DEL-51**). Raj's writing: the

@@ -81,13 +81,16 @@ BASELINE_EXCLUSION = {"types": [], "stage": "post_neighbors",
                       "absent_neighbor": "swallowed"}
 
 
-@pytest.mark.parametrize("variant", ["band_small_boundary", "exp1"])
+@pytest.mark.parametrize("variant", ["band_small_boundary", "exp1",
+                                     "partial_5m"])
 def test_a_derived_variant_profile_runs_end_to_end(expected, data_dir,  # noqa: F811
                                                    tmp_path, variant):
     """Proves the whole chain the in-memory test skips: YAML -> load_config
     -> preprocess -> the stamped artifact -> compute -> CSV. `exp1` is here
     for `scale_km`; `band_small_boundary` for the band, the boundary
-    distance and the stamped `max_distance_km` together.
+    distance and the stamped `max_distance_km` together; `partial_5m` for
+    the barrier weights, which are computed in `preprocess`, stored in the
+    artifact, stamped with `buffer_m: 5.0`, and consumed by `compute`.
     """
     overrides = dict(VARIANTS[variant])
     overrides["exclusion"] = BASELINE_EXCLUSION
@@ -110,6 +113,23 @@ def test_a_derived_variant_profile_runs_end_to_end(expected, data_dir,  # noqa: 
         for sid in exp.index:
             assert got.loc[sid, got_col] == pytest.approx(
                 exp.loc[sid, metric], abs=1e-9), (variant, sid, got_col)
+
+    # The weight column never leaves index_frames: the output column set is
+    # the same under every barrier rule.
+    plain = oracle_profile_path(BASE_PROFILE, tmp_path,
+                                methodology_overrides={
+                                    "exclusion": BASELINE_EXCLUSION},
+                                name=f"{variant}_plain")
+    plain_out = tmp_path / f"{variant}_plain"
+    assert cli.main(["preprocess", "--config", str(plain),
+                     "--data-dir", str(data_dir),
+                     "--out-dir", str(plain_out)]) == 0
+    assert cli.main(["compute", "--config", str(plain),
+                     "--data-dir", str(data_dir),
+                     "--out-dir", str(plain_out)]) == 0
+    plain_csv = pd.read_csv(
+        plain_out / "delhi_psi_code-2025_pop_2020.csv")
+    assert list(got.reset_index().columns) == list(plain_csv.columns)
 
 
 def test_the_stored_artifact_records_the_bands_radius(data_dir, tmp_path):  # noqa: F811

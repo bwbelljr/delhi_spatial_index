@@ -142,15 +142,6 @@ def test_bad_denominator_names_key_and_allowed_values(tmp_path):
     assert "pop" in str(exc.value) and "popdensity" in str(exc.value)
 
 
-def test_reserved_partial_weighted(tmp_path):
-    text = MINIMAL.replace("  barrier: {rule: global_asymmetric, combine: any}",
-                           "  barrier: {rule: partial_weighted, combine: any}")
-    with pytest.raises(ConfigError) as exc:
-        load_config(write(tmp_path, text))
-    assert str(exc.value).endswith(
-        RESERVED_VALUES["methodology.barrier.rule"]["partial_weighted"])
-
-
 def test_reserved_denominator_one(tmp_path):
     text = MINIMAL + "\noutputs: {denominators: [one]}\n"
     with pytest.raises(ConfigError) as exc:
@@ -446,6 +437,22 @@ def test_every_decay_form_loads_with_exactly_its_own_parameter(tmp_path,
     ("methodology.decay.scale_km", "  decay:",
      "  decay: {form: exponential, scale_km: true, distance: centroid, "
      "distance_unit: km}"),
+    # a parameter the rule does not use is REJECTED, not ignored
+    ("methodology.barrier.buffer_m", "  barrier:",
+     "  barrier: {rule: global_asymmetric, combine: any, buffer_m: 5}"),
+    ("methodology.barrier.buffer_m", "  barrier:",
+     "  barrier: {rule: pairwise, combine: any, buffer_m: 5}"),
+    # required and missing
+    ("methodology.barrier.buffer_m", "  barrier:",
+     "  barrier: {rule: partial_weighted, combine: any}"),
+    # out of range (strictly > 0: buffer(0) is EMPTY in shapely), and
+    # booleans are not numbers
+    ("methodology.barrier.buffer_m", "  barrier:",
+     "  barrier: {rule: partial_weighted, combine: any, buffer_m: 0}"),
+    ("methodology.barrier.buffer_m", "  barrier:",
+     "  barrier: {rule: partial_weighted, combine: any, buffer_m: -1}"),
+    ("methodology.barrier.buffer_m", "  barrier:",
+     "  barrier: {rule: partial_weighted, combine: any, buffer_m: true}"),
 ])
 def test_conditional_parameters_are_rejected_naming_the_key(tmp_path, key,
                                                             line_start, bad):
@@ -484,6 +491,27 @@ def test_shipped_profiles_name_the_centroid_distance_explicitly(profile,
     assert cfg.methodology.adjacency.max_distance_km is None
 
 
+# --- 3E: partial_weighted and its buffer (spec § 1) --------------------
+BARRIER_PARTIAL = ("  barrier: {rule: partial_weighted, combine: any, "
+                   "buffer_m: 5}")
+
+
+def test_partial_weighted_loads_with_its_buffer(tmp_path):
+    cfg = load_config(write(tmp_path, swap("  barrier:", BARRIER_PARTIAL)),
+                      data_dir=str(tmp_path))
+    assert cfg.methodology.barrier.rule == "partial_weighted"
+    assert cfg.methodology.barrier.buffer_m == 5.0
+    assert isinstance(cfg.methodology.barrier.buffer_m, float)
+
+
+@pytest.mark.parametrize("profile", ["code-2025", "manuscript"])
+def test_shipped_profiles_carry_no_buffer(profile, tmp_path):
+    """Neither shipped profile uses partial_weighted, so `buffer_m` is
+    'not applicable' — None in the dataclass, absent from the YAML."""
+    cfg = load_config(profile, data_dir=str(tmp_path))
+    assert cfg.methodology.barrier.buffer_m is None
+
+
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
     """tests/variants.py is written in CONFIG vocabulary, so every block in
@@ -493,6 +521,7 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
     import yaml
 
     enum_key = {("adjacency", "rule"): "methodology.adjacency.rule",
+                ("barrier", "rule"): "methodology.barrier.rule",
                 ("decay", "form"): "methodology.decay.form",
                 ("decay", "distance"): "methodology.decay.distance"}
     for block, values in VARIANTS[variant].items():

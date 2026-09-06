@@ -136,7 +136,8 @@ def _decay(distance_km, decay_form, distance_unit, *, exponent=None,
 
 
 def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
-         nbr_dist_col="nbrs_dist_bbox", lookup_frame=None,
+         nbr_dist_col="nbrs_dist_bbox", nbr_weight_col=None,
+         lookup_frame=None,
          absent_neighbor="swallowed", include_neighbors=True,
          decay_form="inverse_linear", distance_unit="km", exponent=None,
          scale_km=None,
@@ -151,6 +152,10 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
         their services; an id absent from that frame too is an error.
     include_neighbors=False: Eq. 4 as written — own amount only, no
         neighbour term (`roads: eq4_own_only`).
+    nbr_weight_col: the [(neighbor_id, w), ...] column `apply_barrier` writes
+        under `barrier.rule: partial_weighted`. The neighbour's contribution
+        is multiplied by w; None means every weight is 1, which is bit
+        identical because 1.0 * x is exact.
     """
     if denominator not in DENOMINATORS:
         raise ValueError(
@@ -190,7 +195,13 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
         poly_count = row[amount_col]
 
         if include_neighbors:
+            weights = (dict(row[nbr_weight_col])
+                       if nbr_weight_col is not None else None)
             for nbr_id, nbr_dist in row[nbr_dist_col]:
+                # An id in the distance list with no weight is a KeyError,
+                # never a silent 1.0: it means the two lists came from
+                # different runs.
+                w = 1.0 if weights is None else weights[nbr_id]
                 match = lookup[lookup[id_col] == nbr_id]
                 if len(match) == 0:
                     if absent_neighbor == "contributes":
@@ -198,11 +209,11 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                             f"neighbour {nbr_id!r} of {row[id_col]!r} has no "
                             "row in the pre-exclusion lookup frame")
                     continue
-                nbr_count = match[amount_col].array[0]
-                poly_count += nbr_count * _decay(nbr_dist, decay_form,
-                                                 distance_unit,
-                                                 exponent=exponent,
-                                                 scale_km=scale_km)
+                lent = match[amount_col].array[0]
+                poly_count += w * lent * _decay(nbr_dist, decay_form,
+                                                distance_unit,
+                                                exponent=exponent,
+                                                scale_km=scale_km)
 
         gdf_copy.loc[idx, pcen_col] = poly_count / denom
 
@@ -248,7 +259,8 @@ def minmax(polygon_gdf, *, source_col, target_col):
 
 
 def service_index(polygon_gdf, amount_col, *, service, denominator,
-                  nbr_dist_col="nbrs_dist_bbox", lookup_frame=None,
+                  nbr_dist_col="nbrs_dist_bbox", nbr_weight_col=None,
+                  lookup_frame=None,
                   absent_neighbor="swallowed", include_neighbors=True,
                   decay_form="inverse_linear", distance_unit="km",
                   exponent=None, scale_km=None,
@@ -260,6 +272,7 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
     idx_col = f"{service}_idx"
     out = pcen(polygon_gdf, amount_col=amount_col, pcen_col=pcen_col,
                denominator=denominator, nbr_dist_col=nbr_dist_col,
+               nbr_weight_col=nbr_weight_col,
                lookup_frame=lookup_frame, absent_neighbor=absent_neighbor,
                include_neighbors=include_neighbors, decay_form=decay_form,
                distance_unit=distance_unit, exponent=exponent,

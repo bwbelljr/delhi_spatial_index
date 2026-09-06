@@ -21,6 +21,11 @@ NBRS_DIST_COL = "nbrs_dist_bbox"
 # before returning, so io.SHAPEFILE_DROP_COLUMNS and the CSV/shapefile column
 # contract are untouched and one stored artifact serves every decay.* value.
 NBRS_DIST_BOUNDARY_COL = "nbrs_dist_boundary"
+# Written by apply_barrier ONLY under barrier.rule: partial_weighted, stored
+# in the artifact (the weights are geometry, and `compute` never reads
+# barrier layers), and dropped by `index_frames` before it returns — so the
+# CSV/shapefile column set is rule-independent, like NBRS_DIST_BOUNDARY_COL.
+NBRS_WEIGHT_COL = "nbrs_barrier_weight"
 CENTROID_COL = "centroid"
 CATEGORY_COL = categories.CATEGORY_COLUMN
 
@@ -107,10 +112,15 @@ def build_neighbors(settlements, barriers, methodology, *, id_col=ID_COL):
         frame, id_col=id_col, neighbor_col=NBRS_COL,
         rule=methodology.adjacency.rule,
         max_distance_km=methodology.adjacency.max_distance_km)
-    barrier_geoms = [geom for gdf in barriers.values() for geom in gdf.geometry]
+    log.info("barrier: rule=%s buffer_m=%s", methodology.barrier.rule,
+             methodology.barrier.buffer_m)
+    barrier_geoms = neighbors.selected_barrier_geoms(
+        barriers, combine=methodology.barrier.combine)
     frame = neighbors.apply_barrier(frame, barrier_geoms, id_col=id_col,
                                     neighbor_col=NBRS_COL,
-                                    rule=methodology.barrier.rule)
+                                    rule=methodology.barrier.rule,
+                                    buffer_m=methodology.barrier.buffer_m,
+                                    weight_col=NBRS_WEIGHT_COL)
     frame = neighbors.centroid_distances(
         frame, neighbor_col=NBRS_COL, nbr_dist_col=NBRS_DIST_COL,
         centroid_col=CENTROID_COL, id_col=id_col)
@@ -143,6 +153,10 @@ def apply_exclusion(neighbor_frame, *, dropped, stage, id_col=ID_COL):
                 j for j in row[NBRS_COL] if j not in dropped]
             universe.at[idx, NBRS_DIST_COL] = [
                 (j, d) for j, d in row[NBRS_DIST_COL] if j not in dropped]
+            if NBRS_WEIGHT_COL in universe.columns:
+                universe.at[idx, NBRS_WEIGHT_COL] = [
+                    (j, w) for j, w in row[NBRS_WEIGHT_COL]
+                    if j not in dropped]
         universe = universe[~universe[id_col].isin(dropped)]
     return universe
 
@@ -164,6 +178,10 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
             universe, neighbor_col=NBRS_COL,
             nbr_dist_col=NBRS_DIST_BOUNDARY_COL, id_col=id_col)
         nbr_dist_col = NBRS_DIST_BOUNDARY_COL
+
+    nbr_weight_col = (NBRS_WEIGHT_COL
+                      if methodology.barrier.rule == "partial_weighted"
+                      else None)
 
     # Own amounts are computed over the WHOLE universe, so excluded
     # settlements still have something to lend under absent_neighbor
@@ -187,7 +205,8 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
                                  and methodology.roads == "eq4_own_only")
         out = index.service_index(
             out, amount_col, service=service, denominator=denominator,
-            nbr_dist_col=nbr_dist_col, lookup_frame=amounts,
+            nbr_dist_col=nbr_dist_col, nbr_weight_col=nbr_weight_col,
+            lookup_frame=amounts,
             absent_neighbor=exclusion.absent_neighbor,
             include_neighbors=include_neighbors,
             decay_form=methodology.decay.form,
@@ -198,8 +217,9 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
 
     result = index.overall_psi(
         out, second_normalization=methodology.second_normalization)
-    if NBRS_DIST_BOUNDARY_COL in result.columns:
-        result = result.drop(columns=[NBRS_DIST_BOUNDARY_COL])
+    for column in (NBRS_DIST_BOUNDARY_COL, NBRS_WEIGHT_COL):
+        if column in result.columns:
+            result = result.drop(columns=[column])
     return result
 
 
@@ -345,6 +365,12 @@ def methodology_stamp(methodology):
             "rule": str(methodology.barrier.rule),
             "combine": combine if isinstance(combine, str)
             else [str(layer) for layer in combine],
+            # The buffer shapes the stored lists, so an artifact built at
+            # another buffer must be refused. Artifacts from 3A-3D have no
+            # such key: `stored.get(block, {}).get(key)` yields None, equal
+            # to the configured None for both older rules, so code-2025's
+            # pinned colonies_neighbors.joblib keeps loading.
+            "buffer_m": methodology.barrier.buffer_m,
         },
     }
 

@@ -15,7 +15,7 @@ import pytest
 from tests.cities import CITIES, MESSY, ORACULUM
 from tests.reference_impl import (
     RULESETS, VARIANT_KNOBS, VARIANT_RULESETS, adjacency, apply_barrier,
-    compute_city,
+    compute_city, partial_weights,
 )
 from tests.variants import (
     ADDED_BAND_PAIRS, BAND_RADII_KM, EXPECTED_BAND_PAIRS, VARIANTS,
@@ -296,3 +296,114 @@ def test_variants_module_imports_nothing_at_all():
     assert not [node for node in ast.walk(tree)
                 if isinstance(node, (ast.Import, ast.ImportFrom))], \
         "tests/variants.py is a data table: it imports nothing"
+
+
+# --- DEL-48: partial_weighted on Oraculum (spec § 6.1) -----------------
+# The canal is the segment [25, 475] at y = 1000, lying inside the 500 m
+# A-D edge x in [0, 500]. Its 5 m round-capped buffer covers [20, 480], so
+# L_blocked = 460 and w_AD = 1 - 460/500 = 0.08. (The memo's 0.1 ignored the
+# buffer; buffer_m -> 0 would give it, and 0 is refused. Spec § 12 item 4.)
+PARTIAL_5M = dict(RULESETS["code"], barrier_rule="partial_weighted",
+                  barrier_buffer_m=5.0)
+W_AD = 0.08
+# A and D centroids are (500, 1500) and (0, 500): sqrt(5)/2 km apart.
+D_AD_KM = math.sqrt(5) / 2
+W_DECAY_AD = 1 / (1 + D_AD_KM)          # 0.4721359549995794
+W_15 = 1 / 2.5                          # decay at 1.5 km (D-E, A-E via E)
+W_SQRT2 = 1 / (1 + math.sqrt(2))        # decay at 1000*sqrt(2) m
+W_HALF = 0.5                            # decay at 1000 m
+
+
+def partial_5m_weights(city=ORACULUM, buffer_m=5.0):
+    settlements = city.load_settlements()
+    return partial_weights(adjacency(settlements, "bbox"), settlements,
+                           city.load_barriers(), buffer_m)
+
+
+def test_only_the_ad_edge_is_partially_blocked_on_oraculum():
+    """Every other bbox pair's shared boundary is at least 20 m from the
+    canal's ends (A-E starts at x = 500, the buffer stops at 480), so the
+    canal produces exactly one fractional weight — in both directions."""
+    weights = partial_5m_weights()
+    assert weights[("A", "D")] == pytest.approx(W_AD, abs=1e-12)
+    assert weights[("A", "D")] == weights[("D", "A")]
+    fractional = {pair for pair, w in weights.items() if w != 1.0}
+    assert fractional == {("A", "D"), ("D", "A")}
+
+
+def test_a_smaller_buffer_blocks_less_of_the_same_edge():
+    """The buffer made visible: at 1 m the canal blocks [24, 476] = 452 m,
+    so w = 0.096. The limit as buffer_m -> 0 is the memo's 0.1, which is
+    never a pin because buffer_m must be > 0 (spec § 12 item 5)."""
+    assert partial_5m_weights(buffer_m=1.0)[("A", "D")] == pytest.approx(
+        0.096, abs=1e-12)
+
+
+def test_partial_weighted_prunes_nothing_on_oraculum():
+    """No weight is 0, so the lists are the bbox lists — and A and D are back
+    in everyone's list, because the global rule's flag-based severing is
+    gone."""
+    settlements = ORACULUM.load_settlements()
+    got = apply_barrier(adjacency(settlements, "bbox"), settlements,
+                        ORACULUM.load_barriers(), "partial_weighted", 5.0)
+    assert got == {"A": {"B", "D", "E"}, "B": {"A", "C", "E", "RV"},
+                   "C": {"B", "E", "IND"}, "RV": {"B"}, "D": {"A", "E"},
+                   "E": {"A", "B", "C", "D", "IND"}, "IND": {"C", "E"}}
+
+
+def test_partial_5m_pcen_anchors_on_oraculum():
+    """Every row derived on paper from the geometry (spec § 6.1). D's clinic
+    row is the one that shows the rule: A lends 2 clinics at 8% weight over
+    a sqrt(5)/2 km centroid gap, and E lends 1 at 1.5 km, undiscounted."""
+    got = scored(ORACULUM, PARTIAL_5M)
+    assert got.loc["D", "clinic_pcen"] == pytest.approx(
+        (0 + W_AD * 2 * W_DECAY_AD + 1 * W_15) / 100, abs=1e-12)
+    assert got.loc["D", "school_pcen"] == pytest.approx(
+        (1 + W_AD * 1 * W_DECAY_AD + 1 * W_15) / 100, abs=1e-12)
+    assert got.loc["A", "school_pcen"] == pytest.approx(
+        (1 + W_AD * 1 * W_DECAY_AD + 1 * W_SQRT2) / 100, abs=1e-12)
+    # A's clinic row is UNCHANGED by the weight: D owns no clinic.
+    assert got.loc["A", "clinic_pcen"] == pytest.approx(
+        (2 + 1 * W_HALF + 1 * W_SQRT2) / 100, abs=1e-12)
+    # roads are decayed under the `code` base: A owns 0.75 km
+    assert got.loc["D", "road_pcen"] == pytest.approx(
+        (0 + W_AD * 0.75 * W_DECAY_AD + 0.75 * W_15) / 100, abs=1e-12)
+
+
+def test_partial_5m_restores_the_links_the_global_rule_severed():
+    """B and E get A back — under `code` the global rule dropped every link
+    INTO a flagged settlement, so B's clinic row was 0.0125 and E's was the
+    code value. Under partial_weighted they are the `ideal` values, because
+    no barrier touches those boundaries at all."""
+    got = scored(ORACULUM, PARTIAL_5M)
+    assert got.loc["B", "clinic_pcen"] == pytest.approx(0.0175, abs=1e-12)
+    assert got.loc["E", "clinic_pcen"] == pytest.approx(
+        (1 + 2 * W_SQRT2 + 1 * W_HALF) / 300, abs=1e-12)
+
+
+def test_partial_5m_leaves_no_constant_column_on_oraculum():
+    """The invariants guard refuses a degenerate min-max group, and DEL-54's
+    guard raises on one. Both denominators, every service: checked here
+    BEFORE the fixture regeneration step depends on it."""
+    for denom in ("pop", "popdensity"):
+        got = scored(ORACULUM, PARTIAL_5M, denom)
+        for column in [c for c in got.columns if c.endswith("_pcen")]:
+            assert got[column].max() > got[column].min(), (denom, column)
+
+
+def test_the_partial_5m_variant_is_the_code_base_plus_the_barrier_rule():
+    """The table, the knob map and the hand anchors are one thing: the
+    variant's rule-set must BE the dict the § 6.1 anchors were derived
+    under."""
+    assert VARIANT_RULESETS["partial_5m"] == PARTIAL_5M
+
+
+def test_partial_5m_is_degenerate_on_the_messy_city():
+    """No barriers, so every weight is 1 and the rows are the `code` base's
+    — stated, like `boundary` on Oraculum, so the CSV rows are not mistaken
+    for a proof they are not."""
+    base = scored(MESSY, RULESETS["code"])
+    got = variant(MESSY, "partial_5m")
+    for column in base.columns:
+        assert list(got[column]) == pytest.approx(list(base[column]),
+                                                  abs=1e-12), column

@@ -271,3 +271,56 @@ def test_service_index_forwards_the_decay_parameters():
     values = got.set_index("USO_AREA_U")["clinic_pcen"]
     assert values["Y"] == pytest.approx((0 + 2 * math.exp(-1.0)) / 200,
                                         abs=1e-12)
+
+
+# --- 3E: the partial-barrier weight (spec § 2.4) -----------------------
+def city_with_weights(weight):
+    """city_with_neighbours plus the weight column apply_barrier writes."""
+    gdf = city_with_neighbours()
+    gdf["nbrs_barrier_weight"] = [[("Y", weight)], [("X", weight)]]
+    return gdf
+
+
+def test_pcen_multiplies_the_neighbour_term_by_its_barrier_weight():
+    """Y owns nothing and borrows X's 2 clinics at 1 km (decay 1/2); a
+    half-blocked shared boundary halves what it borrows."""
+    got = index.pcen(city_with_weights(0.5), amount_col="clinic_count",
+                     pcen_col="clinic_pcen", denominator="pop",
+                     nbr_weight_col="nbrs_barrier_weight")
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["Y"] == pytest.approx((0 + 0.5 * 2 * 0.5) / 200, abs=1e-12)
+    assert values["X"] == pytest.approx(2 / 100, abs=1e-12)
+
+
+def test_a_weight_of_one_is_bit_identical_to_no_weight_column():
+    """1.0 * x is exact in IEEE and multiplication is left-associative, so
+    the weighted loop cannot move a number when every weight is 1. This is
+    what keeps code-2025 byte-identical."""
+    weighted = index.pcen(city_with_weights(1.0), amount_col="clinic_count",
+                          pcen_col="clinic_pcen", denominator="pop",
+                          nbr_weight_col="nbrs_barrier_weight")
+    plain = index.pcen(city_with_neighbours(), amount_col="clinic_count",
+                       pcen_col="clinic_pcen", denominator="pop")
+    assert list(weighted["clinic_pcen"]) == list(plain["clinic_pcen"])
+
+
+def test_a_neighbour_with_no_weight_is_a_loud_key_error():
+    """Never a silent 1.0: a distance list and a weight list that disagree
+    mean the artifact and the frame came from different runs."""
+    frame = city_with_weights(0.5)
+    frame.at[1, "nbrs_barrier_weight"] = []
+    with pytest.raises(KeyError, match="X"):
+        index.pcen(frame, amount_col="clinic_count", pcen_col="clinic_pcen",
+                   denominator="pop", nbr_weight_col="nbrs_barrier_weight")
+
+
+def test_service_index_forwards_the_weight_column():
+    got = index.service_index(city_with_weights(0.5), "clinic_count",
+                              service="clinic", denominator="pop",
+                              nbr_weight_col="nbrs_barrier_weight")
+    values = got.set_index("USO_AREA_U")
+    assert values.loc["Y", "clinic_pcen"] == pytest.approx(
+        (0 + 0.5 * 2 * 0.5) / 200, abs=1e-12)
+    # min-max still runs: X is the max, Y the min
+    assert values.loc["X", "clinic_idx"] == 1.0
+    assert values.loc["Y", "clinic_idx"] == 0.0
