@@ -291,7 +291,12 @@ def measure(cfg, work_dir, *, base, verify_dir):
                             type_col=type_col, inside=inside)
 
     stamp = pipeline.methodology_stamp(cfg.methodology)
-    if any("roads" in block for block in stamp.values()):
+    # BOTH shapes. `methodology_stamp` returns one entry per methodology
+    # concern, so the likely way `roads` arrives is a new TOP-LEVEL block —
+    # which a `stamp.values()` scan alone would walk straight past, leaving
+    # `compute`'s `check_methodology_stamp` to report the re-preprocess as an
+    # unrelated-looking stale-artifact error.
+    if "roads" in stamp or any("roads" in block for block in stamp.values()):
         raise SystemExit(
             "pipeline.methodology_stamp now carries `roads`: the neighbours "
             "artifact would have to be rebuilt and this script's one-factor "
