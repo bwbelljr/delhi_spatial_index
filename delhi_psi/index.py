@@ -230,11 +230,13 @@ def minmax(polygon_gdf, *, source_col, target_col):
 
     if pcen_max == pcen_min:
         raise ValueError(
-            f"min-max of {source_col!r} is undefined: all "
-            f"{len(gdf_copy)} values equal {pcen_min!r} (max == min), so "
-            f"Eq. 2 divides 0/0. A constant column means every reported "
-            f"settlement scores the same on this service — check the service "
-            f"layer and the exclusion set upstream.")
+            f"min-max of {source_col!r} is undefined: across "
+            f"{len(gdf_copy)} rows, max == min == {pcen_min!r}, so Eq. 2 "
+            f"divides 0/0. A constant column means every reported settlement "
+            f"scores the same on this service — check the service layer and "
+            f"the exclusion set upstream. (`min`/`max` skip NaN, so a column "
+            f"mixing NaN with one repeated value reaches here too; an "
+            f"all-NaN column does not — see the note above.)")
 
     gdf_copy[target_col] = -1.0
 
