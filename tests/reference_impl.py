@@ -22,6 +22,7 @@ import math
 
 import pandas as pd
 from shapely.geometry import box
+from shapely.ops import unary_union
 
 from tests.cities import ORACULUM
 from tests.variants import VARIANTS
@@ -42,12 +43,19 @@ RULESETS = {
 VARIANT_KNOBS = {
     ("adjacency", "rule"): "adjacency_rule",
     ("adjacency", "max_distance_km"): "max_distance_km",
+    ("barrier", "rule"): "barrier_rule",
+    ("barrier", "buffer_m"): "barrier_buffer_m",
     ("decay", "form"): "decay_form",
     ("decay", "distance"): "decay_distance",
     ("decay", "exponent"): "exponent",
     ("decay", "scale_km"): "scale_km",
 }
-IGNORED_VARIANT_KEYS = frozenset({("decay", "distance_unit")})
+# `barrier.combine` has no reference knob: the reference uses EVERY barrier
+# row, which is what `any` means on a one-layer city, and both fixture cities
+# have one layer or none. `decay.distance_unit` has none either (the
+# reference is km-only, as the manuscript is).
+IGNORED_VARIANT_KEYS = frozenset({("decay", "distance_unit"),
+                                  ("barrier", "combine")})
 
 
 def _variant_overrides(spec):
@@ -124,7 +132,82 @@ def adjacency(settlements, rule, max_distance_km=None):
     return out
 
 
-def apply_barrier(nbrs, settlements, barriers, rule):
+def _shared_boundary(geom_i, geom_j):
+    """SB_ij: the boundary of every POLYGONAL component of the intersection
+    (the owner's overlap rule) plus every LINEAL component. Points contribute
+    nothing, and a GeometryCollection is decomposed part by part — shapely
+    does not define `.boundary` for a collection, and a polygon that overlaps
+    its neighbour on one side and shares an edge on another produces exactly
+    that.
+    """
+    shared = geom_i.intersection(geom_j)
+    if shared.is_empty:
+        return None
+    parts = list(shared.geoms) if hasattr(shared, "geoms") else [shared]
+    pieces = []
+    for part in parts:
+        if part.geom_type in ("Polygon", "MultiPolygon"):
+            pieces.append(part.boundary)
+        elif part.geom_type in ("LineString", "LinearRing", "MultiLineString"):
+            pieces.append(part)
+    return unary_union(pieces) if pieces else None
+
+
+def partial_weights(nbrs, settlements, barriers, buffer_m):
+    """{(i, j): w_ij} for every DIRECTED link in `nbrs` (spec § 2.1).
+
+    w_ij = 1 - L_blocked / L_shared, where L_blocked is the length of the
+    shared boundary within `buffer_m` metres of any barrier feature. A
+    zero-length shared boundary (empty intersection, or a corner-only
+    contact) has nothing to block, so w = 1.
+
+    Independent of production by construction: its own decomposition, and it
+    unions ALL the barrier buffers ONCE rather than intersecting piece by
+    piece against STRtree candidates. Both fixture cities carry one barrier
+    row or none, so the union is trivial here (spec § 9).
+    """
+    if buffer_m is None or not buffer_m > 0:
+        raise ValueError(
+            "barrier rule 'partial_weighted' requires barrier_buffer_m > 0, "
+            f"got {buffer_m!r}")
+    idx = settlements.set_index("USO_AREA_U").geometry
+    geoms = ([] if barriers is None or len(barriers) == 0
+             else list(barriers.geometry))
+    blocked_area = (unary_union([g.buffer(buffer_m) for g in geoms])
+                    if geoms else None)
+    out = {}
+    for i, js in nbrs.items():
+        for j in js:
+            shared = _shared_boundary(idx[i], idx[j])
+            length = 0.0 if shared is None else shared.length
+            if length == 0 or blocked_area is None:
+                out[(i, j)] = 1.0
+                continue
+            blocked = shared.intersection(blocked_area).length
+            out[(i, j)] = (0.0 if blocked >= length
+                           else 1 - blocked / length)
+    return out
+
+
+def apply_barrier(nbrs, settlements, barriers, rule, buffer_m=None):
+    """Sever (or, under partial_weighted, prune at w == 0) neighbour links.
+
+    Returns the same {i: set} shape under every rule, so no caller changes.
+    The rule and buffer_m are validated BEFORE the empty-barriers
+    short-circuit — a city with no barriers must still refuse a bad
+    combination, which is what production does and what the messy city (no
+    barriers at all) exercises.
+    """
+    if rule not in ("global", "pair", "partial_weighted"):
+        raise ValueError(rule)
+    if rule == "partial_weighted":
+        weights = partial_weights(nbrs, settlements, barriers, buffer_m)
+        return {i: {j for j in js if weights[(i, j)] > 0.0}
+                for i, js in nbrs.items()}
+    if buffer_m is not None:
+        raise ValueError(
+            "barrier_buffer_m is only used by barrier rule "
+            f"'partial_weighted', not {rule!r}")
     if barriers is None or len(barriers) == 0:
         return nbrs
     idx = settlements.set_index("USO_AREA_U").geometry
@@ -135,7 +218,7 @@ def apply_barrier(nbrs, settlements, barriers, rule):
     for i, js in nbrs.items():
         if rule == "global":
             out[i] = js - flagged
-        elif rule == "pair":
+        else:
             kept = set()
             for j in js:
                 shared = idx[i].intersection(idx[j])
@@ -143,8 +226,6 @@ def apply_barrier(nbrs, settlements, barriers, rule):
                 if not crossed:
                     kept.add(j)
             out[i] = kept
-        else:
-            raise ValueError(rule)
     return out
 
 
@@ -180,8 +261,9 @@ DECAY_DISTANCES = ("centroid", "boundary")
 def compute_city(settlements, services, barriers, *, adjacency_rule,
                  barrier_rule, roads_formula, scenario, denom, second_norm,
                  absent_neighbor_contribution, scenarios=None,
-                 max_distance_km=None, decay_form="inverse_linear",
-                 exponent=None, scale_km=None, decay_distance="centroid"):
+                 max_distance_km=None, barrier_buffer_m=None,
+                 decay_form="inverse_linear", exponent=None, scale_km=None,
+                 decay_distance="centroid"):
     # Every parameter a form does not use is REJECTED, not ignored — the
     # mapped-knob test relies on an unimplemented combination raising.
     if decay_form not in DECAY_FORMS:
@@ -211,8 +293,15 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     universe = settlements[~settlements["USO_AREA_U"].isin(dropped)] \
         if drop_before else settlements
 
-    nbrs = apply_barrier(adjacency(universe, adjacency_rule, max_distance_km),
-                         universe, barriers, barrier_rule)
+    adjacent = adjacency(universe, adjacency_rule, max_distance_km)
+    nbrs = apply_barrier(adjacent, universe, barriers, barrier_rule,
+                         barrier_buffer_m)
+    # The weights are recomputed here rather than threaded out of
+    # apply_barrier, which keeps its {i: set} contract. Both fixture cities
+    # are seven and eleven settlements, so the second pass is free.
+    barrier_w = (partial_weights(adjacent, universe, barriers,
+                                 barrier_buffer_m)
+                 if barrier_rule == "partial_weighted" else None)
     cent = _centroid_km(universe)
     geom = universe.set_index("USO_AREA_U").geometry
     amounts = _service_amounts(universe, services)
@@ -254,7 +343,8 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                 if (not drop_before and j in dropped
                         and absent_neighbor_contribution == "swallowed"):
                     continue
-                decayed_sum += amounts[svc][j] * contribution_weight(i, j)
+                w = 1.0 if barrier_w is None else barrier_w[(i, j)]
+                decayed_sum += w * amounts[svc][j] * contribution_weight(i, j)
             if svc == "road":
                 row["road_length_km"] = own
                 pcen = (own if roads_formula == "eq4"

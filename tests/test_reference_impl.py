@@ -368,3 +368,154 @@ def test_band_guard_reports_a_wrong_count(city):
     violations = check_bands(city, expected={km: 0 for km in BAND_RADII_KM})
     assert len(violations) == len(BAND_RADII_KM)
     assert all("pair count" in violation for violation in violations)
+
+
+# --- DEL-48: partial_weighted, reference side (spec § 2.1, § 6.4) ------
+def _pair_city(geom_a, geom_b):
+    """Two settlements A and B with the given geometries, no services."""
+    import geopandas as gpd
+
+    return gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "population": [100.0, 200.0],
+         "area_km2": [1.0, 1.0]},
+        geometry=[geom_a, geom_b], crs="EPSG:7760")
+
+
+def _barrier_frame(*geoms):
+    import geopandas as gpd
+
+    return gpd.GeoDataFrame(geometry=list(geoms), crs="EPSG:7760")
+
+
+def _w(geom_a, geom_b, *barrier_geoms, buffer_m=5.0):
+    """w(A, B) under partial_weighted, asserted symmetric."""
+    from tests.reference_impl import partial_weights
+
+    weights = partial_weights({"A": {"B"}, "B": {"A"}},
+                              _pair_city(geom_a, geom_b),
+                              _barrier_frame(*barrier_geoms), buffer_m)
+    assert weights[("A", "B")] == weights[("B", "A")], "w must be symmetric"
+    return weights[("A", "B")]
+
+
+def test_reference_partial_weight_on_a_fully_covered_edge_is_zero():
+    """A barrier lying along the whole shared edge blocks all 1000 m, so
+    partial_weighted agrees with pairwise: the pair is severed."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1000, 0), (1000, 1000)])) == 0.0
+
+
+def test_reference_partial_weight_on_a_half_covered_edge_is_not_one_half():
+    """The 5 m round caps extend the blocked span 5 m past each end, so the
+    middle 500 m of a 1000 m edge blocks 510 m, not 500. Pinned so nobody
+    'fixes' 0.49 into 0.5."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1000, 250), (1000, 750)])) == pytest.approx(
+                  0.49, abs=1e-12)
+    # from the corner: one cap falls off the end of the edge, so 505 m
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1000, 0), (1000, 500)])) == pytest.approx(
+                  0.495, abs=1e-12)
+
+
+def test_reference_a_perpendicular_crossing_blocks_only_the_buffer():
+    """The owner's 'a point crossing severs nothing': a barrier crossing the
+    shared edge at right angles blocks 2 x 5 m, so w = 0.99 and the link is
+    KEPT — where pairwise severs it outright."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(900, 500), (1100, 500)])) == pytest.approx(
+                  0.99, abs=1e-12)
+
+
+def test_reference_a_barrier_just_off_the_edge_still_blocks_it():
+    """The buffer's purpose: a canal drawn 4 m off a sliver gap is within
+    5 m of every boundary point, so w = 0. A barrier 200 m away is not."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(996, 0), (996, 1000)])) == 0.0
+    assert _w(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000),
+              LineString([(1200, 0), (1200, 1000)])) == 1.0
+
+
+def test_reference_an_overlapping_pair_uses_the_intersection_boundary():
+    """The owner's overlap rule made numeric: O1 and O2 overlap in a
+    200 x 1000 m strip whose BOUNDARY is its 2400 m perimeter. A barrier
+    crossing the strip end to end cuts that perimeter twice (20 m); a barrier
+    lying along the strip's own long edge blocks 1000 m + 2 caps."""
+    from shapely.geometry import LineString, box
+
+    o1, o2 = box(10000, 0, 11000, 1000), box(10800, 0, 11800, 1000)
+    assert _w(o1, o2, LineString([(10900, 0), (10900, 1000)])) == \
+        pytest.approx(1 - 20 / 2400, abs=1e-12)
+    assert _w(o1, o2, LineString([(11000, 0), (11000, 1000)])) == \
+        pytest.approx(1 - 1010 / 2400, abs=1e-12)
+
+
+def test_reference_a_multipolygon_neighbour_sums_both_shared_edges():
+    """A two-part neighbour shares 400 m along each part, so L_shared is
+    800 m; a barrier over one part's edge blocks 400 of them."""
+    from shapely.geometry import LineString, MultiPolygon, box
+
+    multi = MultiPolygon([box(1000, 0, 2000, 400), box(1000, 600, 2000, 1000)])
+    assert _w(box(0, 0, 1000, 1000), multi,
+              LineString([(1000, 0), (1000, 400)])) == pytest.approx(
+                  0.5, abs=1e-12)
+
+
+def test_reference_a_mixed_intersection_is_decomposed_part_by_part():
+    """The one place a naive `shared.boundary` is WRONG: a neighbour that
+    overlaps on one side and shares an edge on another intersects in a
+    GeometryCollection, whose `.boundary` is None in shapely 2.1. SB is the
+    overlap polygon's 1000 m perimeter plus the 400 m shared line."""
+    from shapely.geometry import MultiPolygon, box
+
+    mixed = MultiPolygon([box(900, 0, 1900, 400), box(1000, 600, 1900, 1000)])
+    square = box(0, 0, 1000, 1000)
+    assert square.intersection(mixed).geom_type == "GeometryCollection"
+    assert square.intersection(mixed).boundary is None
+    assert _w(square, mixed) == 1.0          # no barrier: SB length 1400, w 1
+
+
+def test_reference_a_corner_only_contact_is_never_severed():
+    """L_shared == 0, so there is no boundary to block and w = 1 even with a
+    barrier straight through the corner (spec § 2.1 step 3). pairwise severs
+    this pair; this is the documented difference between the two rules."""
+    from shapely.geometry import LineString, box
+
+    assert _w(box(0, 0, 1000, 1000), box(1000, 1000, 2000, 2000),
+              LineString([(900, 1100), (1100, 900)])) == 1.0
+
+
+def test_reference_partial_weighted_requires_a_positive_buffer():
+    from shapely.geometry import box
+
+    from tests.reference_impl import apply_barrier
+
+    city = _pair_city(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000))
+    nbrs = {"A": {"B"}, "B": {"A"}}
+    with pytest.raises(ValueError, match="barrier_buffer_m"):
+        apply_barrier(nbrs, city, _barrier_frame(), "partial_weighted")
+    with pytest.raises(ValueError, match="barrier_buffer_m"):
+        apply_barrier(nbrs, city, _barrier_frame(), "partial_weighted",
+                      buffer_m=0)
+
+
+@pytest.mark.parametrize("rule", ["global", "pair"])
+def test_reference_the_other_rules_reject_a_buffer(rule):
+    """An unimplemented combination must RAISE — the mapped-knob test relies
+    on it."""
+    from shapely.geometry import box
+
+    from tests.reference_impl import apply_barrier
+
+    city = _pair_city(box(0, 0, 1000, 1000), box(1000, 0, 2000, 1000))
+    with pytest.raises(ValueError, match="barrier_buffer_m"):
+        apply_barrier({"A": {"B"}, "B": {"A"}}, city, _barrier_frame(), rule,
+                      buffer_m=5.0)
