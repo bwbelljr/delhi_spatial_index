@@ -274,9 +274,24 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          feasible.~~ [DEL-23] — done 27 Aug 2026: 17 dead functions (684
          lines, incl. all `*_wards`/`*_buffer` variants) removed; warnings
          fixed under DEL-26; CI runs `pytest -W error`.
-      6. **`index.minmax` has no `hi == lo` guard** (deliberately, plan §
-         Global Constraints), so a constant PCEN column divides 0/0 —
-         latent on real layers, reachable via the population-drop path.
+      6. ~~**`index.minmax` has no `hi == lo` guard**, so a constant PCEN
+         column divides 0/0 — latent on real layers, reachable via the
+         population-drop path.~~ [DEL-54] — **done 5 Sep 2026 (cycle 3E,
+         ticket 1 of 3):** `index.minmax` raises a `ValueError` naming the
+         column, the row count and the value, before the division, so both
+         callers (each service's `service_index` and `overall_psi`'s second
+         normalisation) surface the same diagnosable error. The independent
+         reference now raises too, at both of its min-max sites, instead of
+         inventing `0.0` — the equations do not define a value at hi == lo,
+         and a reference that invents one is a rule-set divergence waiting
+         to be relied on. Deliberately NOT covered: an all-NaN column,
+         since `NaN == NaN` is False and an all-NaN PCEN column is an
+         upstream NaN belonging to the population join and `validate`; the
+         limit is stated in the `minmax` docstring. No config value, no
+         profile change, no fixture regenerated (all three generators
+         re-run byte-identical), real-data `code-2025` verify unchanged.
+         The history below is kept because it is why the item was never
+         urgent:
          CORRECTED 28 Aug 2026 (3C): under `-W error` — which is how CI and
          every local run invoke pytest — the 0/0 does **not** produce a
          silent NaN; numpy emits `RuntimeWarning: invalid value encountered
@@ -286,11 +301,10 @@ fixes themselves wait for the memo decisions. Epic DEL-4.*
          fixture cities are therefore built so that no PCEN column is
          constant: `scripts/check_oraculum_invariants.py` refuses to write a
          fixture with a degenerate min-max group, and the generators call it
-         before writing. Still routed to the bug audit: the guard belongs in
-         `index.minmax`. Not raised on the 28 Aug call; Bob's default
-         (5 Sep 2026) is **raise** with a clear message — a constant column
-         on real data means something upstream is wrong. Lands with cycle
-         3E. Decision log § 12.
+         before writing — which is also why the guard is unreachable through
+         the committed fixtures and why nothing regenerated when it landed.
+         Spec `docs/superpowers/specs/2026-09-05-cycle-3e-partial-barriers-design.md`
+         §§ 4, 6.3 and 12 item 9; decision log § 12.
 - [x] Add a second "messy city" fixture tier (verified against
       `tests/reference_impl.py`, NOT hand arithmetic — Oraculum stays the
       hand-ratifiable ground truth for the math, deliberately small). Must

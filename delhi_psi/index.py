@@ -3,7 +3,11 @@
 Pure functions with explicit keyword arguments — never imports
 delhi_psi.config. Every expression is copied verbatim from
 spatial_index_utils.py. Two deliberate non-changes:
-  * `minmax` has NO hi == lo guard, exactly as `calc_service_index` had none.
+  * `minmax` now HAS a hi == lo guard (DEL-54): `calc_service_index` had
+    none, and dividing 0/0 there was a silent NaN, or an unattributed numpy
+    RuntimeWarning under `-W error`. A constant column is an upstream fault
+    — an empty service layer, or an exclusion set that flattened it — not a
+    value to invent, so `minmax` now raises naming the column instead.
   * the -1.0 sentinel initialisations stay.
 The one behavioural change is DEL-21: `calc_pcen_mobile`'s bare
 `except: pass` becomes an explicit lookup miss, which is what makes
@@ -208,12 +212,31 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
 def minmax(polygon_gdf, *, source_col, target_col):
     """Eq. 2: rescale a column to [0, 1] across the frame.
 
-    Verbatim `calc_service_index` — deliberately WITHOUT a hi == lo guard.
+    `calc_service_index`'s arithmetic, plus the hi == lo guard the original
+    lacked (DEL-54, WORKPLAN bug-audit item 6). Eq. 2 is undefined when every
+    value is equal; the original divided 0/0, which is a silent NaN outside a
+    `-W error` run and an unattributed numpy RuntimeWarning inside one.
+
+    The guard tests `max == min` and so does NOT fire on an all-NaN column
+    (NaN == NaN is False). That is deliberate and out of this guard's scope:
+    an all-NaN PCEN column means a NaN reached the arithmetic upstream, which
+    `io.read_population`'s join and `validate` are the place to catch, and
+    conflating the two would hide it behind a message about constant scores.
     """
     gdf_copy = polygon_gdf.copy()
 
     pcen_min = gdf_copy[source_col].min()
     pcen_max = gdf_copy[source_col].max()
+
+    if pcen_max == pcen_min:
+        raise ValueError(
+            f"min-max of {source_col!r} is undefined: across "
+            f"{len(gdf_copy)} rows, max == min == {pcen_min!r}, so Eq. 2 "
+            f"divides 0/0. A constant column means every reported settlement "
+            f"scores the same on this service — check the service layer and "
+            f"the exclusion set upstream. (`min`/`max` skip NaN, so a column "
+            f"mixing NaN with one repeated value reaches here too; an "
+            f"all-NaN column does not — see the note above.)")
 
     gdf_copy[target_col] = -1.0
 

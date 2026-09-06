@@ -23,9 +23,9 @@ PROFILE = "code-2025"
 # The settlement left out of the population table. Must be one whose removal
 # leaves every service's pcen column non-constant: bank/police/ration/
 # transport are singletons in this city, so dropping A, B, D or E flattens one
-# of them and `index.minmax` (deliberately without a hi == lo guard, verbatim
-# `calc_service_index`) divides 0/0. C, RV and IND are the safe choices; that
-# pre-existing divergence is not this test file's subject.
+# of them and `index.minmax` (which now has a hi == lo guard, DEL-54) raises
+# instead of computing anything. C, RV and IND are the safe choices; that is
+# not this test file's subject.
 MISSING_ID = "C"
 
 
