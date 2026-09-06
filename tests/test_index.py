@@ -450,6 +450,29 @@ def test_a_shared_amount_larger_than_the_neighbours_own_raises():
                    shared_amounts={("Y", "X"): 5})
 
 
+def test_an_ulp_of_over_subtraction_is_clamped_not_raised():
+    """A LINE service's own amount and its shared part are two independent
+    GEOS clips of the same road, so the shared part can exceed the whole by
+    an ulp. The real layer produced exactly this: one pair of 4,069
+    overlapping ones lent -1.1102230246251565e-16 km of road, a tenth of a
+    picometre. That is float noise, not a mismatch between frames, and it
+    must clamp to zero rather than abort a 4,357-settlement run.
+
+    The guard above still fires on a real mismatch, which is off by a
+    length rather than by an ulp — the two tests are the two sides of
+    `_SHARED_TOLERANCE`.
+    """
+    frame = city_with_a_shared_clinic()
+    over = frame.set_index("USO_AREA_U").loc["X", "clinic_count"] + 1.1e-16
+    got = index.pcen(frame, amount_col="clinic_count",
+                     pcen_col="clinic_pcen", denominator="pop",
+                     shared_amounts={("Y", "X"): over})
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    # X lends Y nothing: the clamp took the tiny negative to exactly 0.0,
+    # so Y keeps only its own clinic.
+    assert values["Y"] == pytest.approx(1 / 200, abs=1e-12)
+
+
 def test_service_index_forwards_the_shared_structure():
     got = index.service_index(city_with_a_shared_clinic(), "clinic_count",
                               service="clinic", denominator="pop",

@@ -25,6 +25,17 @@ log = logging.getLogger(__name__)
 DENOMINATORS = ("pop", "popdensity", "one")
 ABSENT_NEIGHBOR = ("swallowed", "contributes")
 
+# `overlap.lending: outside_receiver` subtracts the part of a neighbour's
+# amount that lies inside the receiver. For a POINT service both sides are
+# integer counts and the subtraction is exact. For a LINE service they are
+# two independent GEOS clips of the same road — length(road n j) and
+# length(road n j n i) — so the shared part can come back larger than the
+# whole by an ulp: measured at 1.1e-16 km (a tenth of a picometre) on the
+# real layer, for one pair out of 4,069 overlapping ones. Below this
+# tolerance the difference is clamped to zero; above it, it is a real
+# mismatch between the amounts frame and the shared structure and raises.
+_SHARED_TOLERANCE = 1e-9
+
 
 def point_counts(polygon_gdf, point_gdf, *, count_col, id_col="USO_AREA_U"):
     """Count points inside each polygon (gpd.sjoin's default `intersects`).
@@ -300,8 +311,10 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                     continue
                 lent = match[amount_col].array[0]
                 if shared_amounts is not None:
-                    lent = lent - shared_amounts.get((row[id_col], nbr_id), 0)
-                    if lent < 0:
+                    own = lent
+                    shared = shared_amounts.get((row[id_col], nbr_id), 0)
+                    lent = own - shared
+                    if lent < -_SHARED_TOLERANCE * max(1.0, abs(own)):
                         raise ValueError(
                             f"overlap lending: {nbr_id!r} would lend "
                             f"{lent} of {amount_col!r} to {row[id_col]!r}. "
@@ -309,6 +322,14 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                             "can never exceed the neighbour's own — the "
                             "amounts frame and the shared structure came "
                             "from different runs.")
+                    # A LINE service's own amount and its shared part are two
+                    # independent GEOS clips of the same road, so the shared
+                    # part can exceed the whole by an ulp — 1.1e-16 km on the
+                    # real layer, i.e. a tenth of a picometre. That is float
+                    # noise, not a mismatch: clamp it. The guard above still
+                    # catches a real mismatch, which is off by a length, not
+                    # by an ulp.
+                    lent = max(lent, 0.0)
                 poly_count += w * lent * _decay(nbr_dist, decay_form,
                                                 distance_unit,
                                                 exponent=exponent,
