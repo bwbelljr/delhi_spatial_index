@@ -1985,7 +1985,7 @@ MSG
   `synthetic_partial_city()` at :525-580)
 
 **Interfaces:**
-- Consumes: `reference_impl.synthetic_partial_city()` (already in the file,
+- Consumes: `tests/test_reference_impl.py::synthetic_partial_city()` (already in that file,
   from Group B), `pipeline.compute_frames`, `config.MethodologyConfig` and
   its sub-configs built directly (no YAML), `reference_impl.compute_city(
   barrier_rule="partial_weighted", barrier_buffer_m=5.0,
@@ -2018,7 +2018,7 @@ def synthetic_overlap_city():
     and each must stop lending it to the other. The road already crosses the
     overlap (100 m of it lies in Q as well as P), so the LINE branch of the
     shared structure is exercised in the same run. Clinic counts become
-    P 2, Q 2, R 1 — still three distinct values, so no column is constant
+    P 2, Q 2, R 1 — two distinct values, so no column is constant
     and DEL-54's guard cannot fire.
     """
     from shapely.geometry import Point
@@ -2459,7 +2459,7 @@ def test_shared_pair_counts_counts_ordered_entries_per_service():
     assert got == {"shared_pairs_clinic": 2, "shared_pairs_total": 2}
 
 
-def test_pcen_changes_counts_the_fall_and_refuses_a_rise():
+def test_pcen_changes_counts_the_fall_and_reports_a_rise():
     """Lending is only ever REDUCED, so a risen PCEN is a bug, not a
     finding: `settlements_pcen_rose` must be 0 in the run."""
     before = pd.DataFrame({"USO_AREA_U": ["P", "Q", "Z"],
