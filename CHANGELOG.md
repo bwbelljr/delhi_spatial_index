@@ -7,6 +7,32 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- Pre-recalculation measurements (DEL-49, DEL-50, DEL-51, DEL-52): four
+  re-runnable scripts under `scripts/` — `measure_roads_access.py`,
+  `inventory_barriers.py`, `measure_psi_columns.py`, and
+  `count_corner_only_pairs` added to `measure_layer_pathologies.py` — with
+  a shared `scripts/_measure_common.py` (the read-only work-dir guard, the
+  settlement loader, and a labelled fenced-block `render`/`parse_block`),
+  53 fixture-level tests, and four `docs/data/` documents that carry each
+  script's block verbatim under a drift test (`roads_access.md`,
+  `barriers.md`, `psi_columns.md`, and two new keys in
+  `layer_pathologies.md`). Findings, one clause each: **DEL-49** 17 of 764
+  JJCs contain a major road and 645 reach one only through a touching
+  neighbour, so `roads: eq4_own_only` zeroes the road index of 422 of the
+  749 reported JJCs and moves the JJC mean PSI by −13 % (pop) / −10 %
+  (density) with no JJC/Planned ordering flip — the decision stands;
+  **DEL-50** corner-only contact pairs on the real layer counted (value in
+  `layer_pathologies.md`); **DEL-51** the barrier layers' schemas are an
+  official GIS source's, created in ArcGIS Pro on 2 Aug 2020, the root
+  copies are re-exports, the agency is still an open question for Bijoy;
+  **DEL-52** the paper's Figure 4 reports `norm_psi` under the
+  population-density denominator (8 of 8 bars, max gap 0.0006), so both of
+  Bob's proposed defaults (`second_normalization: false`, drop popdensity)
+  are withdrawn and the two choices go to Raj. The decision log's §§ 2, 3,
+  4, 7 and 8 and its batched-reply checklist now carry numbers. Lesson
+  recorded in the docs: a warm GeoPackage dedup cache upcasts Polygon to
+  MultiPolygon, so any `geom_type`-based count must run cold. **No
+  `delhi_psi/` behaviour change, no profile change, no fixture change.**
 - Raj's methodology decisions from the 28 Aug 2026 call recorded (docs
   only, no code or profile change): new decision log
   `docs/decisions/2026-08-28-raj-methodology-decisions.md` with transcript

@@ -14,10 +14,10 @@ Numbers quoted in prose below in `backticks` are block values verbatim;
 percentages and other derived quantities are written with a `%` sign or
 without backticks.
 
-- **Run date:** _pending — the run step fills this in_
-- **Inputs:** _pending_
-- **Commit:** _pending_
-- **Command:** `uv run python scripts/measure_psi_columns.py --baseline-dir <baseline-dir> --verify-dir <verify-dir> --work-dir <work-dir>`
+- **Run date:** 2026-09-05
+- **Inputs:** `~/delhi_data/psi_2020_results` (baseline: `delhi_psi_bbox_popsize2020_norv_12Sep2021.csv`, `delhi_psi_bbox_popdensity2020_norv_12Sep2021.csv`), `~/delhi_data/phase3_verify` (the `code-2025` cross-check)
+- **Commit:** `205eb7c`
+- **Command:** `uv run python scripts/measure_psi_columns.py --baseline-dir ~/delhi_data/psi_2020_results --verify-dir ~/delhi_data/phase3_verify --work-dir ~/measure_work/psi-columns`
 
 ## What the figure shows
 
@@ -52,6 +52,72 @@ the worst absolute miss.
 from the refactored `code-2025` run must equal the baseline's to 1e-9, or the
 script fails rather than reporting.
 
+```text
+mean_unnorm_psi_popsize_Industrial: 0.00456462
+mean_unnorm_psi_popsize_JJC: 0.0176336
+mean_unnorm_psi_popsize_JJR: 0.00269464
+mean_unnorm_psi_popsize_Other: 0.01505
+mean_unnorm_psi_popsize_Planned: 0.00901129
+mean_unnorm_psi_popsize_RUAC: 0.00440786
+mean_unnorm_psi_popsize_SDA: 0.0190069
+mean_unnorm_psi_popsize_UAC: 0.0106064
+mean_unnorm_psi_popsize_UV: 0.0103199
+matched_unnorm_psi_popsize: 0
+maxgap_unnorm_psi_popsize: 0.0350
+mean_unnorm_psi_popdensity_Industrial: 0.0258889
+mean_unnorm_psi_popdensity_JJC: 0.000914278
+mean_unnorm_psi_popdensity_JJR: 0.0257077
+mean_unnorm_psi_popdensity_Other: 0.0709526
+mean_unnorm_psi_popdensity_Planned: 0.0304103
+mean_unnorm_psi_popdensity_RUAC: 0.0148165
+mean_unnorm_psi_popdensity_SDA: 0.0191333
+mean_unnorm_psi_popdensity_UAC: 0.0118991
+mean_unnorm_psi_popdensity_UV: 0.0261655
+matched_unnorm_psi_popdensity: 1
+maxgap_unnorm_psi_popdensity: 0.0136
+mean_norm_psi_popsize_Industrial: 0.00556781
+mean_norm_psi_popsize_JJC: 0.021509
+mean_norm_psi_popsize_JJR: 0.00328685
+mean_norm_psi_popsize_Other: 0.0183576
+mean_norm_psi_popsize_Planned: 0.0109918
+mean_norm_psi_popsize_RUAC: 0.0053766
+mean_norm_psi_popsize_SDA: 0.0231841
+mean_norm_psi_popsize_UAC: 0.0129375
+mean_norm_psi_popsize_UV: 0.0125879
+matched_norm_psi_popsize: 0
+maxgap_norm_psi_popsize: 0.0337
+mean_norm_psi_popdensity_Industrial: 0.0377171
+mean_norm_psi_popdensity_JJC: 0.001332
+mean_norm_psi_popdensity_JJR: 0.0374532
+mean_norm_psi_popdensity_Other: 0.10337
+mean_norm_psi_popdensity_Planned: 0.0443043
+mean_norm_psi_popdensity_RUAC: 0.021586
+mean_norm_psi_popdensity_SDA: 0.027875
+mean_norm_psi_popdensity_UAC: 0.0173356
+mean_norm_psi_popdensity_UV: 0.0381201
+matched_norm_psi_popdensity: 8
+maxgap_norm_psi_popdensity: 0.0006
+verify_maxdiff_unnorm_psi_popsize: 0.0e+00
+verify_maxdiff_unnorm_psi_popdensity: 0.0e+00
+verify_maxdiff_norm_psi_popsize: 0.0e+00
+verify_maxdiff_norm_psi_popdensity: 0.0e+00
+best_candidate: norm_psi_popdensity
+```
+
+## Finding
+
+**The figures report `norm_psi` under the population-density denominator.**
+`norm_psi_popdensity` matched `8` of 8 bars within ±0.002 with a maximum gap
+of `0.0006`; the next best candidate, `unnorm_psi_popdensity`, matched `1`
+of 8 with a maximum gap of `0.0136`, and neither population-size candidate
+matched a single bar. The cross-check held: the refactored `code-2025` run
+reproduces every per-type mean of the baseline exactly (`0.0e+00`).
+
+Both halves of the answer land on the opposite side of Bob's proposed
+defaults (decision log §§ 7–8): the paper's headline figure is the
+second-normalised column AND the population-density variant. The
+consequences, one axis at a time, are below.
+
 ## What follows from the answer
 
 **Two independent axes.** The finding names a COLUMN and a DENOMINATOR, and
@@ -62,47 +128,37 @@ numbers he asked for (decision log §§ 7–8).
 
 ### The column axis — `unnorm_psi` or `norm_psi`
 
-- **If `unnorm_psi` matches:** the paper already reports Eq. 1 as the methods
-  write it. `second_normalization: false` costs nothing and removes a column
-  the methods never mention. Bob's recommendation stands.
-- **If `norm_psi` matches and `unnorm_psi` does not: Bob's proposed default of
-  `second_normalization: false` is withdrawn.** The paper's headline figure
-  reports the SECOND-normalised column, so switching it off would silently
-  move every bar in Figure 4. The real choice for Raj, then, is: keep
-  `norm_psi` as the reported PSI and add the second min-max to the methods —
-  one sentence after Eq. 1, "the mean is then min-max scaled across
-  settlements" — or switch the figures to Eq. 1 as written and let every bar
-  move. Both columns stay in the config either way; this is a question about
-  what the paper reports, not about what the pipeline can compute.
+**`norm_psi` matches and `unnorm_psi` does not, so Bob's proposed default of
+`second_normalization: false` is withdrawn.** The paper's headline figure
+reports the SECOND-normalised column; switching it off would silently move
+every bar in Figure 4 (under popdensity the Planned mean would fall from
+`0.0443043` to `0.0304103`, the JJC mean from `0.001332` to `0.000914278`).
+The real choice for Raj is: keep `norm_psi` as the reported PSI and add the
+second min-max to the methods — one sentence after Eq. 1, "the mean is then
+min-max scaled across settlements" — or switch the figures to Eq. 1 as written
+and let every bar move. Both columns stay in the config either way; this is a
+question about what the paper reports, not about what the pipeline can
+compute.
 
-  *Expected outcome, stated before the run so the write-up cannot be
-  back-fitted:* the plan-review round of 5 Sep 2026 already ran this
-  comparison against the same baseline files and found norm_psi under
-  popdensity matching 8 of the 8 bars, max gap 0.0006, against 1 of 8 for
-  unnorm_psi. The script's job is to make that reproducible and drift-tested,
-  not to discover it.
+*This outcome was stated before the run:* the plan-review round of 5 Sep 2026
+had already run the comparison against the same baseline files and found the
+same 8-of-8 match, so the write-up was not fitted to the result.
 
 ### The denominator axis — `popsize` or `popdensity`
 
-- **If the popdensity denominator matches** (the y-axis label says it will):
-  **Bob's proposed default of dropping popdensity from the reported results is
-  withdrawn** — the paper's headline figure is the popdensity variant. The
-  real choice for Raj: keep popdensity as the reported denominator and add its
-  equation to the methods (Eq. 3 with Population_i / Area_i), or switch the
-  figures to the per-population Eq. 3 the manuscript prints. Both denominators
-  stay in the config either way.
-- **If popsize matches instead:** the manuscript's Eq. 3 and its figures agree
-  and Bob's proposed default stands unchanged.
+**The popdensity denominator matches, as the y-axis label said it would, so
+Bob's proposed default of dropping popdensity from the reported results is
+withdrawn** — the paper's headline figure is the popdensity variant, and the
+population-size candidates matched no bar at all. The real choice for Raj:
+keep popdensity as the reported denominator and add its equation to the
+methods (Eq. 3 with Population_i / Area_i), or switch the figures to the
+per-population Eq. 3 the manuscript prints. Both denominators stay in the
+config either way.
 
-### If nothing matches
+### What this does not decide
 
-If no candidate matches at least 6 of the 8 bars, this document prints all
-four candidate tables in full and the finding is "the figure was not produced
-from these columns as-is". That is an escalation to the owner (spec § 7), not
-a guess.
-
-*(The fenced block and the finding sentence are written by the run step —
-they are the numbers. The consequence paragraphs above are written HERE,
-before the run, so the write-up cannot be force-fitted to whichever branch
-the data lands in; the run step keeps the branch that fired, deletes the
-others, and fills in the measured N and G.)*
+Nothing here changes a profile. `code-2025` keeps both columns and both
+denominators; the ratified profile (DEL-31) sets `second_normalization` and
+`outputs.denominators` from Raj's answer to the two choices above, and the
+methods text gains a sentence for each. The escalation branch of the spec
+("no candidate matches at least 6 of 8") did not fire.

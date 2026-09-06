@@ -8,11 +8,13 @@ deduplication and population join, and writes nothing under the data
 directory. `tests/test_layer_pathologies.py` re-runs it and compares the
 counts (it skips when the data is not present).
 
-- **Run date:** 2026-08-28
+- **Run date:** 2026-09-05
 - **Layer:** `uso_update_sep2021/uso_update_sep2021.shp`
-- **Commit:** `181e92b` (the commit whose code emits all eleven pathology
-  keys, including `isolated_touch`)
-- **Command:** `uv run python scripts/measure_layer_pathologies.py --config code-2025`
+- **Commit:** `205eb7c` (the commit whose code emits all thirteen pathology
+  keys, including the two DEL-50 keys `corner_only_pairs` /
+  `corner_only_settlements`; the eleven earlier keys are unchanged from the
+  28 Aug 2026 run at `181e92b`)
+- **Command:** `uv run python scripts/measure_layer_pathologies.py --config code-2025` (cold: no `--cache-dir`, because a warm GeoPackage cache upcasts Polygon to MultiPolygon and would report `multipolygons` as 4357)
 
 ```text
 settlements: 4357
@@ -25,6 +27,8 @@ area_km2_min: 2.30282e-09
 area_km2_median: 0.0506134
 area_km2_max: 29.1165
 overlapping_pairs: 4069
+corner_only_pairs: 656
+corner_only_settlements: 955
 multi_settlement_points_bank: 211
 multi_settlement_points_health: 18
 multi_settlement_points_police: 2
@@ -60,7 +64,16 @@ multi_settlement_points_transport: 41
   § 3), and a corner is not a border: such a pair is a neighbour under `bbox`
   and under a 0 km distance band, and NOT under `touch`. The messy city's
   `T`/`L` is the hand-checkable case (`docs/oracle/messy-city.md`); Oraculum
-  has none.
+  has none. **Measured 5 Sep 2026: `656` corner-only pairs involving `955`
+  settlements** — not the "zero or near zero" the 28 Aug call assumed. On a
+  tessellated layer this is what four-way corners produce: where four
+  polygons meet at a point, the two diagonal ones touch only there. Under
+  `touch` (shared border, Raj's rule) none of the 656 pairs are neighbours;
+  under a 0 km distance band all of them would be, on top of the
+  positive-length pairs. Bob's ruling for the ratified profile: a corner is
+  not a border — `touch` stands — and the count goes to Raj as an FYI so the
+  methods can say "sharing a border of positive length". The 20 isolated
+  settlements under `touch` (`isolated_touch`) already reflect this rule.
 - `multi_settlement_points_<service>` — points inside more than one
   settlement, counted for each. The `<service>` names are the `code-2025`
   profile's service layer names, so `health` here is the messy city's

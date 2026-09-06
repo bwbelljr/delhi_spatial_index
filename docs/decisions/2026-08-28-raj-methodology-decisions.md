@@ -30,13 +30,13 @@ production implementation first (config doc § 5) — that is cycle 3E
 | 1 | Excluded types: lend services or vanish? (Open Decision A.1) | **Lend** — semantics (a); no PSI of their own | config `exclusion.absent_neighbor: contributes` | DEL-13 ✓ |
 | 1 | Min-max universe (A.2) | **Reported types only** (today's behaviour) | no change; methods sentence | DEL-13 ✓ |
 | 1 | Which types are dropped | **RV, Industrial, Other** | config `exclusion.types: [RV, Industrial, Other]` | DEL-28 ✓ |
-| 2 | Roads: neighbour term or not? (memo § 3) | **Own settlement only, Eq. 4 as written** | config `roads: eq4_own_only` | DEL-22 → DEL-31; effect measured by DEL-49 |
+| 2 | Roads: neighbour term or not? (memo § 3) | **Own settlement only, Eq. 4 as written** — measured 5 Sep: JJC mean PSI −13 % (pop) / −10 % (density), no ordering flip, decision stands | config `roads: eq4_own_only` | DEL-22 → DEL-31; DEL-49 ✓ |
 | 3 | Adjacency: bbox or shared border? (memo § 1) | **Shared border** | config `adjacency.rule: touch` | DEL-19 |
 | 4 | Barrier rule (memo § 2) | **Partial weighting** — discount by share of shared boundary covered | **code** | DEL-48 |
 | 5 | Overlapping colonies: a service in the overlap (memo § 6) | **Counts for every colony containing it** (today) + **not lent again via the neighbour term** (Bob's rule, to confirm) | first: no change; second: **code** | DEL-20 |
 | 6 | Settlement categories: collapse 10 → 4/5? (DEL-29) | **No collapse now.** Keep all types, drop three; revisit if reviewers push back | config (identity mapping) | DEL-29 parked |
-| 7 | `norm_psi`: which column do the figures report? (memo § 4) | **Unknown to Raj** — Bob determines, Raj confirms | pending | DEL-52 |
-| 8 | Popdensity denominator (memo) | **Not discussed** — Bob proposes drop from reported results | pending | DEL-52 |
+| 7 | `norm_psi`: which column do the figures report? (memo § 4) | **Measured 5 Sep: the figures report `norm_psi`** (8/8 bars); Bob's `false` default withdrawn — Raj chooses keep-and-document vs Eq. 1 as written | config `second_normalization` per Raj | DEL-52 ✓ |
+| 8 | Popdensity denominator (memo) | **Measured 5 Sep: the figures use popdensity** (popsize 0/8); Bob's drop default withdrawn — Raj chooses keep-and-add-equation vs per-population Eq. 3 | config `outputs.denominators` per Raj | DEL-52 ✓ |
 | 9 | Decay form / distance unit (memo § 7, DEL-37) | **Keep 1/(1+d), km, centroid**; sweep later; Raj wants weights spread away from zero | no change | DEL-37 |
 | 10 | Oraculum reproducibility appendix (DEL-46) | **Yes** — release the fixture city + hand verification as an appendix | plan | DEL-46 |
 | 11 | Data-release posture (Open Decision B) | **Not discussed**; floor is now code + fixtures | pending | DEL-14 |
@@ -113,15 +113,37 @@ vs only in a touching neighbour vs neither, by type; (2) the one-factor
 effect — `code-2025` with only `roads` changed, diffed by type. Both go to
 Raj with the correction. The decision stands unless the numbers move him.
 
+**Measured (5 Sep 2026, DEL-49; `docs/data/roads_access.md`).** Of 764
+JJCs, 17 (2 %) contain a major road, 645 (84 %) reach one only through a
+touching neighbour, 102 (13 %) have neither; planned colonies are the
+mirror image (551 inside, 323 via a neighbour, 90 neither). Under
+own-only roads, 422 of the 749 reported JJCs fall to a road index of
+exactly zero (1,682 of 4,131 settlements overall). The JJC mean PSI falls
+13 % under the population denominator and 10 % under population density;
+the JJC-versus-Planned ordering does not flip under either. Against the
+reopen rule written before the run (a JJC fall over 20 %, or an ordering
+flip), **the decision stands**. The sentence for Raj's footnote: under
+Eq. 4 as written the road index measures whether a settlement has a major
+road of its own, and most JJCs do not.
+
 **Raj's writing:** the roads footnote (mobility argument; settlement-level
 average, not household-level) — on his list.
 
 ## 3. Adjacency — shared border (memo § 1; DEL-19, DEL-50)
 
 **Transcript 14:33.** Bob: "I think the paper says your neighbors are those
-where you share a border." Raj: "Yeah. Correct." Open empirical
-sub-question: pairs touching only at a corner point — Bob to check the real
-layer.
+where you share a border." Raj: "Yeah. Correct." The empirical
+sub-question — pairs touching only at a corner point — was expected to be
+"zero or near zero".
+
+**Measured (5 Sep 2026, DEL-50; `docs/data/layer_pathologies.md`).** It is
+not: 656 pairs, involving 955 settlements, meet only at a point. On a
+tessellated layer that is what four-way corners produce (the two diagonal
+polygons of an X-junction touch only there). Under `touch` none of them
+are neighbours; under a 0 km distance band all of them would be. **Bob's
+ruling: a corner is not a border — `touch` stands.** For Raj: one FYI
+sentence, so the methods can say "sharing a border of positive length";
+the 20 settlements isolated under `touch` already reflect the rule.
 
 **Decision:** fix, not ratify. `adjacency.rule: touch` (positive shared
 length; corner-only contact is not a border; overlapping polygons are
@@ -161,6 +183,21 @@ code's global/asymmetric flag is retired from the ratified profile.
 **Raj's question (14:30–14:31):** where did the barrier layers come from —
 city data or drawn by Bijoy? Bob to check (**DEL-51**). Raj's writing: the
 partial-barrier footnote — on his list.
+
+**Measured (5 Sep 2026, DEL-51; `docs/data/barriers.md`).** The three
+layers hold 43 canal features (33.9 km), 5,356 railway features (752 km)
+and 616 major-drain features (403 km); they flag 28, 240 and 390
+settlements respectively, 595 under any layer — the figure used since the
+memo. The attribute schemas (canal names with ground elevation, railway
+zone, drain name with maintaining agency, assembly constituency and
+district) are those of an official GIS source, not of hand-digitised
+lines; the ESRI sidecars show the canal and railway files were created in
+ArcGIS Pro on 2 Aug 2020 with geometry-repair runs; the extra copies in the
+data folder are re-exports of the same clipped data. The paper's "manually
+marked" (pp. 15–16) therefore most plausibly describes selecting features
+for the study area, not drawing them. **No claim about which agency** is
+made. Open for Bijoy (batched reply): which agency's layer, and what
+"manually marked" covered.
 
 ## 5. Overlapping colonies (memo § 6; DEL-20)
 
@@ -215,19 +252,43 @@ exclusion line inside the ratified profile.
 (IDs, old type, new type; it is in a share, not the Urban Spatial
 Observatory folder). Not received as of 5 Sep 2026.
 
-## 7. `norm_psi` — pending (memo § 4; DEL-52)
+## 7. `norm_psi` — MEASURED: the figures report `norm_psi` (memo § 4; DEL-52)
 
 **Transcript 14:35–14:36.** "No, this, I don't know the answer to that.
 This, 4 and 5, I don't know." Fallback per the memo: Bob compares the April
 2026 draft's figure values against `unnorm_psi` and `norm_psi` in the July
-2025 outputs; Raj confirms. Bob's recommendation regardless: report Eq. 1
+2025 outputs; Raj confirms. Bob's recommendation at the time: report Eq. 1
 as written (`second_normalization: false`).
 
-## 8. Popdensity denominator — pending (DEL-52)
+**Measured (5 Sep 2026, DEL-52; `docs/data/psi_columns.md`).** Figure 4's
+eight bars match the per-type means of `norm_psi` under the
+population-density denominator on 8 of 8 within ±0.002 (max gap 0.0006);
+`unnorm_psi` matches 1 of 8. The paper's headline figure therefore reports
+the SECOND-normalised column, the one the methods never mention. **Bob's
+proposed default of `second_normalization: false` is withdrawn**: switching
+it off would silently move every bar (the Planned mean falls from 0.044 to
+0.030, the JJC mean from 0.0013 to 0.0009). The choice for Raj: keep
+`norm_psi` as the reported PSI and add one sentence after Eq. 1 ("the mean
+is then min-max scaled across settlements"), or switch to Eq. 1 as written
+and let every bar move. Both columns stay in the config; the ratified
+profile's `second_normalization` takes his answer.
 
-Not discussed on the call. Bob's proposed default for the batched reply:
-drop from the reported results (`outputs.denominators: [pop]`), keep the
-config value so it can be produced on request.
+## 8. Popdensity denominator — MEASURED: the figures use it (DEL-52)
+
+Not discussed on the call. Bob's proposed default at the time: drop from
+the reported results, keep the config value.
+
+**Measured (5 Sep 2026, DEL-52; `docs/data/psi_columns.md`).** Figure 4's
+y-axis reads "per person per square kilometer", and the measurement agrees:
+both population-size candidates match 0 of 8 bars; the population-density
+`norm_psi` matches 8 of 8. **The proposed default of dropping popdensity is
+withdrawn** — the paper's headline figure IS the popdensity variant. The
+choice for Raj: keep popdensity as the reported denominator and add its
+equation to the methods (Eq. 3 with Population_i/Area_i in place of
+Population_i), or switch the figures to the per-population Eq. 3 the
+manuscript prints. Both denominators stay in the config; the ratified
+profile's `outputs.denominators` takes his answer. Note the two withdrawals
+are independent: the column and the denominator are separate choices.
 
 ## 9. Decay form and distance unit (memo § 7; DEL-37)
 
@@ -269,27 +330,41 @@ is wrong. Lands with the 3E cycle.
 
 ## What goes in the batched reply to Raj
 
-1. The roads correction (#2) and, once DEL-49 has run, the JJC numbers.
+1. The roads correction (#2) with the DEL-49 numbers: 17 of 764 JJCs have
+   a major road inside, 645 reach one only via a neighbour; own-only
+   roads zeroes the road index of 422 of 749 reported JJCs and moves the
+   JJC mean PSI −13 % (pop) / −10 % (density) without an ordering flip —
+   the decision stands, and that is the footnote sentence.
 2. The overlap neighbour rule (#5) as Bob's proposal.
 3. Confirm UV and SDA stay in (#1, #6).
-4. Popdensity default (#8); `norm_psi` finding when DEL-52 has run (#7).
+4. **DEL-52, two choices for Raj (#7, #8):** Figure 4 was drawn from
+   `norm_psi` under population density (8/8 bars). Column: keep `norm_psi`
+   and add the second min-max sentence after Eq. 1, or report Eq. 1 as
+   written and let every bar move. Denominator: keep popdensity and add
+   its equation, or switch to per-population Eq. 3. Bob's earlier defaults
+   (drop both) are withdrawn.
 5. Decision B default (#11).
 6. Nudge: the reclassification list (#6, DEL-53).
-7. Barrier provenance — the answer if found, the question if not (#4).
+7. Barrier provenance (#4): schemas of an official GIS source, ArcGIS Pro
+   files of 2 Aug 2020, root copies are re-exports; the question for Bijoy
+   is which agency, and what "manually marked" covered.
 8. FYI methods sentences: d in km; min-max over reported types; overlap
    services counted for each colony (with the count); 20 settlements
-   isolated under shared-border adjacency; corner-only pairs (DEL-50).
+   isolated under shared-border adjacency; 656 pairs touch only at a
+   corner and are not neighbours under the rule (§ 3, DEL-50).
 
 ## What this means for the plan
 
 - **Next code cycle (3E):** DEL-48 partial barriers + DEL-20 overlap
   neighbour rule + bug-audit item 6 — brainstorm → spec → /ship.
-- **Measurements first** (no code): DEL-49, DEL-50, DEL-51, DEL-52.
+- **Measurements** (no code): DEL-49, DEL-50, DEL-51, DEL-52 — **done
+  5 Sep 2026**, `docs/data/`.
 - **Then the ratified profile** (DEL-31): `adjacency.rule: touch`;
   `barrier.rule: partial_weighted`; `roads: eq4_own_only`;
   `exclusion: {types: [RV, Industrial, Other], stage: post_neighbors,
   absent_neighbor: contributes}`; `second_normalization` and
-  `outputs.denominators` per DEL-52; everything else as `code-2025`.
+  `outputs.denominators` per Raj's two DEL-52 answers (the figures used
+  `true` and popdensity); everything else as `code-2025`.
 - **Then DEL-32** recalculation and DEL-33 figures (left join onto the
   settlement layer).
 - **Phase 6** gains DEL-53; DEL-37 carries Raj's steer; DEL-39's main text

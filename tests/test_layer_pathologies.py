@@ -32,11 +32,9 @@ needs_data = pytest.mark.skipif(
     reason=f"real Delhi data not present at {DATA_DIR}")
 
 COUNT_KEYS = ("settlements", "rectangles", "multipolygons", "isolated_bbox",
-              "isolated_touch", "no_population", "overlapping_pairs")
-# DEL-50: the script emits these two from this commit on; the committed
-# document gains them when the run step (task 6) pastes a fresh block, which
-# also moves them into COUNT_KEYS above.
-PENDING_KEYS = ("corner_only_pairs", "corner_only_settlements")
+              "isolated_touch", "no_population", "overlapping_pairs",
+              # DEL-50, measured and committed on 5 Sep 2026:
+              "corner_only_pairs", "corner_only_settlements")
 AREA_KEYS = ("area_km2_min", "area_km2_median", "area_km2_max")
 POINT_SERVICES = ("bank", "health", "police", "ration", "school", "transport")
 
@@ -103,13 +101,9 @@ def test_the_doc_has_the_fenced_block_with_every_required_key(committed):
                       for key in committed
                       if key.startswith("multi_settlement_points_"))
     assert services == sorted(POINT_SERVICES), services
-    for key in PENDING_KEYS:
-        if key in committed:
-            assert committed[key].isdigit(), (key, committed[key])
     expected = (set(COUNT_KEYS) | set(AREA_KEYS)
                 | {f"multi_settlement_points_{s}" for s in POINT_SERVICES})
-    assert expected <= set(committed)
-    assert set(committed) <= expected | set(PENDING_KEYS)
+    assert set(committed) == expected, sorted(set(committed) ^ expected)
 
 
 def test_the_doc_records_its_provenance():
@@ -142,10 +136,8 @@ def test_a_fresh_run_reproduces_the_committed_counts(committed, fresh):
     and the three float area keys are checked for presence and parseability
     by the shape test instead of by text equality."""
     measured, _, _ = fresh
-    # `<=`, not `==`, until the run step pastes the two DEL-50 keys: a fresh
-    # run emits them, the committed block does not carry them yet.
-    assert set(committed) <= set(measured), sorted(set(committed)
-                                                   - set(measured))
+    assert set(measured) == set(committed), sorted(set(measured)
+                                                   ^ set(committed))
     for key, value in committed.items():
         if key.startswith("area_km2_"):
             continue
