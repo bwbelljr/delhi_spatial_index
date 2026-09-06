@@ -15,9 +15,9 @@ Numbers quoted in prose below in `backticks` are block values verbatim;
 percentages and other derived quantities are written with a `%` sign or
 without backticks.
 
-- **Run date:** _pending_
-- **Inputs:** _pending_
-- **Commit:** _pending_
+- **Run date:** 2026-09-06
+- **Inputs:** settlement layer `uso_update_sep2021`, the three `Barrier_Clip` layers, and the proven `code-2025` run in `~/delhi_data/phase3_verify` (its neighbours artifact, read for the `links_kept_code_2025` comparison only)
+- **Commit:** `a4b51c6`
 - **Command:** `uv run python scripts/measure_rule_effects.py --config code-2025 --verify-dir ~/delhi_data/phase3_verify --work-dir ~/measure_work/cache`
 
 ## Block `partial_barriers` — the effect on today's numbers
@@ -65,6 +65,146 @@ outside these bounds is a stop, not a number to write down.
 - `preprocess_seconds` — the wall-clock cost of rebuilding the neighbours
   artifact under the partial rule, so the one-time cost of adopting it is on
   the record next to its effect.
+
+```text
+block: partial_barriers
+links_w_one: 27482
+links_fractional: 1636
+links_severed: 0
+median_fractional_w: 0.938525
+links_kept_code_2025: 21211
+links_kept_partial: 29118
+settlements_list_changed: 3155
+preprocess_seconds: 864.935
+n_pop_Planned: 964
+n_pop_UAC: 1684
+n_pop_RUAC: 393
+n_pop_JJC: 749
+n_pop_JJR: 48
+n_pop_UV: 138
+n_pop_SDA: 86
+n_pop_total: 4131
+psi_code_pop_Planned: 0.00901129
+psi_code_pop_UAC: 0.0106064
+psi_code_pop_RUAC: 0.00440786
+psi_code_pop_JJC: 0.0176336
+psi_code_pop_JJR: 0.00269464
+psi_code_pop_UV: 0.0103199
+psi_code_pop_SDA: 0.0190069
+psi_code_pop_total: 0.0109748
+psi_partial_pop_Planned: 0.00850924
+psi_partial_pop_UAC: 0.0141033
+psi_partial_pop_RUAC: 0.00707284
+psi_partial_pop_JJC: 0.0251647
+psi_partial_pop_JJR: 0.00258057
+psi_partial_pop_UV: 0.00840339
+psi_partial_pop_SDA: 0.0105075
+psi_partial_pop_total: 0.0136806
+norm_code_pop_Planned: 0.0109918
+norm_code_pop_UAC: 0.0129375
+norm_code_pop_RUAC: 0.0053766
+norm_code_pop_JJC: 0.021509
+norm_code_pop_JJR: 0.00328685
+norm_code_pop_UV: 0.0125879
+norm_code_pop_SDA: 0.0231841
+norm_code_pop_total: 0.0133868
+norm_partial_pop_Planned: 0.0107792
+norm_partial_pop_UAC: 0.0178656
+norm_partial_pop_RUAC: 0.00895963
+norm_partial_pop_JJC: 0.0318778
+norm_partial_pop_JJR: 0.00326898
+norm_partial_pop_UV: 0.0106451
+norm_partial_pop_SDA: 0.0133106
+norm_partial_pop_total: 0.0173301
+n_popdensity_Planned: 964
+n_popdensity_UAC: 1684
+n_popdensity_RUAC: 393
+n_popdensity_JJC: 749
+n_popdensity_JJR: 48
+n_popdensity_UV: 138
+n_popdensity_SDA: 86
+n_popdensity_total: 4131
+psi_code_popdensity_Planned: 0.0304103
+psi_code_popdensity_UAC: 0.0118991
+psi_code_popdensity_RUAC: 0.0148165
+psi_code_popdensity_JJC: 0.000914278
+psi_code_popdensity_JJR: 0.0257077
+psi_code_popdensity_UV: 0.0261655
+psi_code_popdensity_SDA: 0.0191333
+psi_code_popdensity_total: 0.015886
+psi_partial_popdensity_Planned: 0.0371327
+psi_partial_popdensity_UAC: 0.0223262
+psi_partial_popdensity_RUAC: 0.0266961
+psi_partial_popdensity_JJC: 0.00306383
+psi_partial_popdensity_JJR: 0.0366119
+psi_partial_popdensity_UV: 0.0422909
+psi_partial_popdensity_SDA: 0.0180126
+psi_partial_popdensity_total: 0.0240971
+norm_code_popdensity_Planned: 0.0443043
+norm_code_popdensity_UAC: 0.0173356
+norm_code_popdensity_RUAC: 0.021586
+norm_code_popdensity_JJC: 0.001332
+norm_code_popdensity_JJR: 0.0374532
+norm_code_popdensity_UV: 0.0381201
+norm_code_popdensity_SDA: 0.027875
+norm_code_popdensity_total: 0.023144
+norm_partial_popdensity_Planned: 0.0482092
+norm_partial_popdensity_UAC: 0.028986
+norm_partial_popdensity_RUAC: 0.0346595
+norm_partial_popdensity_JJC: 0.00397775
+norm_partial_popdensity_JJR: 0.047533
+norm_partial_popdensity_UV: 0.0549061
+norm_partial_popdensity_SDA: 0.0233856
+norm_partial_popdensity_total: 0.0312851
+```
+
+## Finding
+
+**No barrier on the real layer fully covers a shared boundary.**
+`links_severed` is `0` — not merely because a severed link leaves no trace
+in a stored artifact, but because the fractional class accounts for every
+blocked link there is. Of `29118` directed links the partial rule keeps,
+`27482` are untouched at weight 1 and `1636` are partially blocked, and the
+median partly-blocked link keeps `0.938525` of its contribution. Barriers in
+Delhi clip the corners of shared boundaries; they do not wall them off.
+
+**The rule is therefore far less severe than the one in the July 2025
+numbers, and that is most of the effect.** `code-2025`'s
+`global_asymmetric` keeps `21211` directed links; the partial rule keeps
+`29118` — 37 % more — because the global rule deletes every link INTO a
+barrier-flagged settlement, on every side, whether or not a barrier lies
+between the two. `3155` of 4,357 settlements (72 %) get a different
+neighbour list. The bound stated before the run held: the partial rule keeps
+more links than the global rule, the severed class is empty, and the
+fractional class is not.
+
+**What it does to the index.** Under the population-density denominator —
+the one the paper's figures use (`psi_columns.md`) — every reported type
+gains, because settlements that were cut off from their neighbours get them
+back:
+
+| type | `norm_psi` today | under `partial_weighted` | change |
+|---|---|---|---|
+| Planned | `0.0443043` | `0.0482092` | +8.8 % |
+| JJC | `0.001332` | `0.00397775` | +199 % |
+| UAC | `0.0173356` | `0.028986` | +67 % |
+| RUAC | `0.021586` | `0.0346595` | +61 % |
+| JJR | `0.0374532` | `0.047533` | +26.9 % |
+| UV | `0.0381201` | `0.0549061` | +44 % |
+| SDA | `0.027875` | `0.0233856` | −16.1 % |
+
+**The paper's headline comparison survives, but the gap narrows sharply.**
+Planned stays the highest-scoring type and JJC the lowest under the density
+denominator, before and after. But JJC's mean roughly triples while
+Planned's rises by under a tenth, so the ratio between them falls from about
+33× to about 12×. That is a change to the size of the paper's central claim,
+not to its direction, and it is Raj's to weigh — it is exactly what adopting
+his own partial-barrier decision costs.
+
+**Cost.** Rebuilding the neighbours artifact under this rule took
+`864.935` seconds (14.4 minutes) on 4,357 settlements — a one-off per
+profile, since the barrier block is in the methodology stamp and `compute`
+refuses a mismatched artifact.
 - `psi_code_<denom>_<TYPE>` / `psi_partial_<denom>_<TYPE>` (and, where both
   runs carry `norm_psi`, `norm_code_<denom>_<TYPE>` /
   `norm_partial_<denom>_<TYPE>`) — the mean unnormalised (and normalised) PSI
