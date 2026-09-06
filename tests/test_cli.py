@@ -428,6 +428,67 @@ def test_changing_only_the_decay_does_not_invalidate_an_artifact():
     pipeline.check_methodology_stamp(frame, other)    # must not raise
 
 
+# --- 3E: the buffer is part of the stamp (spec § 6.5) ------------------
+def _partial_config(buffer_m):
+    from dataclasses import replace
+
+    from delhi_psi.config import BarrierConfig, BarrierRule
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    return replace(cfg, methodology=replace(
+        cfg.methodology,
+        barrier=BarrierConfig(rule=BarrierRule.PARTIAL_WEIGHTED,
+                              combine="any", buffer_m=buffer_m)))
+
+
+def test_an_artifact_built_at_another_buffer_is_refused():
+    """The buffer shapes the stored lists — a barrier 3 m off an edge blocks
+    at 5 m and not at 2 m — so every number a mismatched compute produced
+    would describe a neighbourhood nobody built."""
+    from delhi_psi import pipeline, validate
+
+    frame = _stamped(_partial_config(5.0).methodology)
+    with pytest.raises(validate.ValidationError) as exc:
+        pipeline.check_methodology_stamp(frame, _partial_config(2.0))
+    message = str(exc.value)
+    assert "buffer_m" in message and "5.0" in message and "2.0" in message
+
+
+def test_an_artifact_built_under_pairwise_is_refused_by_partial_weighted():
+    """The existing rule check, on the new value."""
+    from dataclasses import replace
+
+    from delhi_psi import pipeline, validate
+    from delhi_psi.config import BarrierConfig, BarrierRule
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    pairwise = replace(cfg.methodology, barrier=BarrierConfig(
+        rule=BarrierRule.PAIRWISE, combine="any"))
+    frame = _stamped(pairwise)
+    with pytest.raises(validate.ValidationError, match="rule"):
+        pipeline.check_methodology_stamp(frame, _partial_config(5.0))
+
+
+def test_a_pre_3e_artifact_still_loads_for_a_bbox_config():
+    """3A-3D artifacts have no `buffer_m` key: `stored.get(...)` yields None,
+    which equals the configured None for both rules that have no buffer — so
+    code-2025's pinned colonies_neighbors.joblib keeps loading without a
+    re-preprocess (the 3D max_distance_km precedent)."""
+    from delhi_psi import pipeline
+    from tests.oraculum_fixtures import oracle_config
+
+    cfg = oracle_config("code-2025")
+    frame = pd.DataFrame({"USO_AREA_U": ["A"]})
+    frame.attrs["profile"] = "code-2025"
+    frame.attrs["methodology"] = {
+        "adjacency": {"rule": "bbox", "max_distance_km": None},
+        "barrier": {"rule": "global_asymmetric", "combine": "any"},
+    }
+    pipeline.check_methodology_stamp(frame, cfg)      # must not raise
+
+
 # --- I3: the dedup cache's hit branch ---------------------------------
 def test_second_preprocess_reuses_the_dedup_cache(data_dir, tmp_path, caplog):
     import logging as _logging
