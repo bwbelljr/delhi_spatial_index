@@ -98,15 +98,27 @@ def check_bands(city, *, expected=None, added=None):
 
     Against `adjacency(...)` DIRECTLY — never anything downstream of a
     barrier rule, which would fold the canal's severing into the band's
-    numbers. Move a vertex so a radius gains or loses a pair, or so two of
-    the three bands coincide, and this returns violations instead of quietly
-    emitting a fixture that pins nothing.
+    numbers. Move a vertex so a radius gains or loses a pair, or so two
+    bands coincide without that being the pinned saturation case, and this
+    returns violations instead of quietly emitting a fixture that pins
+    nothing.
+
+    The bands no longer have to be pairwise distinct: DEL-55 adds a 10 km
+    radius, and Oraculum's 5 km band is already the complete graph on its
+    seven settlements (21 pairs), so 5 km and 10 km are EQUAL there. The
+    invariant is therefore: a wider radius never drops a pair (1); growth is
+    STRICT wherever `ADDED_BAND_PAIRS` says the wider radius adds something,
+    and where it adds nothing the two bands must be equal AND the narrower
+    one must already be the complete graph — saturation pinned as a fact
+    about the city, not tolerated as a gap (2); and the added set matches
+    exactly (3).
     """
     from tests.reference_impl import adjacency
 
     expected = EXPECTED_BAND_PAIRS[city.name] if expected is None else expected
     added = ADDED_BAND_PAIRS[city.name] if added is None else added
     settlements = city.load_settlements()
+    n = len(settlements)
     pairs = {}
     for km in BAND_RADII_KM:
         nbrs = adjacency(settlements, "within_distance", km)
@@ -119,17 +131,35 @@ def check_bands(city, *, expected=None, added=None):
             violations.append(
                 f"band {km} km: pair count {len(pairs[km])}, expected "
                 f"{expected[km]}")
-    zero, small, large = BAND_RADII_KM
-    for lower, upper in ((zero, small), (small, large)):
-        if not pairs[lower] < pairs[upper]:
+    for lower, upper in zip(BAND_RADII_KM, BAND_RADII_KM[1:]):
+        if not pairs[lower] <= pairs[upper]:
             violations.append(
-                f"band {lower} km is not a STRICT subset of band {upper} km "
-                "— the three neighbourhoods must be pairwise distinct")
+                f"band {lower} km is not a subset of band {upper} km "
+                "— a wider radius must never drop a pair")
+        added_upper = added[upper]
+        if added_upper:
+            if not pairs[lower] < pairs[upper]:
+                violations.append(
+                    f"band {lower} km is not a STRICT subset of band "
+                    f"{upper} km, though {upper} km is expected to add "
+                    f"{sorted(added_upper)}")
+        else:
+            if pairs[lower] != pairs[upper]:
+                violations.append(
+                    f"band {upper} km differs from band {lower} km even "
+                    "though its added set is empty — the two bands should "
+                    "be equal (saturation)")
+            if len(pairs[lower]) != n * (n - 1) // 2:
+                violations.append(
+                    f"band {lower} km has {len(pairs[lower])} pairs but an "
+                    f"empty added-set at {upper} km requires it to already "
+                    f"be the complete graph on {n} settlements "
+                    f"({n * (n - 1) // 2} pairs)")
         got = pairs[upper] - pairs[lower]
-        if upper in added and got != added[upper]:
+        if got != added_upper:
             violations.append(
                 f"band {upper} km adds {sorted(got)}, expected "
-                f"{sorted(added[upper])}")
+                f"{sorted(added_upper)}")
     return violations
 
 

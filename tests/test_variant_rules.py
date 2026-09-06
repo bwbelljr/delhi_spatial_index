@@ -8,6 +8,7 @@ centroid distances.
 
 Reference side only: nothing in this file imports delhi_psi.
 """
+import itertools
 import math
 
 import pytest
@@ -21,7 +22,13 @@ from tests.variants import (
     ADDED_BAND_PAIRS, BAND_RADII_KM, EXPECTED_BAND_PAIRS, VARIANTS,
 )
 
-B0, B1, B2 = BAND_RADII_KM          # 0.0, 0.25, 0.75 km
+# B0, B1, B2 are the three 3D pinned in a distance GAP (no pair on the
+# boundary); B3, B4, B5 are DEL-55's sweep radii, ON the `<=` boundary. Named
+# explicitly rather than by unpacking BAND_RADII_KM, which now holds six
+# values and several tests below still want the original three by name.
+B0, B1, B2 = 0.0, 0.25, 0.75
+B3, B4, B5 = 1.0, 5.0, 10.0
+assert BAND_RADII_KM == (B0, B1, B2, B3, B4, B5)
 
 
 def undirected(nbrs):
@@ -30,6 +37,15 @@ def undirected(nbrs):
 
 def band(city, km):
     return adjacency(city.load_settlements(), "within_distance", km)
+
+
+def adjacency_pairs(gdf, rule, max_distance_km=None):
+    return undirected(adjacency(gdf, rule, max_distance_km))
+
+
+def pair_of(gdf, i, j):
+    ids = gdf["USO_AREA_U"]
+    return tuple(sorted((ids.iloc[i], ids.iloc[j])))
 
 
 def scored(city, ruleset, denom="pop"):
@@ -98,8 +114,30 @@ def test_pre_barrier_pair_counts_and_the_pairs_each_radius_adds(city):
     pairs = {km: undirected(band(city, km)) for km in BAND_RADII_KM}
     assert {km: len(p) for km, p in pairs.items()} == \
         EXPECTED_BAND_PAIRS[city.name]
-    assert pairs[B1] - pairs[B0] == ADDED_BAND_PAIRS[city.name][B1]
-    assert pairs[B2] - pairs[B1] == ADDED_BAND_PAIRS[city.name][B2]
+    for lower, upper in zip(BAND_RADII_KM, BAND_RADII_KM[1:]):
+        assert pairs[upper] - pairs[lower] == \
+            ADDED_BAND_PAIRS[city.name][upper], (lower, upper)
+
+
+# Measured on the committed fixtures: these pairs are at EXACTLY the radius.
+# Oraculum A-C and E-RV, messy M-U — all three at 1000.000000 m.
+BOUNDARY_PAIRS_1KM = {"oraculum": 2, "messy": 1}
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_a_pair_exactly_at_the_radius_is_a_neighbour(city):
+    """`within_distance` is `<=`, not `<`. 3D never had to say so — 0.25 and
+    0.75 km were chosen to sit in a gap of both cities' distance lists. The
+    sweep's 1 km radius cannot: it lands exactly on the boundary. Pin the
+    inclusive reading, and pin how many pairs depend on it.
+    """
+    gdf = city.load_settlements()
+    exact = [(i, j) for i, j in itertools.combinations(range(len(gdf)), 2)
+             if gdf.geometry.iloc[i].distance(gdf.geometry.iloc[j]) == 1000.0]
+    assert len(exact) == BOUNDARY_PAIRS_1KM[city.name]
+    pairs = adjacency_pairs(gdf, rule="within_distance", max_distance_km=1.0)
+    for i, j in exact:
+        assert pair_of(gdf, i, j) in pairs, "a pair AT the radius must be in"
 
 
 # --- item 2: monotonicity ----------------------------------------------
