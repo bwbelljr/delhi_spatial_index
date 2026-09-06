@@ -210,6 +210,14 @@ def _fake_stage_writes_artifact(profile, stage, *, data_dir, work_dir):
             geometry=[Pt(0, 0), Pt(1, 1)], crs="EPSG:7760")
         run_sweep.io.write_neighbors(
             frame, Path(work_dir) / cfg.paths.neighbors_artifact)
+        # A real preprocess WRITES the dedup stamps as a side effect
+        # (`pipeline._dedup_cached`). The fake must too, or the ordering
+        # test below cannot fail: with no stamp ever appearing, moving the
+        # `dedup_cache_warm` read to AFTER the stage reads False either
+        # way, and the test passes against the very regression it exists
+        # to catch. Proven by the fix-round re-review, which moved the read
+        # and watched all 17 tests stay green.
+        (Path(work_dir) / "settlements.dedup.stamp").write_text("mtime:size")
     return {"seconds": 1.0}
 
 
@@ -232,7 +240,11 @@ def test_dedup_cache_state_is_recorded_before_preprocess_runs(tmp_path,
                       .read_text())
     assert cold["dedup_cache_warm"] is False
 
-    (tmp_path / "settlements.dedup.stamp").write_text("mtime:size")
+    # No hand-written stamp here: the FIRST point's own preprocess left one,
+    # which is exactly why the second point is warm. Move the read to after
+    # the stage and the assertion above flips to True, so the ordering is
+    # what this test actually pins.
+    assert (tmp_path / "settlements.dedup.stamp").exists()
     run_sweep.run_group("decay", work_dir=tmp_path, data_dir=tmp_path / "data",
                         run_date="2026-09-06", commit="deadbee",
                         only=("decay-power05",))

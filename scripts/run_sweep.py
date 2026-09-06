@@ -164,6 +164,14 @@ def plan_point(profile, work_dir):
         except Exception:
             frame = None  # corrupt/truncated — treated exactly like missing
 
+    # `artifact_matches` stays the single decision point even on the corrupt
+    # path, where it re-attempts the read that just failed. That second
+    # attempt was measured as a defect and deliberately kept: a truncated
+    # joblib fails at its header, so the retry costs microseconds and never
+    # deserializes the millions of links a whole artifact holds — while
+    # short-circuiting around this call would bypass the one seam three
+    # tests stub to exercise the match/skip logic without a real artifact.
+    # A cheap duplicated failure is worth more than a testable seam.
     if artifact_matches(frame if frame is not None else artifact, cfg):
         return Point(profile, artifact, ("compute",),
                     "artifact matches — preprocess skipped")
@@ -419,11 +427,24 @@ def run_group(group, *, work_dir, data_dir, run_date, commit, only=None):
         # keys are null (never a guessed zero, which would misread as "no
         # links" and trip the isolates flag).
         if "preprocess" in completed:
-            frame = io.read_neighbors(point.artifact)
-            degree = degree_report(frame, cfg.layers.settlements.id_col)
-            manifest.update(degree)
-            manifest["degree_from"] = profile
-            built_degree[point.artifact.name] = (degree, profile)
+            # Guarded for the same reason `artifact_matches` is: the read can
+            # fail on an artifact a just-exited-0 subprocess left unreadable,
+            # and an exception escaping HERE would abort the loop and take
+            # every remaining point in the group with it. A degree summary is
+            # a diagnostic; losing it costs a column, not a run.
+            try:
+                frame = io.read_neighbors(point.artifact)
+            except Exception as exc:
+                log.warning("degree summary unavailable for %s: %s",
+                            profile, exc)
+                for key in _DEGREE_KEYS:
+                    manifest[key] = None
+                manifest["degree_from"] = f"artifact unreadable: {exc}"
+            else:
+                degree = degree_report(frame, cfg.layers.settlements.id_col)
+                manifest.update(degree)
+                manifest["degree_from"] = profile
+                built_degree[point.artifact.name] = (degree, profile)
         else:
             cached = (built_degree.get(point.artifact.name)
                      or _degree_from_disk(work_dir, point.artifact.name))
