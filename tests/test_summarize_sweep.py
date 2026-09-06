@@ -1,14 +1,41 @@
 """The sweep statistics, each against an answer computed by hand.
 
-Nothing here reads a real output file. The point of these tests is that the
-arithmetic is right; the point of the drift test in Task 6 is that the
-document's numbers came from this arithmetic.
+Nothing above this line's helpers reads a real output file. The point of
+those tests is that the arithmetic is right; the point of the rendering and
+real-data tests below (Task 6) is that the document's numbers came from
+this arithmetic, and that the machinery survives contact with the actual
+partial sweep in `~/psi_sweep` / `~/delhi_data/phase3_verify`.
 """
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from scripts import summarize_sweep as S
+from scripts._measure_common import _blocks
+
+REPO = Path(__file__).resolve().parent.parent
+DOC = REPO / "docs" / "data" / "phase6_sweep.md"
+
+# Reused rather than re-declared: `tests/test_measure_common.py` already
+# resolves `DATA_DIR` from `DELHI_DATA_DIR` (default `~/delhi_data`) and
+# skips real-data tests when it is absent. This module adds the ONE thing
+# that module has no reason to know about: where the (still in-flight)
+# sweep run's manifests and output CSVs live.
+from tests.test_measure_common import DATA_DIR  # noqa: E402
+
+SWEEP_DIR = Path(os.environ.get("DELHI_PSI_SWEEP_DIR", "~/psi_sweep")).expanduser()
+BASELINE_DIR = DATA_DIR / "phase3_verify"
+
+needs_sweep_data = pytest.mark.skipif(
+    not (SWEEP_DIR.exists() and BASELINE_DIR.exists()),
+    reason=f"real sweep output not present at {SWEEP_DIR} and/or "
+           f"{BASELINE_DIR}")
 
 
 def frame(**cols):
@@ -337,3 +364,166 @@ def test_isolates_flag_is_not_evaluated_without_a_baseline():
     assert S.flags({"n_isolates": 10_000}, baseline_isolates=None) == ()
     assert S.flags({"n_isolates": None}, baseline_isolates=None) == ()
     assert S.flags({}) == ()  # n_isolates absent entirely
+
+
+# =========================================================================
+# Task 6: rendering, the document, and the real-partial-sweep smoke tests.
+# =========================================================================
+def test_health_is_the_real_service_name_not_clinic():
+    """Regression: `SERVICES`/`AMOUNT_COLUMNS` originally copied
+    `scripts/generate_production_fixtures.py`'s FIXTURE-city service name
+    ("clinic"), but the real `code-2025` config names that layer "health"
+    (`delhi_psi/profiles/code-2025.yaml`'s `layers.point`), and every real
+    sweep output CSV carries `health_count`/`health_pcen`/`health_idx`
+    columns, never `clinic_*`. Caught only by Task 6's end-to-end smoke run
+    against `~/psi_sweep` — no hand-built test frame ever spelled the
+    service name out, so this pins it going forward."""
+    assert "health" in S.SERVICES
+    assert "clinic" not in S.SERVICES
+    assert S.AMOUNT_COLUMNS["health"] == "health_count"
+    assert "health_pcen" in S.OUTPUT_USECOLS
+    assert "clinic_pcen" not in S.OUTPUT_USECOLS
+
+
+def test_every_block_round_trips_through_the_parser():
+    report = {"point": "band-1km", "n_reported": 4131, "own_share_p50": 0.412}
+    text = S.render(report, name="points")
+    assert S.parse_block(text, name="points") == {k: str(v)
+                                                   for k, v in report.items()}
+
+
+def test_the_document_carries_every_block():
+    doc = DOC.read_text()
+    for name in S.BLOCKS:
+        S.parse_block(doc, name=name)
+
+
+def test_every_caption_says_the_run_is_provisional():
+    """Spec § 6.9: no number from this run may reach the manuscript, and the
+    only defence against that is that the document says so at every table.
+
+    At least one `## ` heading per block (`docs/data/rule_effects.md`'s own
+    convention allows MORE headings than blocks — a `## Finding` per block,
+    an extra caveat section — so this only pins a lower bound, not
+    equality)."""
+    doc = DOC.read_text()
+    headings = re.findall(r"^## .*$", doc, re.M)
+    assert len(headings) >= len(S.BLOCKS)
+    assert doc.count("DRY RUN") >= len(S.BLOCKS)
+
+
+def _committed_blocks():
+    """EVERY block in the document, not just the first per name.
+
+    `docs/data/rule_effects.md`'s own `committed_blocks` takes the first
+    match per name because each of its blocks is a single row. Here every
+    block type is multi-row (one `points`/`ordering`/`gap` block per sweep
+    point, all sharing one label — this task's resolution #4), so limiting
+    the guard to the first row per name would make it reject a true prose
+    citation of, say, `adj-touch`'s isolate count. Gathering every row is
+    what makes the guard meaningful here rather than accidentally narrow."""
+    doc = DOC.read_text()
+    return [body for label, body in _blocks(doc) if label in S.BLOCKS]
+
+
+def test_prose_numbers_come_from_the_blocks():
+    from tests.test_measure_common import assert_prose_numbers_come_from_the_blocks
+    doc = DOC.read_text()
+    assert_prose_numbers_come_from_the_blocks(doc, _committed_blocks())
+
+
+def test_the_document_records_its_provenance():
+    doc = DOC.read_text()
+    for label in ("**Run date:**", "**Inputs:**", "**Commit:**",
+                 "**Command:**"):
+        assert label in doc, label
+
+
+# --- end-to-end smoke test against the real (partial) sweep --------------
+def _run_summarizer(*extra_args):
+    proc = subprocess.run(
+        [sys.executable, "-m", "scripts.summarize_sweep",
+         "--work-dir", str(SWEEP_DIR), "--baseline-dir", str(BASELINE_DIR),
+         *extra_args],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    return proc.stdout
+
+
+@needs_sweep_data
+def test_points_block_does_not_crash_against_the_real_partial_sweep():
+    """The end-to-end smoke check this task's brief asks for. Pins the
+    numbers this task's brief states were measured today (2026-09-06)
+    against the real data, so a regression in the renderer — not just a
+    crash — is caught: the bbox baseline's 21,211 links / 360 isolates /
+    4.87 mean degree, and the own-only anchor's 1,834 zero-owning
+    settlements (spec § 6.2) and its `jaccard_bottom10` gate (spec § 6.3's
+    worked real example)."""
+    stdout = _run_summarizer("--block", "points")
+    points = {body["point"]: body
+             for label, body in _blocks(stdout) if label == "points"}
+
+    baseline = points["baseline"]
+    assert baseline["n_reported"] == "4131"
+    assert baseline["n_isolates"] == "360"
+    assert baseline["n_links"] == "21211"
+    assert baseline["deg_mean"] == "4.9"  # 4.868... at 1 dp
+    assert baseline["preprocess_s"] == "—"
+    assert baseline["compute_s"] == "—"
+
+    own_only = points["own-only"]
+    assert own_only["own_share_p50"] == "1.000"
+    assert own_only["n_own_share_undef"] == "1834"
+    for key in ("n_isolates", "n_links", "deg_mean", "preprocess_s"):
+        assert own_only[key] == "—"
+    # spec § 6.3's own worked example: the bottom-decile tie block at the
+    # own-only anchor (1,834 rows) is 4.4x the decile of 413, past the 1.5x
+    # gate, so the cell renders the em dash rather than a number that would
+    # measure sort order.
+    assert own_only["jaccard_bottom10"] == "—"
+
+    adj_touch = points.get("adj-touch")
+    if adj_touch is not None:
+        assert adj_touch["n_links"] == "14641"
+        assert adj_touch["n_isolates"] == "715"
+        # isolates flag is baseline-RELATIVE (715 > 360)
+        assert "isolates" in adj_touch["flag"]
+
+    for name, body in points.items():
+        assert body.get("status") != "FAILED", (name, body)
+
+
+@needs_sweep_data
+def test_ordering_block_does_not_crash_against_the_real_partial_sweep():
+    stdout = _run_summarizer("--block", "ordering")
+    rows = [body for label, body in _blocks(stdout) if label == "ordering"]
+    assert len(rows) >= 2  # at least the two anchors
+    baseline = next(r for r in rows if r["point"] == "baseline")
+    assert baseline["seed"] == "0"
+    assert baseline["n"] == "1000"
+    assert re.match(r"^\d+ \[\d+-\d+\]$", baseline["JJC"])
+
+
+@needs_sweep_data
+def test_gap_block_does_not_crash_against_the_real_partial_sweep():
+    """`p_a_gt_b` is measured to be `1.000` on every row of the real partial
+    sweep (spec § 6.5's predicted degenerate case at n=4,131) — pinned here
+    so the document's own decision to drop that column stays honest."""
+    stdout = _run_summarizer("--block", "gap")
+    rows = [body for label, body in _blocks(stdout) if label == "gap"]
+    assert len(rows) >= 4  # >= 2 anchors x 2 groups each
+    assert {r["p_a_gt_b"] for r in rows} == {"1.000"}
+    baseline_planned_jjc = next(r for r in rows if r["point"] == "baseline"
+                               and r["group"] == "Planned_vs_JJC")
+    assert float(baseline_planned_jjc["cliffs_delta"]) > 0.5
+
+
+@needs_sweep_data
+def test_denominator_check_matches_the_measured_disagreement():
+    """Measured directly (this task): the baseline's category ordering
+    under `pop` and `popdensity` DISAGREE — a real finding for DEL-52, not
+    a crash and not a rounding artifact."""
+    stdout = _run_summarizer("--block", "denominator_check")
+    block = S.parse_block(stdout, name="denominator_check")
+    assert block["agreement"] in ("AGREE", "DISAGREE")
+    assert block["point"] == "baseline"
