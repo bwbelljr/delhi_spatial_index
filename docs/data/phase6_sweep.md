@@ -449,9 +449,11 @@ separately).
 and `taub_vs_bbox` to `0.677`, against `adj-touch`'s `0.83`/`0.793` and
 `band-0km`'s identical `0.83`/`0.802`. `band-1km` also has the sweep's
 lowest isolate count so far, `15`, against the baseline's `360` — a
-36 km²-per-settlement neighbourhood leaves almost nobody stranded, at the
-cost of an `own_share_p50` of `0.010`: at 1 km the index is overwhelmingly
-a property of the neighbourhood, not the settlement.
+1 km radius averages `deg_mean: 37.9` neighbours per settlement (`deg_p50:
+33`, `deg_max: 252`), against the baseline's `4.9`, and that many
+neighbours leaves almost nobody stranded, at the cost of an
+`own_share_p50` of `0.010`: at 1 km the index is overwhelmingly a property
+of the neighbourhood, not the settlement.
 
 **The own-only anchor's bottom decile is unusable, exactly as spec § 6.3
 predicted before this run.** 1,834 of 4,131 reported settlements own zero
@@ -678,10 +680,14 @@ interval overlapping `[1-6]`, and `n_fragile_pairs` is `5` out of the
 8 adjacent pairs the 9-category ordering has — most of the *top* of the
 ranking would plausibly reorder under a different settlement draw, while
 the *bottom* would not. `band-1km` and `own-only` are the two narrowest
-top intervals measured (`n_fragile_pairs: 4`), and are also the two most
-smoothed points in the `points` block above (`own_share_p50` `1.000`
-[by construction] and `0.010` respectively) — the anchors bracket the
-sweep, and the real points sit between them exactly as spec § 6.2 expects.
+top intervals measured (`n_fragile_pairs: 4` each), and they sit at
+OPPOSITE ends of the composition spectrum in the `points` block above:
+`band-1km`'s `own_share_p50` is `0.010` (the most spatially smoothed real
+point in the sweep so far) while `own-only`'s is `1.000` by construction
+(no neighbour term at all — the anti-smoothed anchor). The top-of-ranking
+stability measured here does not depend on where a point sits on that
+spectrum, at least at its two extremes; the points in between (every real
+adjacency/decay profile measured) all show the wider `n_fragile_pairs: 5`.
 
 ## Block `gap` — the formal/informal gap as an effect size
 
@@ -695,15 +701,22 @@ sweep re-run against the ratified profile (DEL-31).
 Two rows per point (spec § 6.5): `Planned` vs `JJC`, then the pooled
 `formal = {Planned, SDA}` vs `informal = {JJC, JJR}` grouping (a stated
 assumption of this document, not a ruling from the paper — see the
-introduction above). `p_a_gt_b` (the bootstrap probability that `a`'s mean
-PSI exceeds `b`'s) is **`1.000` on every single row of this table, both
-groupings, at every point measured** — expected at n = 4,131 (spec § 6.5)
-and carrying no information once it is constant, so the column is dropped
-here rather than printed 22 times unchanged; `scripts.summarize_sweep`
-still computes it (`render_gap_block`'s underlying `_gap_row`), and
+introduction above). `render_gap_block`'s underlying `_gap_row` computes
+`p_a_gt_b` (the bootstrap probability that `a`'s mean PSI exceeds `b`'s)
+for every row; `_finalize_gap_rows` then checks whether it is CONSTANT
+across every row in this run, and — measured here — it is: `1.000` on
+every single row, both groupings, at every point, which is the degenerate
+case spec § 6.5 predicts at n = 4,131 and, once constant, carries no
+information as a column. Rather than a hand-typed sentence, the renderer
+itself drops the column and appends the one generated `note` block below
+the last real row, so the document stays exactly what the script prints —
 `tests/test_summarize_sweep.py::test_gap_block_does_not_crash_against_the_real_partial_sweep`
-pins the constant. A gated `*_decile_share_*` cell renders `—` under the
-same rule as the `points` block's Jaccard cells.
+re-runs the script and pins that the note fires for real. Were `p_a_gt_b`
+ever NOT constant, `_finalize_gap_rows` would leave the column in place
+untouched — that would itself be a real signal, not a constant to
+summarise away (`test_finalize_gap_rows_keeps_a_non_constant_p_a_gt_b`
+pins that branch on a hand-built case). A gated `*_decile_share_*` cell
+renders `—` under the same rule as the `points` block's Jaccard cells.
 
 ```text
 block: gap
@@ -1035,14 +1048,19 @@ top_decile_share_a: 0.518
 top_decile_share_b: 0.015
 bottom_decile_share_b: 0.524
 ```
+```text
+block: gap
+note: p_a_gt_b is constant at 1.000 across every row above (spec § 6.5) and is dropped rather than printed unchanged
+```
 
 ### Finding
 
 **Planned-over-JJC is large and stable everywhere measured.** `cliffs_delta`
 for `Planned` vs `JJC` ranges `0.83`–`0.96` across every point, anchors
 included — read as a probability, a randomly chosen Planned settlement
-outranks a randomly chosen JJC settlement roughly 92-98% of the time
-regardless of adjacency rule, band width, or decay form. `top_decile_share_b`
+outranks a randomly chosen JJC settlement between roughly 91.5% (at
+`0.83`, via (δ+1)/2) and 98% (at `0.96`) of the time, regardless of
+adjacency rule, band width, or decay form. `top_decile_share_b`
 (JJC's share of the top decile) is `0.000` at every single point in this
 table: not one JJC settlement has ever landed in the top 10% under any
 factor swept so far.
@@ -1099,15 +1117,34 @@ agreement: DISAGREE
 **The two denominators DISAGREE, and the disagreement is large, not a
 rounding artifact.** The nine-category orderings under `pop` and
 `popdensity` correlate at only `tau_pop_vs_popdensity: 0.17` — barely above
-independence — and `JJR`, ranked lowest under `popdensity`, ranks highest
-under `pop`. The Planned-vs-JJC effect size moves from a small-to-moderate
-`cliffs_delta_planned_jjc_pop: 0.22` (a coin flip that leans one way) to a
-dominant `cliffs_delta_planned_jjc_popdensity: 0.90` under density — the
-paper's own denominator. **Spec § 4.3's scoping decision is therefore not
-free**: this document's `points`/`ordering`/`gap` blocks above, all run
-under `popdensity` alone, would very likely look substantively different
-under `pop` — not just at the margins the way the decay forms differ from
-each other, but potentially reordering categories the way `pop` reorders
-`JJR`. This disagreement is itself a finding for DEL-52, written down
-rather than assumed away, and is exactly the reason spec § 4.3 asked for
-this check to be run and recorded rather than skipped.
+independence. `JJR` is the clearest single mover between them: it is
+LAST — the lowest-scoring category — in `cat_order_pop`
+(`SDA>Other>Planned>UV>UAC>JJC>Industrial>RUAC>JJR`), but THIRD from the
+top in `cat_order_popdensity`
+(`Other>Industrial>JJR>SDA>UV>Planned>RUAC>UAC>JJC`) — the same category
+falls at the very bottom under one denominator and near the top under the
+other.
+
+**Read as a plain probability, the Planned-vs-JJC gap swings from "leans
+one way" to "almost always."** Cliff's δ converts to
+P(a random Planned settlement outranks a random JJC settlement) via
+(δ+1)/2: under `pop`, `cliffs_delta_planned_jjc_pop: 0.22` is
+(0.22+1)/2 = 0.61 — a fairly modest lean; under `popdensity`, the paper's
+own denominator, `cliffs_delta_planned_jjc_popdensity: 0.90` is
+(0.90+1)/2 = 0.95 — Planned beats JJC in a random draw nineteen times out
+of twenty. Which of these two numbers describes "the" Planned-vs-JJC gap
+depends entirely on which denominator is asked.
+
+**This is a finding about an OPEN decision, not a result.** Spec § 4.3's
+choice to run every sweep point under `popdensity` alone (to avoid
+doubling the single most expensive loop in `compute` at `band-10km`'s
+link count) is a scoping decision made under autonomous authorisation, not
+a methodological ruling — and this check shows it is not free: this
+document's `points`/`ordering`/`gap` blocks above, all run under
+`popdensity`, would very likely look substantively different under `pop`,
+up to reordering categories the way `pop` and `popdensity` disagree about
+`JJR` here. Which denominator the paper's headline should use at all is
+Raj's decision (DEL-52), not a conclusion this dry run reaches; what this
+check adds is that the choice is consequential enough to be worth making
+deliberately, and the disagreement is written down here rather than
+assumed away.

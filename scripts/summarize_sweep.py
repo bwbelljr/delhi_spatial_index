@@ -1092,27 +1092,49 @@ def _gap_row(point, frame, *, group, a_label, b_label, a_members, b_members):
     }
 
 
+def _finalize_gap_rows(rows):
+    """spec § 6.5: `p_a_gt_b` constant across every row carries no
+    information ("If it comes out 1.000 at every point ... the doc states
+    that in one sentence and drops the column"), so it is dropped and
+    replaced by ONE generated note — GENERATED, not typed by hand into the
+    document (fix round 1, item 4): a hand-edited drop breaks the
+    guarantee that the document is exactly what this script prints, and
+    silently defeats the drift test. If `p_a_gt_b` is missing from every
+    row (nothing to check) or takes more than one value across the rows
+    that carry it, that would itself be a real signal — spec § 6.5 asks
+    for the column to be reported, not summarised away, so `rows` is
+    returned completely unchanged in that case."""
+    p_values = {r["p_a_gt_b"] for r in rows if "p_a_gt_b" in r}
+    if len(p_values) != 1:
+        return rows
+    (value,) = p_values
+    dropped = [{k: v for k, v in r.items() if k != "p_a_gt_b"} for r in rows]
+    note = {"note": f"p_a_gt_b is constant at {value} across every row "
+                    "above (spec § 6.5) and is dropped rather than "
+                    "printed unchanged"}
+    return dropped + [note]
+
+
 def render_gap_block(work_dir, baseline_dir):
     (order, frames, *_rest) = gather_points(work_dir, baseline_dir)
-    blocks = []
+    rows = []
     for point in order:
         frame = frames[point]
         if frame is None:
-            blocks.append(render({"point": point, "status": "FAILED"},
-                                 name="gap"))
+            rows.append({"point": point, "status": "FAILED"})
             continue
         if not {"Planned", "JJC"} <= set(frame["category"].unique()):
             continue  # own-only/anchors always carry both; a real point
                      # could in principle drop a whole category (n=0 flag
                      # in `own_only_psi`), and a gap needs both sides.
-        row = _gap_row(point, frame, group="Planned_vs_JJC", a_label="Planned",
-                      b_label="JJC", a_members={"Planned"}, b_members={"JJC"})
-        blocks.append(render(row, name="gap"))
-        row = _gap_row(point, frame, group="formal_vs_informal",
-                      a_label="formal", b_label="informal",
-                      a_members=set(FORMAL), b_members=set(INFORMAL))
-        blocks.append(render(row, name="gap"))
-    return "\n".join(blocks)
+        rows.append(_gap_row(point, frame, group="Planned_vs_JJC",
+                             a_label="Planned", b_label="JJC",
+                             a_members={"Planned"}, b_members={"JJC"}))
+        rows.append(_gap_row(point, frame, group="formal_vs_informal",
+                             a_label="formal", b_label="informal",
+                             a_members=set(FORMAL), b_members=set(INFORMAL)))
+    rows = _finalize_gap_rows(rows)
+    return "\n".join(render(row, name="gap") for row in rows)
 
 
 # --- block `denominator_check` (spec § 4.3) -------------------------------
