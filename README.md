@@ -47,7 +47,7 @@ uv run pytest -q tests/test_oracle.py tests/test_oracle_e2e.py tests/test_refere
 
 Measured on a fresh clone with no data present: the full suite is
 **914 passed, 19 skipped in about 80 seconds**, and the oracle alone is
-**68 passed in about 9 seconds**. The 19 skips are the tests that need
+**68 passed in under 10 seconds**. The 19 skips are the tests that need
 Delhi's layers; they skip rather than fail, which is why the suite is green
 without them.
 
@@ -70,17 +70,24 @@ finds crashes, not wrong answers. This repository is checked a second way.
   arithmetic is in
   [`docs/oracle/derivation-worksheet.md`](docs/oracle/derivation-worksheet.md),
   and the maps are in [`docs/oracle/`](docs/oracle/). The *messy* city adds the
-  pathologies a real layer has: overlapping polygons, a settlement inside
-  another, corner-only contact, duplicate geometries.
+  pathologies a real layer has: overlapping polygons, contact that is a single
+  point rather than an edge, a two-part settlement whose centroid falls
+  outside it, an isolated settlement, and one with no population row.
 - **When they disagree, the hand arithmetic wins.** That is what makes it an
   oracle rather than a fixture. It has caught real defects — a min-max that
-  divided 0/0 on a degenerate group, an over-subtraction in the overlap rule,
-  and the exact behaviour of a distance band when a pair sits precisely on the
-  radius.
+  divided 0/0 on a degenerate group, and an over-subtraction in the overlap
+  rule that only showed up on real geometry — and it pins edge cases a port
+  would otherwise get wrong silently, such as whether a pair sitting exactly
+  on a distance band's radius counts as neighbours (it does).
 
 It does **not** prove the method is the right method, or that Delhi's input
 layers are accurate. It proves the code implements the documented method
 faithfully.
+
+**[`docs/oracle/README.md`](docs/oracle/README.md) documents the suite as
+something you can use against your own code** — the fixture formats, the
+2,610 committed expected values and 5,796 variant expectations, and a
+step-by-step recipe for validating a reimplementation against them.
 
 ## Porting the method to another city
 
@@ -100,6 +107,8 @@ What this repository offers a port instead:
 3. **The oracle to check your port against.** The fixture cities and their
    hand-derived expected values are the useful export here: if your
    reimplementation reproduces them, it computes the same index.
+   [`docs/oracle/README.md`](docs/oracle/README.md) is the recipe — the
+   fixture formats are plain GeoJSON and CSV, readable without this package.
 
 ## Running on Delhi data
 
