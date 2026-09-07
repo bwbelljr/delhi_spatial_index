@@ -291,6 +291,34 @@ def test_the_own_only_anchor_shape_gates():
     assert len(got) == 1834 and gated
 
 
+def test_decile_k_is_at_least_one():
+    assert S.decile_k(7) == 1  # int(0.10 * 7) = 0, forced up to 1
+    assert S.decile_k(1000) == 100
+
+
+def test_decile_set_gates_when_the_unrounded_k_is_below_one():
+    """DEL-35 (`scripts/rank_report.py`) reports a run as small as
+    Oraculum's 7 settlements, where 0.10 * 7 = 0.7 — less than one real
+    observation. The tie-block rule alone does not catch this: seven
+    DISTINCT values (no ties anywhere) give a tie block of size 1 at each
+    extreme, nowhere near 1.5x a k of 1, so the pre-existing rule alone
+    would report a "decile" that is really just one arbitrary settlement as
+    if it meant something. Generalised here (not duplicated in
+    rank_report.py) so every caller of `decile_set` gets the same honesty
+    check DEL-35's spec § 4 demands."""
+    seven_distinct = pd.Series([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7])
+    _, top_gated = S.decile_set(seven_distinct, top=True)
+    _, bottom_gated = S.decile_set(seven_distinct, top=False)
+    assert top_gated and bottom_gated
+
+    # n=10 is the boundary: 0.10 * 10 = 1.0 exactly, not < 1, so this must
+    # NOT gate on the new rule (only the pre-existing tie-block rule can,
+    # and these ten values are distinct).
+    ten_distinct = pd.Series(np.linspace(0.1, 1.0, 10))
+    _, gated = S.decile_set(ten_distinct, top=True)
+    assert not gated
+
+
 def test_kendall_tau_b_differs_from_tau_a_when_there_are_ties():
     """An implementation that silently computes tau-a passes every tie-free
     case. Hand-computed: x = [1,1,2,3], y = [1,2,2,3].

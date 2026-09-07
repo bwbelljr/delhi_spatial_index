@@ -345,10 +345,19 @@ def kendall_tau_b(a, b):
     return (concordant - discordant) / denom
 
 
+def decile_k(n, *, fraction=0.10):
+    """The decile size k for `n` observations (spec § 6.3):
+    `max(1, int(fraction * n))` — at least one row, even when
+    `fraction * n` rounds to zero. Extracted from `decile_set` (which still
+    uses it) so a caller that needs to REPORT k — DEL-35's `rank_report.py`
+    summary line — has one formula to import rather than a second copy of
+    this rounding rule."""
+    return max(1, int(fraction * n))
+
+
 def decile_set(series, *, top, fraction=0.10):
     """The tie-inclusive decile set of `series` (spec § 6.3): every row
-    whose value ties the k-th order statistic, where
-    `k = max(1, int(fraction * n))`.
+    whose value ties the k-th order statistic, where `k = decile_k(n)`.
 
     Returns `(members, gated)`. `members` is a set of `series`' index
     labels — a property of the VALUES, never of pandas' sort order: PSI has
@@ -360,17 +369,30 @@ def decile_set(series, *, top, fraction=0.10):
     tied with it, sidesteps that: the boundary VALUE is well-defined
     regardless of which rows `nsmallest`/`nlargest` happened to return.
 
-    `gated` is True when `members` exceeds `1.5 * k` — a "decile" that
-    large is dominated by one tie block, not a decile, and every statistic
-    built on it (`decile_jaccard`, § 6.5's `*_decile_share_*`) should render
-    `-` rather than a number that measures where the tie block happened to
-    fall.
+    `gated` is True in either of two cases:
+      - `members` exceeds `1.5 * k` — a "decile" that large is dominated by
+        one tie block, not a decile, and every statistic built on it
+        (`decile_jaccard`, § 6.5's `*_decile_share_*`) should render `-`
+        rather than a number that measures where the tie block happened to
+        fall;
+      - `fraction * n < 1` (added for DEL-35) — the UNROUNDED decile is
+        less than one observation (Oraculum's 7 settlements: 0.10 * 7 =
+        0.7). `k` is still forced up to 1 so this function never raises,
+        but a "decile" produced by rounding UP from under one real
+        observation is not a decile in any sense the tie-block rule was
+        designed to police: a single UNTIED extreme value at n=7 sails
+        straight through the 1.5x check (a tie block of size 1 is nowhere
+        near 1.5x a k of 1) while still being exactly the "the top decile
+        is 100% Planned, from one settlement" nonsense DEL-35's spec § 4
+        warns against. This case is checked independently of tie size, and
+        it is the only reason a report at Delhi's real ~4,131-row scale is
+        unaffected: 0.10 * 4131 is nowhere near 1.
     """
     s = pd.Series(series).dropna()
     n = len(s)
     if n == 0:
         return set(), False
-    k = max(1, int(fraction * n))
+    k = decile_k(n, fraction=fraction)
     if top:
         threshold = s.nlargest(k).min()
         mask = s >= threshold
@@ -378,7 +400,7 @@ def decile_set(series, *, top, fraction=0.10):
         threshold = s.nsmallest(k).max()
         mask = s <= threshold
     members = set(s.index[mask])
-    gated = len(members) > 1.5 * k
+    gated = (fraction * n < 1) or (len(members) > 1.5 * k)
     return members, gated
 
 
