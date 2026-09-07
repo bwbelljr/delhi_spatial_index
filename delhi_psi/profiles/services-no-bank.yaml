@@ -1,0 +1,53 @@
+profile: services-no-bank
+# DEL-41: `code-2025` with exactly ONE difference — services.point omits
+# `bank`, so Eq. 1 averages over six services instead of seven. Two people
+# disagreed about banking: the Brown workshop triage said drop it as
+# private/market-driven, Raj's annotation said "they are material assets".
+# This variant settles it by measurement rather than argument (spec § 1).
+# Every block this file omits — layers, crs, validate, paths, outputs —
+# takes the code-2025 default from the loader, and every methodology/
+# categories key is restated verbatim (spec 3B § 2's "never inherited"
+# rule, and the tests/test_sweep_profiles.py one-factor guard checks it).
+#
+# Ships the fixture and guard only: the reportable numbers wait on the
+# ratified profile (DEL-31). See
+# docs/superpowers/specs/2026-09-07-del-41-banking-sensitivity-design.md.
+services:
+  point: {health: Public Services/Health/Health.shp,
+          police: Public Services/Police/Police Station.shp,
+          ration: Public Services/Ration/Ration.shp,
+          school: Public Services/School/schools7760.shp,
+          transport: Public Services/Transport/Transport.shp}
+                                    # THE CHANGE: `bank` omitted
+  line:  {road: Public Services/Major Road/Road.shp}
+categories:
+  scheme: uso-10
+  mapping:
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
+methodology:
+  adjacency:
+    rule: bbox
+  barrier:
+    rule: global_asymmetric
+    combine: any
+  overlap:
+    lending: whole
+  decay:
+    form: inverse_linear
+    distance: centroid
+    distance_unit: km
+  roads: decayed
+  second_normalization: true
+  exclusion:
+    types: [RV]
+    stage: post_neighbors
+    absent_neighbor: swallowed
