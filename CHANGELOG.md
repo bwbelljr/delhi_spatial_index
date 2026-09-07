@@ -73,9 +73,12 @@ section accumulates changes on in-flight branches.
     it), so it is an upper bound. Every other figure is clean.
 
     The 10 km link count reproduces August's independent measurement of
-    4,366,055 exactly. Compute is linear in links with a fixed floor, and the
-    per-link rate drifts up with scale (0.002796 → 0.003480 → 0.003697 s/link
-    across successive fits), so extrapolate conservatively. The settlement
+    4,366,055 exactly. Compute is linear in links with a fixed floor. The
+    marginal per-link rate rises across the cheap points (0.002796 → 0.003480
+    → 0.003697 s/link) — **but the trend does not survive its one
+    out-of-sample test**: the 5 km → 10 km interval is 0.003251 s/link, and
+    10 km came in **8.5 % under** the 16,100 s that the rising trend
+    projected. Extrapolate from the measured rate, not from the drift. The settlement
     dedup is ~620 s of a cold preprocess and is paid **once per work dir**,
     not per point. `band-0km`'s preprocess is 8× cheaper than `adj-touch`'s
     despite more links: `dwithin` is one vectorised query, `touch` computes
@@ -90,16 +93,19 @@ section accumulates changes on in-flight branches.
     `own_share_p50` to `0.001` at 10 km — at which point the index is 99.9 %
     other settlements' services. The published baseline is itself already
     flagged `smoothed`, at `own_share_p50: 0.058`.
-  - **A finding for DEL-52, which is Raj's open decision.** The two
-    denominators disagree sharply: Kendall τ between their category orderings
-    is `0.17`, and Cliff's δ for Planned-vs-JJC is `0.22` under `pop` against
-    `0.90` under `popdensity` — P(a random Planned settlement outranks a
-    random JJC) moves from 0.61 to 0.95. The mechanism is that `popdensity`'s
-    denominator is population/area, so the index rewards large-area
-    settlements (Spearman `0.929` between a category's median area and its
-    percentile swing); JJC's median area is 0.003 km². The paper's central
-    formal/informal claim is substantially stronger under the `popdensity`
-    denominator Figure 4 already uses.
+  - **A finding for DEL-52, which is Raj's open decision and not this run's
+    to make.** The two denominators disagree sharply: Kendall τ between their
+    category orderings is `0.17`, and Cliff's δ for Planned-vs-JJC is `0.22`
+    under `pop` against `0.90` under `popdensity` — P(a random Planned
+    settlement outranks a random JJC) moves from 0.61 to 0.95. The mechanism
+    is that `popdensity`'s denominator is population/area, so the index
+    rewards settlements with a lot of land relative to their population; the
+    `denominator_check` block reports the area-versus-swing relationship that
+    measures it. **Which denominator the paper should use is not a question
+    this dry run answers**, and the size of the disagreement is a reason to
+    decide it deliberately and defend it in the methods — not a reason to
+    prefer whichever denominator reports a larger gap. These are provisional
+    `code-2025` numbers.
 
 - **`methodology.overlap.lending`** — a new required switch: what a
   NEIGHBOUR lends. `whole` (today's rule) lends the neighbour's whole

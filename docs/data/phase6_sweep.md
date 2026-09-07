@@ -10,18 +10,29 @@ lays out. This document is that quantification, produced by
 `scripts/summarize_sweep.py`, which reads each sweep point's manifest and
 output CSV under `--work-dir` plus the proven `code-2025` run under
 `--baseline-dir`, and writes nothing under either directory.
-`tests/test_summarize_sweep.py` re-runs the script against the real (still
-in-flight) sweep and pins several of the numbers below directly.
+`tests/test_summarize_sweep.py` re-runs the script against the completed
+sweep, compares every block it emits against the blocks committed here, and
+pins several of the numbers below directly.
 
 - **Run date:** 2026-09-06
-- **Inputs:** `~/psi_sweep` (9 of the 11 real sweep-point profiles carry a
-  manifest and output CSV as of this writing — DEL-55 spec § 7's
-  cheapest-first real run is still in flight) and the proven `code-2025`
-  run in `~/delhi_data/phase3_verify` (the bbox baseline, both
-  denominators, read read-only; its structure is read off
-  `colonies_neighbors.joblib`, never rebuilt)
-- **Commit:** `c402904`
+- **Inputs:** `~/psi_sweep` — **all 11 real sweep points**, each with a
+  manifest and an output CSV, from the complete cheapest-first run of DEL-55
+  spec § 7 — and the proven `code-2025` run in `~/delhi_data/phase3_verify`
+  (the bbox baseline, both denominators, read read-only; its structure is
+  read off `colonies_neighbors.joblib`, never rebuilt)
+- **Commit:** the eleven points ran across three — `b6eb597` (the six decay
+  points), `67e3f24` (`adj-touch`, `band-0km`) and `cd6f0f3` (the three
+  bands) — because the run was started early and deliberately overlapped the
+  summariser's own development. **Nothing under `delhi_psi/` or
+  `delhi_psi/profiles/` changed across that span** (`git log b6eb597..cd6f0f3
+  -- delhi_psi/` is empty), so every point was produced by the same pipeline
+  and the same profile definitions, and the eleven are comparable with each
+  other. Each point's own commit is recorded in its manifest.
 - **Command:** `uv run python -m scripts.summarize_sweep --work-dir ~/psi_sweep --baseline-dir ~/delhi_data/phase3_verify`
+- **The blocks below are that command's output; the captions and Findings
+  are not.** `--out` writes blocks ONLY, so pointing it at this file deletes
+  every caption and every Finding in it. To refresh the numbers, generate to
+  a scratch file and splice the blocks into each section, leaving the prose.
 
 **DRY RUN on `code-2025` — superseded by the ratified profile.** The frozen
 July 2025 rule set still carries `bbox` adjacency, `global_asymmetric`
@@ -530,10 +541,14 @@ to the 10 km band, where the median settlement counts `deg_p50: 1048`
 neighbours. The two choices Phase 6 exists to test move the *top* of the
 ranking a great deal and the bottom not at all.
 
-**Widening the band erodes the ranking monotonically, and the erosion is
-concentrated in the top half.** Across the three bands, `taub_vs_bbox` falls
-`0.677` → `0.540` → `0.507` and `rho_vs_bbox` falls `0.850` → `0.720` →
-`0.680`, while the bottom three never move. Isolates go the other way:
+**Widening the band erodes SETTLEMENT-LEVEL agreement monotonically.**
+Across the three bands, `taub_vs_bbox` falls `0.677` → `0.540` → `0.507` and
+`rho_vs_bbox` falls `0.850` → `0.720` → `0.680`, while the bottom three
+categories never move. The CATEGORY-ordering measure does not fall
+monotonically — `tau_vs_bbox` runs `0.67` → `0.61` → `0.72`, rising again at
+10 km — which is worth keeping distinct: individual settlements keep
+diverging from the baseline as the radius grows, while the ordering they
+aggregate into does not. Isolates go the other way:
 `15` at 1 km and `0` at both 5 km and 10 km, against the baseline's `360` —
 a wide band reaches everyone.
 
@@ -558,11 +573,16 @@ real numbers put exactly one settlement at `norm_psi == 1`.
 The bands are wide enough to break up that tie block, so their decile cells
 report rather than gate — and they show the tails eroding faster than the
 middle: `jaccard_top10` falls `0.527` → `0.368` → `0.365` and
-`jaccard_bottom10` `0.283` → `0.195` → `0.191` across 1, 5 and 10 km. Barely
-a third of the top decile at 5 km or 10 km is the baseline's top decile,
-against a `rho_vs_bbox` of `0.720`/`0.680` overall. That is precisely the
-tail reshuffle a correlation alone would have hidden, and the reason spec
-§ 6.3 asks for both.
+`jaccard_bottom10` `0.283` → `0.195` → `0.191` across 1, 5 and 10 km.
+
+Read those as overlaps rather than as shares — a Jaccard is
+`|A ∩ B| / |A ∪ B|`, so for two equal-sized deciles `J = 0.368` means the two
+sets share **about half** their members, and `J = 0.195` about a third. At
+5 km and 10 km, then, roughly half the top decile is still the baseline's top
+decile while only a third of the bottom decile is, against a `rho_vs_bbox` of
+`0.720`/`0.680` overall. The bottom tail reshuffles harder than the top, and
+harder than the correlation alone would suggest — which is the reshuffle spec
+§ 6.3 asks for both statistics in order to see.
 
 **The six decay forms barely move the ranking against the bbox baseline**
 (all share its neighbourhood — spec § 4.2): `tau_vs_bbox` ranges only
@@ -821,20 +841,24 @@ which is the ordering the gap block below quantifies.
 not noise.** At the bbox baseline **all six** of the top categories carry a
 rank interval lying inside ranks 1 to 6 — `Other`, `Industrial` and `JJR` at
 `1 [1-6]`, `2 [1-6]`, `3 [1-6]`, then `SDA: 4 [2-6]`, `UV: 5 [2-6]` and
-`Planned: 6 [3-6]` — so every one of them could plausibly occupy any of the
-top six places under a different settlement draw. `n_fragile_pairs` is `5` out of the
+`Planned: 6 [3-6]` — so every one of them could plausibly move within the
+top six under a different settlement draw, though only `Other`, `Industrial`
+and `JJR` reach rank 1 and only they and `SDA`/`UV` reach rank 2.
+`n_fragile_pairs` is `5` out of the
 8 adjacent pairs the 9-category ordering has — most of the *top* of the
 ranking would plausibly reorder under a different settlement draw, while
-the *bottom* would not. `band-1km` and `own-only` are the two narrowest
-top intervals measured (`n_fragile_pairs: 4` each), and they sit at
-OPPOSITE ends of the composition spectrum in the `points` block above:
-`band-1km`'s `own_share_p50` is `0.010` (the third most spatially smoothed
-real point, behind `band-10km`'s `0.001` and `band-5km`'s `0.002`) while
-`own-only`'s is `1.000` by construction
-(no neighbour term at all — the anti-smoothed anchor). The top-of-ranking
-stability measured here does not depend on where a point sits on that
-spectrum, at least at its two extremes; the points in between (every real
-adjacency/decay profile measured) all show the wider `n_fragile_pairs: 5`.
+the *bottom* would not. Four of the thirteen points carry the narrower
+`n_fragile_pairs: 4` — the `own-only` anchor and all three distance bands —
+and the other nine carry `5`.
+
+That grouping cuts across the composition spectrum rather than along it.
+`own-only`'s `own_share_p50` is `1.000` by construction (no neighbour term
+at all — the anti-smoothed anchor) while the three bands are the three most
+spatially smoothed points in the table (`0.010`, `0.002`, `0.001`). The two
+ends of the spectrum produce the same slightly-more-stable top ordering, and
+everything in the middle — the bbox baseline, both adjacency comparison
+points, and all six decay forms — produces the wider one. Whatever
+`n_fragile_pairs` is responding to here, it is not how smoothed a point is.
 
 ## Block `gap` — the formal/informal gap as an effect size
 
@@ -1289,18 +1313,20 @@ note: p_a_gt_b is constant at 1.000 across every row above (spec § 6.5) and is 
 ### Finding
 
 **Planned-over-JJC is large and stable everywhere measured.** `cliffs_delta`
-for `Planned` vs `JJC` ranges `0.83`–`0.96` across every point, anchors
+for `Planned` vs `JJC` ranges `0.83`–`0.97` across every point, anchors
 included — read as a probability, a randomly chosen Planned settlement
 outranks a randomly chosen JJC settlement between roughly 91.5% (at
-`0.83`, via (δ+1)/2) and 98% (at `0.96`) of the time, regardless of
+`0.83`, via (δ+1)/2) and 98.5% (at `0.97`) of the time, regardless of
 adjacency rule, band width, or decay form. `top_decile_share_b`
 (JJC's share of the top decile) is `0.000` at nine of the eleven real
 points: not one JJC settlement reaches the top 10 % under any adjacency
 rule, any decay form, or a band up to 1 km. The two exceptions are the
 widest bands, `band-5km` and `band-10km`, at `0.002` each — of 749 JJC
-settlements, one or two. Even there JJC's share of the BOTTOM decile is
-`0.746` and `0.765`, its highest anywhere in the table: the widest bands
-let a JJC settlement into the top decile and simultaneously push more of
+settlements, one or two. JJC's share of the BOTTOM decile is `0.746` at
+`band-1km` and `band-5km` alike and `0.765` at `band-10km` — its highest
+anywhere in the table, and already at that level from 1 km, where no JJC
+settlement reaches the top decile at all. So the two effects are not
+coupled: widening the band pushes more of
 the category into the bottom one.
 
 **The band points widen the gap rather than narrow it.** All three bands
@@ -1351,6 +1377,13 @@ tau_pop_vs_popdensity: 0.17
 cliffs_delta_planned_jjc_pop: 0.22
 cliffs_delta_planned_jjc_popdensity: 0.90
 agreement: DISAGREE
+spearman_area_vs_swing: 0.933
+median_area_km2_min_swing: 0.003
+median_area_km2_max_swing: 0.315
+swing_min: -26.0
+swing_min_category: JJC
+swing_max: 33.3
+swing_max_category: JJR
 ```
 
 ### Finding
@@ -1375,6 +1408,27 @@ own denominator, `cliffs_delta_planned_jjc_popdensity: 0.90` is
 (0.90+1)/2 = 0.95 — Planned beats JJC in a random draw nineteen times out
 of twenty. Which of these two numbers describes "the" Planned-vs-JJC gap
 depends entirely on which denominator is asked.
+
+**And the disagreement has a single, measurable cause: land.** The
+`popdensity` denominator is population ÷ area, so Eq. 3 works out to
+services × area ÷ population — a settlement with more land per resident
+scores higher for the same services. Rank-correlating each category's median
+`area_km2` against its swing in mean percentile rank between the two
+denominators gives `spearman_area_vs_swing: 0.933` across the reported
+categories: nearly the whole reordering is explained by how much land a
+category's settlements have. The two ends make it concrete —
+`swing_min_category: JJC` loses `swing_min: -26.0` percentile points at a
+median area of `median_area_km2_min_swing: 0.003` km², while
+`swing_max_category: JJR` gains `swing_max: 33.3` at
+`median_area_km2_max_swing: 0.315` km², a hundred times the land.
+
+Stated plainly, because it is the part a methods section has to defend: the
+denominator that makes the formal/informal gap look largest is also the one
+that rewards settlements for being spacious, and JJCs are the densest
+category in the city. That is not by itself an argument against it — service
+access per resident per unit area is a defensible thing to measure — but it
+is an argument that has to be made explicitly, rather than inherited from
+whichever denominator the code happened to use.
 
 **This is a finding about an OPEN decision, not a result.** Spec § 4.3's
 choice to run every sweep point under `popdensity` alone (to avoid
