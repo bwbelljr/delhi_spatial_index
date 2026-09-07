@@ -98,6 +98,32 @@ and `psi_eq1` carries the unconditional claim. The implementer found this and
 was right to push back; a spec that demanded the stronger condition would have
 forced either a false test or a contorted implementation.
 
+**Which settlements tie is scenario-dependent, and two successive attempts to
+enumerate it were both wrong** — worth recording, because the error is
+instructive rather than trivial. The first draft of this paragraph named
+"A, C, IND tie; B, E, RV differ by an ulp", from inspecting the
+`baseline`/`pop` slice. The review then reported that E ties too, from a
+different slice. Counted across all ten scenario × denominator combinations
+on Oraculum:
+
+| settlement | ties | differs |
+|---|---|---|
+| `C` | 10 | 0 |
+| `IND` | 4 | 0 |
+| `A` | 8 | 2 |
+| `B` | 5 | 5 |
+| `E` | 4 | 6 |
+| `RV` | 0 | 4 |
+| `D` | 0 | 10 |
+
+Only `C` and `IND` tie in every combination they appear in — they sit at the
+min and max, where min-max pins them regardless. `D` never ties, which is the
+signal the test is really for. Everything between is scenario-dependent.
+
+Both enumerations were single-slice observations generalised without warrant.
+The test asserts "differs somewhere" precisely because the per-settlement
+pattern is not a stable fact to assert.
+
 ## 5. Why DEL-40 is worth building at all
 
 Ration shops are subsidised food distribution, targeted at poor households by
