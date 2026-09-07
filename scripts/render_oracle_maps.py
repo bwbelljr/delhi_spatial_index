@@ -11,6 +11,7 @@ shape (never color) as their identity channel, since six more categorical
 hues layered on the settlement fills would blow the palette's series budget.
 """
 
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -91,6 +92,22 @@ plt.rcParams.update({
     "axes.facecolor": SURFACE,
     "savefig.facecolor": PAGE_BG,
 })
+
+# Matplotlib stamps its own version into every PNG it writes, so re-rendering
+# an unchanged figure still changed the file's bytes and left the tree dirty —
+# a contributor who ran this tool saw six modified files they did not modify,
+# and might commit that noise. Suppressing the tag removes that cause.
+#
+# It does NOT make the output bit-reproducible across machines, and the branch
+# review measured the limit rather than letting the claim stand: on a
+# different host, three of the six figures still differ on a first re-render
+# by about ten pixels, max channel delta 1, confined to a text band — font
+# hinting from an unpinned freetype/fontconfig, not this code. Re-rendering
+# twice on ONE machine is stable, which is the property that keeps the tree
+# clean; byte-identical regeneration everywhere would need the font stack
+# pinned, and is not worth that for figures whose content is checked by the
+# oracle tests rather than by their pixels.
+PNG_METADATA = {"Software": None}
 
 # Hand-placed label anchors (dx, dy from BASE, ha, va) chosen so the
 # settlement id/pop/area label sits in a corner of each rectangle that is
@@ -277,7 +294,7 @@ def render_city():
                 edgecolor=BASELINE, borderpad=0.8, labelspacing=0.7,
                 title="Legend", title_fontsize=8.2)
 
-    fig.savefig(OUT / "oraculum_city.png", bbox_inches="tight")
+    fig.savefig(OUT / "oraculum_city.png", bbox_inches="tight", metadata=PNG_METADATA)
     plt.close(fig)
 
 
@@ -335,7 +352,7 @@ def render_exclusion_variants():
                 frameon=True, facecolor=SURFACE, edgecolor=BASELINE,
                 bbox_to_anchor=(0.5, -0.08))
 
-    fig.savefig(OUT / "oraculum_exclusion_variants.png", bbox_inches="tight")
+    fig.savefig(OUT / "oraculum_exclusion_variants.png", bbox_inches="tight", metadata=PNG_METADATA)
     plt.close(fig)
 
 
@@ -468,7 +485,7 @@ def render_rv_decision():
                   bbox_to_anchor=(1.01, 1.0), fontsize=7.6, frameon=True,
                   facecolor=SURFACE, edgecolor=BASELINE, borderpad=0.8,
                   labelspacing=0.7, title="Legend", title_fontsize=8.2)
-        fig.savefig(OUT / fname, bbox_inches="tight")
+        fig.savefig(OUT / fname, bbox_inches="tight", metadata=PNG_METADATA)
         plt.close(fig)
 
 
@@ -531,11 +548,23 @@ def render_divergence():
     ax.set_axis_off()
     ax.autoscale_view()
     ax.margins(0.12)
-    fig.savefig(OUT / "oraculum_divergence.png", bbox_inches="tight")
+    fig.savefig(OUT / "oraculum_divergence.png", bbox_inches="tight", metadata=PNG_METADATA)
     plt.close(fig)
 
 
-def main():
+def main(argv=None):
+    # An argument parser for a script that takes no arguments, because the
+    # one thing a stranger types first is `--help` — and without this, that
+    # RAN the script and wrote six files. A tool in a public repo should be
+    # safe to interrogate before it is safe to trust.
+    parser = argparse.ArgumentParser(
+        description=("Render the Oraculum fixture-city figures into "
+                     f"{OUT.relative_to(REPO)}/. Takes no options: the "
+                     "figures are derived entirely from the committed "
+                     "fixtures, so a re-render with nothing changed rewrites "
+                     "the same bytes."))
+    parser.parse_args(argv)
+
     OUT.mkdir(parents=True, exist_ok=True)
     render_city()
     render_exclusion_variants()
