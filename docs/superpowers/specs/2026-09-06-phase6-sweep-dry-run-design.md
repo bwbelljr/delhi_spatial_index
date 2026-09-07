@@ -287,9 +287,17 @@ uv run python scripts/run_sweep.py --group bands|adjacency|decay|all \
 stages are subprocesses, so the artifact is *not* in the runner's memory when
 `preprocess` returns — the runner loads it exactly once, immediately after,
 and writes only the summary (`n_links`, `deg_mean`, `deg_p50`, `deg_max`,
-`n_isolates`) into the manifest. That one load is the peak-memory moment of
-the whole cycle for `band-10km` (4.37 M links over 4,357 rows); it happens
-between two stages rather than during one, and nothing downstream repeats it.
+`n_isolates`) into the manifest. It happens between two stages rather than
+during one, and nothing downstream repeats it.
+
+**Measured afterwards, and it corrects this section's own premise:** the
+10 km artifact is **83 MB**, not the ~1.4 GB estimated here by scaling the
+9.5 MB baseline artifact by its 206× link count. joblib stores the neighbour
+lists far more compactly than that, so the "peak-memory moment" this
+paragraph was written to be careful about is not a concern at all. The
+single-load design is still right — reading a file twice to build a string
+is wasteful at any size — but it was justified by a number that was wrong by
+a factor of seventeen.
 A point that skips `preprocess` (the five later decay points) inherits the
 degree summary from the manifest of the point that built the shared artifact,
 named explicitly in its own manifest as `degree_from`.

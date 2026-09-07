@@ -57,6 +57,49 @@ section accumulates changes on in-flight branches.
     missing**: `tests/test_config.py` asserts the exact set of shipped
     profiles, so adding one turns the suite red, and the documented
     procedure never said so.
+  - **The measured cost, which is what DEL-31 needs.** All eleven points ran
+    against the real layer (4,131 reported settlements), total 7.15 h:
+
+    | point | links | preprocess | compute |
+    |---|---|---|---|
+    | `decay-*` (bbox baseline) | 21,211 | 694.6 s cold, then shared | ~70 s each |
+    | `adj-touch` | 14,641 | 91.6 s | 50.4 s |
+    | `band-0km` | 15,462 | 11.7 s | 52.7 s |
+    | `band-1km` | 165,119 | 75.5 s | 569.6 s |
+    | `band-5km` | 1,525,802 | 752.5 s | 5,600.3 s |
+    | `band-10km` | 4,366,055 | 2,576.4 s † | **14,833.1 s (4.12 h)** |
+
+    † measured under concurrent load (an 18-minute test-suite run overlapped
+    it), so it is an upper bound. Every other figure is clean.
+
+    The 10 km link count reproduces August's independent measurement of
+    4,366,055 exactly. Compute is linear in links with a fixed floor, and the
+    per-link rate drifts up with scale (0.002796 → 0.003480 → 0.003697 s/link
+    across successive fits), so extrapolate conservatively. The settlement
+    dedup is ~620 s of a cold preprocess and is paid **once per work dir**,
+    not per point. `band-0km`'s preprocess is 8× cheaper than `adj-touch`'s
+    despite more links: `dwithin` is one vectorised query, `touch` computes
+    intersection lengths pair by pair — the intersection rule is not the
+    cheap rule.
+  - **What the sweep found.** `JJC` is the lowest-scoring category at all
+    thirteen points, anchors included, and the bottom three are
+    `RUAC` > `UAC` > `JJC` at every one: the adjacency and decay choices move
+    the top of the ranking substantially and the bottom not at all. Widening
+    the band erodes settlement-level agreement monotonically
+    (`taub_vs_bbox` `0.677` → `0.540` → `0.507`) and collapses
+    `own_share_p50` to `0.001` at 10 km — at which point the index is 99.9 %
+    other settlements' services. The published baseline is itself already
+    flagged `smoothed`, at `own_share_p50: 0.058`.
+  - **A finding for DEL-52, which is Raj's open decision.** The two
+    denominators disagree sharply: Kendall τ between their category orderings
+    is `0.17`, and Cliff's δ for Planned-vs-JJC is `0.22` under `pop` against
+    `0.90` under `popdensity` — P(a random Planned settlement outranks a
+    random JJC) moves from 0.61 to 0.95. The mechanism is that `popdensity`'s
+    denominator is population/area, so the index rewards large-area
+    settlements (Spearman `0.929` between a category's median area and its
+    percentile swing); JJC's median area is 0.003 km². The paper's central
+    formal/informal claim is substantially stronger under the `popdensity`
+    denominator Figure 4 already uses.
 
 - **`methodology.overlap.lending`** — a new required switch: what a
   NEIGHBOUR lends. `whole` (today's rule) lends the neighbour's whole
