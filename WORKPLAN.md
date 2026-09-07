@@ -1,5 +1,17 @@
 # Delhi Paper — Sequenced Work Plan
 
+> **What this file is.** The project's own plan of record, kept in the
+> repository so that a reader can see what is finished, what is in progress
+> and what is still an open question — including the methodology decisions
+> that are not yet settled. It is written for the people doing the work, so
+> it is blunt about unfinished business; that is the point of publishing it
+> rather than a tidied summary.
+>
+> It is **not** a live tracker: day-to-day status lives on the project's Jira
+> board, and this file is brought into line with it at the end of each work
+> cycle. Where the two disagree, Jira is current. The checkboxes below are
+> accurate as of the last cycle, not as of this minute.
+
 Goal: finish the PSI analysis and ship **"Making the City Unequal: Locating
 Public Services in Planned and Informal Settlements in Delhi"** to HAS as a
 fresh submission (Patrick also suggests posting to SSRN; AJS noted as a
@@ -33,17 +45,23 @@ name each item's ticket; keep the two in sync when either changes.
 | 0 Environment & data | done | data synced, `gh` working |
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
 | 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
-| 3 Refactor & bug audit | **in progress** — cycles 3A–3D merged (PRs #10, #13, #14, #15); 3E's three tickets (DEL-54, DEL-48, DEL-20) all code-complete on their own branches, pending merge and the real-data run step | delhi_psi package, 540 tests; every methodology choice is a profile value; code-2025 reproduces July 2025 at zero deviation |
-| 4 Categorization | **decisions received 28 Aug 2026** — measurements, then the ratified profile | `docs/decisions/2026-08-28-raj-methodology-decisions.md` |
-| 5–7 | not started | — |
+| 3 Refactor & bug audit | **done** — cycles 3A–3E all merged (PRs #10, #13, #14, #15, #18, #19, #20) | delhi_psi package, 923 tests; every methodology choice is a profile value; code-2025 still reproduces July 2025 at zero deviation |
+| 4 Categorization | **blocked on Raj** — his 28 Aug decisions are recorded and the four pre-recalculation measurements are done (PR #17); the ratified profile [DEL-31] needs his remaining answers | `docs/decisions/2026-08-28-raj-methodology-decisions.md`; open items listed below |
+| 6 Robustness sweeps | **harness done, numbers pending** — the eleven-point sweep and its dry run merged (PR #21, DEL-55). The reported variants (DEL-36/37/39) re-run against the ratified profile once Phase 4 unblocks | `docs/data/phase6_sweep.md` — every table labelled a dry run on the superseded rule set |
+| 7 Release | **in progress** — repo cleanup and the oracle as a documented release artefact (PR #22, DEL-45/46). Licence not chosen; Delhi layers not released | `README.md`, `docs/oracle/README.md` |
+| 5 Shippable minimum | superseded in practice — phases 6 and 7 progressed ahead of it while Phase 4 is blocked | — |
 
 Open items by owner:
 
-- **Bob:** (1) cycle 3E — partial-barrier weighting [DEL-48] + the overlap
-  neighbour rule [DEL-20] + the min-max guard (bug-audit 6), the last code
-  Phase 4 needs; (2) the pre-recalculation measurements [DEL-49/50/51/52];
-  (3) the ratified profile [DEL-31] and recalculation [DEL-32]; (4) the
-  batched reply to Raj (decision log, "What goes in the batched reply").
+- **Bob:** (1) ~~cycle 3E~~ done 6 Sep (PRs #18/#19/#20); (2) ~~the
+  pre-recalculation measurements~~ done 5 Sep (PR #17); (3) ~~the Phase 6
+  sweep harness~~ done 6 Sep (PR #21); (4) ~~release cleanup~~ done 7 Sep
+  (PR #22). **Remaining and blocked:** the ratified profile [DEL-31] and the
+  recalculation [DEL-32], both waiting on Raj below. **Remaining and
+  unblocked:** the service-set and index-formulation variants
+  [DEL-42/40/41/35/34], building their durable half only — profiles, variant
+  rows proven against the reference implementation, fixtures — with no
+  real-data run until DEL-31 exists.
 - **Raj:** confirm UV/SDA stay in, the overlap neighbour rule, popdensity,
   `norm_psi` (after Bob's check), Decision B; send the students'
   reclassification list [DEL-53]; the methods footnotes on his own list
