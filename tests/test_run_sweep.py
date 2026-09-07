@@ -109,7 +109,10 @@ def test_a_failed_point_is_recorded_and_the_run_continues(tmp_path, monkeypatch)
 def test_dry_run_writes_nothing(tmp_path, capsys):
     run_sweep.main(["--group", "decay", "--work-dir", str(tmp_path),
                     "--data-dir", str(tmp_path / "data"), "--dry-run"])
-    assert not list(tmp_path.rglob("*.json"))
+    # Fix round item 6: `*.json` alone lets a leaked `.joblib` or
+    # `.dedup.stamp` slip through unnoticed — a dry run must leave the work
+    # directory entirely empty, not merely free of manifests.
+    assert not list(tmp_path.iterdir())
     out = capsys.readouterr().out
     assert "decay-none" in out and "preprocess" in out
 
@@ -339,3 +342,43 @@ def test_plan_point_reads_a_matching_artifact_at_most_once(tmp_path,
     assert point.stages == ("preprocess", "compute")
     assert "stamp mismatch" in point.reason
     assert len(calls) == 1
+
+
+# --- fix round (final whole-branch review) --------------------------------
+
+def test_run_stage_passes_out_dir_so_output_never_lands_in_the_data_dir(
+        tmp_path, monkeypatch):
+    """The one line protecting the bisynced `~/delhi_data`: every profile's
+    `out_dir` config field DEFAULTS TO `data_dir` (`delhi_psi/io.py`), so
+    without `run_stage` passing `--out-dir work_dir` explicitly, every sweep
+    point would write its output straight into the hourly-bisynced data
+    directory. Deleting that argv pair fails no OTHER test in this suite:
+    every one of them monkeypatches `run_stage` itself away, never
+    `subprocess.run`, so none of them ever inspects the argv `run_stage`
+    actually builds. This test monkeypatches `subprocess.run` instead — the
+    one layer below `run_stage` — so it is the one test that can catch this
+    argv pair silently going missing.
+    """
+    calls = []
+
+    class FakeCompleted:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return FakeCompleted()
+
+    monkeypatch.setattr(run_sweep.subprocess, "run", fake_run)
+    work_dir = tmp_path / "work"
+    data_dir = tmp_path / "data"
+
+    run_sweep.run_stage("decay-none", "preprocess", data_dir=data_dir,
+                        work_dir=work_dir)
+
+    assert len(calls) == 1
+    argv = calls[0]
+    assert "--out-dir" in argv
+    i = argv.index("--out-dir")
+    assert argv[i + 1] == str(work_dir)

@@ -366,6 +366,70 @@ def test_isolates_flag_is_not_evaluated_without_a_baseline():
     assert S.flags({}) == ()  # n_isolates absent entirely
 
 
+def test_category_area_and_swing_is_hand_computed():
+    """Fix round item 1: the DEL-52 mechanism ("popdensity's denominator
+    rewards large-area settlements") made reproducible. Three categories,
+    six rows: `pop_frame`'s `norm_psi` is already sorted [1..6], so its
+    percentile ranks are 0,20,40,60,80,100 and A/B/C's MEAN pop percentiles
+    are 10, 50, 90. `density_frame` reorders the SAME six values as
+    [6,5,1,3,4,2], whose percentiles are 100,80,0,40,60,20, giving mean
+    density percentiles of A=90, B=20, C=40. Swing (density-pop) is then
+    A: 90-10=80, B: 20-50=-30, C: 40-90=-50 — hand-computable without the
+    helper under test.
+    """
+    pop = frame(category=["A", "A", "B", "B", "C", "C"],
+               norm_psi=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+               area_km2=[1.0, 3.0, 10.0, 20.0, 100.0, 200.0])
+    density = frame(category=["A", "A", "B", "B", "C", "C"],
+                    norm_psi=[6.0, 5.0, 1.0, 3.0, 4.0, 2.0],
+                    area_km2=[1.0, 3.0, 10.0, 20.0, 100.0, 200.0])
+    got = S.category_area_and_swing(pop, density)
+    assert got.loc["A", "swing"] == pytest.approx(80.0)
+    assert got.loc["B", "swing"] == pytest.approx(-30.0)
+    assert got.loc["C", "swing"] == pytest.approx(-50.0)
+    # median area is just the median of each category's two rows.
+    assert got.loc["A", "median_area_km2"] == pytest.approx(2.0)
+    assert got.loc["B", "median_area_km2"] == pytest.approx(15.0)
+    assert got.loc["C", "median_area_km2"] == pytest.approx(150.0)
+
+
+def test_category_area_and_swing_restricts_to_categories_in_both_frames():
+    """A category present in only one frame has no swing to report (its mean
+    percentile in the other frame is undefined), so it is dropped rather
+    than raising or silently treated as a swing of NaN."""
+    pop = frame(category=["A", "A", "B", "B"], norm_psi=[1.0, 2.0, 3.0, 4.0],
+               area_km2=[1.0, 1.0, 1.0, 1.0])
+    density = frame(category=["A", "A", "C", "C"],
+                    norm_psi=[1.0, 2.0, 3.0, 4.0], area_km2=[1.0, 1.0, 1.0, 1.0])
+    got = S.category_area_and_swing(pop, density)
+    assert list(got.index) == ["A"]
+
+
+def test_denominator_area_swing_fields_is_hand_computed():
+    """Same six-row frame as above: the SIGN of the Spearman correlation
+    between median area [2, 15, 150] (A<B<C) and swing [80, -30, -50]
+    (A>B>C, decreasing) is unambiguous by inspection — a perfectly ordered
+    reversal, without a single tie, so rho is exactly -1 regardless of the
+    exact area/swing values, which is what this test pins alongside the
+    per-category min/max fields spec § 4.3's follow-up asks for."""
+    pop = frame(category=["A", "A", "B", "B", "C", "C"],
+               norm_psi=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+               area_km2=[1.0, 3.0, 10.0, 20.0, 100.0, 200.0])
+    density = frame(category=["A", "A", "B", "B", "C", "C"],
+                    norm_psi=[6.0, 5.0, 1.0, 3.0, 4.0, 2.0],
+                    area_km2=[1.0, 3.0, 10.0, 20.0, 100.0, 200.0])
+    got = S.denominator_area_swing_fields(pop, density)
+    assert got == {
+        "spearman_area_vs_swing": "-1.000",
+        "median_area_km2_min_swing": "150.000",
+        "median_area_km2_max_swing": "2.000",
+        "swing_min": "-50.0",
+        "swing_min_category": "C",
+        "swing_max": "80.0",
+        "swing_max_category": "A",
+    }
+
+
 # =========================================================================
 # Task 6: rendering, the document, and the real-partial-sweep smoke tests.
 # =========================================================================
@@ -430,6 +494,39 @@ def test_every_caption_says_the_run_is_provisional():
             "section")
 
 
+@needs_sweep_data
+def test_a_fresh_run_reproduces_the_committed_blocks():
+    """The real-data drift check every other `docs/data/*.md` module in this
+    repo has — see `tests/test_measure_roads_access.py::
+    test_a_fresh_run_reproduces_the_committed_blocks` — and this one lacked:
+    `test_the_document_carries_every_block` (above) asserts nothing beyond
+    "this label parses at all", and `test_prose_numbers_come_from_the_blocks`
+    (below) checks the document's own prose against the document's own
+    blocks, never against a fresh run. This runs the summariser for real and
+    asserts every block it prints, label and body together and in order,
+    equals what `docs/data/phase6_sweep.md` currently commits.
+
+    SEQUENCING NOTE (fix round, final whole-branch review): this compares a
+    fresh run against whatever the document holds RIGHT NOW. If fix-round
+    item 1 (`spearman_area_vs_swing` and its five siblings in the
+    `denominator_check` block) changed that block's field set, this test
+    WILL fail until the controller regenerates and re-splices the document
+    after this commit — that is expected, reported in this task's report
+    rather than hidden by hand-editing `phase6_sweep.md` here, and is
+    exactly what this test existing is for: it should fail the moment the
+    document and the script disagree, including right now.
+    """
+    doc = DOC.read_text()
+    committed = [(label, body) for label, body in _blocks(doc)
+                if label in S.BLOCKS]
+
+    stdout = _run_summarizer()
+    fresh = [(label, body) for label, body in _blocks(stdout)
+            if label in S.BLOCKS]
+
+    assert fresh == committed
+
+
 def _committed_blocks():
     """EVERY block in the document, not just the first per name.
 
@@ -455,6 +552,16 @@ def test_the_document_records_its_provenance():
     for label in ("**Run date:**", "**Inputs:**", "**Commit:**",
                  "**Command:**"):
         assert label in doc, label
+
+
+def test_the_out_flags_help_warns_it_overwrites_prose():
+    """Fix round item 5: `--out` writes BLOCKS ONLY, and pointing it at
+    `docs/data/phase6_sweep.md` deletes every hand-written caption and
+    Finding — it already happened once. The help text must say so
+    explicitly rather than reading like a harmless stdout redirect."""
+    help_text = S.build_parser().format_help()
+    assert "OVERWRITES" in help_text
+    assert "prose" in help_text
 
 
 # --- end-to-end smoke test against the real (partial) sweep --------------
@@ -539,7 +646,12 @@ def test_gap_block_does_not_crash_against_the_real_partial_sweep():
     assert "1.000" in notes[0]["note"]
     baseline_planned_jjc = next(r for r in rows if r["point"] == "baseline"
                                and r["group"] == "Planned_vs_JJC")
-    assert float(baseline_planned_jjc["cliffs_delta"]) > 0.5
+    # Fix round item 6: `> 0.5` passed against the committed `0.90` and
+    # would pass equally well against a regression that dropped it to, say,
+    # 0.51 — pin the exact measured value and its bootstrap CI bounds.
+    assert baseline_planned_jjc["cliffs_delta"] == "0.90"
+    assert baseline_planned_jjc["cliffs_delta_ci_lo"] == "0.88"
+    assert baseline_planned_jjc["cliffs_delta_ci_hi"] == "0.92"
 
 
 def test_finalize_gap_rows_drops_a_constant_p_a_gt_b_and_notes_it():
@@ -583,8 +695,95 @@ def test_finalize_gap_rows_leaves_a_failed_rows_status_alone():
 def test_denominator_check_matches_the_measured_disagreement():
     """Measured directly (this task): the baseline's category ordering
     under `pop` and `popdensity` DISAGREE — a real finding for DEL-52, not
-    a crash and not a rounding artifact."""
+    a crash and not a rounding artifact.
+
+    Fix round item 2: the old version of this test asserted only
+    `block["agreement"] in ("AGREE", "DISAGREE")` and `block["point"] ==
+    "baseline"` — both hardcoded in the producer (`render_denominator_check_
+    block` can only ever emit one of those two strings, and always writes
+    `"point": "baseline"`), so every field that actually carries this task's
+    finding — `tau_pop_vs_popdensity`, both `cliffs_delta_planned_jjc_*`,
+    both `cat_order_*` — was parsed and never checked. Pinned here as exact
+    strings, measured on 6 Sep 2026 against the real baseline CSVs.
+    """
     stdout = _run_summarizer("--block", "denominator_check")
     block = S.parse_block(stdout, name="denominator_check")
-    assert block["agreement"] in ("AGREE", "DISAGREE")
-    assert block["point"] == "baseline"
+    assert block == {
+        "point": "baseline",
+        "cat_order_pop": "SDA>Other>Planned>UV>UAC>JJC>Industrial>RUAC>JJR",
+        "cat_order_popdensity":
+            "Other>Industrial>JJR>SDA>UV>Planned>RUAC>UAC>JJC",
+        "tau_pop_vs_popdensity": "0.17",
+        "cliffs_delta_planned_jjc_pop": "0.22",
+        "cliffs_delta_planned_jjc_popdensity": "0.90",
+        "agreement": "DISAGREE",
+        "spearman_area_vs_swing": "0.933",
+        "median_area_km2_min_swing": "0.003",
+        "median_area_km2_max_swing": "0.315",
+        "swing_min": "-26.0",
+        "swing_min_category": "JJC",
+        "swing_max": "33.3",
+        "swing_max_category": "JJR",
+    }
+
+
+@needs_sweep_data
+def test_swapping_the_two_denominator_frames_flips_the_agreement_fields():
+    """Fix round item 2: proves the test above is not itself a tautology by
+    doing the swap the review asked for and confirming the fields actually
+    move. Report (per the fix-round brief) of what the swap printed BEFORE
+    this test pinned it, measured directly against the real baseline CSVs:
+
+        cat_order_pop:         (unswapped) Other>Industrial>JJR>SDA>UV>Planned>RUAC>UAC>JJC
+        cat_order_popdensity:  (unswapped) SDA>Other>Planned>UV>UAC>JJC>Industrial>RUAC>JJR
+        tau_pop_vs_popdensity: 0.17 (Kendall tau is symmetric — unchanged)
+        cliffs_delta_planned_jjc_pop: 0.90 (was popdensity's committed value)
+        cliffs_delta_planned_jjc_popdensity: 0.22 (was pop's committed value)
+        agreement: DISAGREE (unchanged — swapping which side is called
+            "pop" and which "popdensity" cannot make two different orderings
+            equal)
+        spearman_area_vs_swing: -0.933 (swing is antisymmetric in which
+            frame is "density" vs "pop", so its sign flips; median_area_*
+            and swing_min/max are computed off the SAME six-column swing
+            table and flip their category labels along with it)
+
+    Directly monkeypatches `S.load_output_frame` to hand back the pop CSV's
+    frame when the popdensity path is requested and vice versa — the same
+    substitution the brief describes as swapping the two `load_output_frame`
+    calls at the call site, done here without touching production code.
+    """
+    baseline_dir = Path(BASELINE_DIR).expanduser()
+    pop_path = baseline_dir / "delhi_psi_code-2025_pop_2020.csv"
+    density_path = baseline_dir / "delhi_psi_code-2025_popdensity_2020.csv"
+    real_load = S.load_output_frame
+
+    def swapped_load(path):
+        path = Path(path)
+        if path == pop_path:
+            return real_load(density_path)
+        if path == density_path:
+            return real_load(pop_path)
+        return real_load(path)
+
+    import unittest.mock as mock
+    with mock.patch.object(S, "load_output_frame", side_effect=swapped_load):
+        text = S.render_denominator_check_block(baseline_dir)
+    block = S.parse_block(text, name="denominator_check")
+
+    assert block == {
+        "point": "baseline",
+        "cat_order_pop": "Other>Industrial>JJR>SDA>UV>Planned>RUAC>UAC>JJC",
+        "cat_order_popdensity":
+            "SDA>Other>Planned>UV>UAC>JJC>Industrial>RUAC>JJR",
+        "tau_pop_vs_popdensity": "0.17",
+        "cliffs_delta_planned_jjc_pop": "0.90",
+        "cliffs_delta_planned_jjc_popdensity": "0.22",
+        "agreement": "DISAGREE",
+        "spearman_area_vs_swing": "-0.933",
+        "median_area_km2_min_swing": "0.315",
+        "median_area_km2_max_swing": "0.003",
+        "swing_min": "-33.3",
+        "swing_min_category": "JJR",
+        "swing_max": "26.0",
+        "swing_max_category": "JJC",
+    }

@@ -1137,6 +1137,53 @@ def render_gap_block(work_dir, baseline_dir):
     return "\n".join(render(row, name="gap") for row in rows)
 
 
+def category_area_and_swing(pop_frame, density_frame, *, category_col="category",
+                            area_col="area_km2", psi_col=PSI_COL):
+    """The DEL-52 mechanism, reproducibly (fix round item 1): for every
+    category present in BOTH `pop_frame` and `density_frame`, its median
+    `area_col` and its SWING in mean percentile rank of `psi_col` — the
+    `popdensity` frame's mean percentile minus the `pop` frame's, per
+    category.
+
+    `area_col` is read off `density_frame` (arbitrary but deliberate: a
+    settlement's own area does not depend on which denominator scored it,
+    so `pop_frame` and `density_frame` carry identical `area_km2` for the
+    same settlement id — this never has to align the two frames row-by-row
+    to make that assumption, since a group median needs no alignment at
+    all). Returns a DataFrame indexed by category, columns
+    `median_area_km2` and `swing`.
+    """
+    pop_pct = percentile_rank(pop_frame[psi_col])
+    density_pct = percentile_rank(density_frame[psi_col])
+    pop_mean = pop_pct.groupby(pop_frame[category_col]).mean()
+    density_mean = density_pct.groupby(density_frame[category_col]).mean()
+    common = pop_mean.index.intersection(density_mean.index)
+    swing = density_mean.loc[common] - pop_mean.loc[common]
+    median_area = density_frame.groupby(category_col)[area_col].median().loc[common]
+    return pd.DataFrame({"median_area_km2": median_area, "swing": swing})
+
+
+def denominator_area_swing_fields(pop_frame, density_frame):
+    """The seven `denominator_check` block fields (fix round item 1) that
+    make the DEL-52 mechanism claim — "popdensity's denominator rewards
+    large-area settlements" — reproducible from the two baseline CSVs
+    already being read, rather than living only in prose and an
+    unreproducible controller scratch script."""
+    table = category_area_and_swing(pop_frame, density_frame)
+    rho = spearman_rho(table["median_area_km2"], table["swing"])
+    min_cat = table["swing"].idxmin()
+    max_cat = table["swing"].idxmax()
+    return {
+        "spearman_area_vs_swing": _fmt(rho, 3),
+        "median_area_km2_min_swing": _fmt(table.loc[min_cat, "median_area_km2"], 3),
+        "median_area_km2_max_swing": _fmt(table.loc[max_cat, "median_area_km2"], 3),
+        "swing_min": _fmt(table.loc[min_cat, "swing"], 1),
+        "swing_min_category": min_cat,
+        "swing_max": _fmt(table.loc[max_cat, "swing"], 1),
+        "swing_max_category": max_cat,
+    }
+
+
 # --- block `denominator_check` (spec § 4.3) -------------------------------
 def render_denominator_check_block(baseline_dir):
     """The one-off check spec § 4.3 asks for: the baseline's category order
@@ -1169,6 +1216,7 @@ def render_denominator_check_block(baseline_dir):
         "cliffs_delta_planned_jjc_pop": _fmt(delta_pop, 2),
         "cliffs_delta_planned_jjc_popdensity": _fmt(delta_density, 2),
         "agreement": "AGREE" if pop_order == density_order else "DISAGREE",
+        **denominator_area_swing_fields(pop_frame, density_frame),
     }
     return render(row, name="denominator_check")
 
@@ -1188,7 +1236,11 @@ def build_parser():
                         help="the proven code-2025 run, read-only "
                              "(default: ~/delhi_data/phase3_verify)")
     parser.add_argument("--out", default=None,
-                        help="write the blocks here instead of stdout")
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY, OVERWRITES any prose in the "
+                             "target; to update the committed document, "
+                             "splice the blocks in rather than pointing "
+                             "this at it directly")
     parser.add_argument("--block", choices=BLOCKS, default=None,
                         help="render only this block")
     return parser
