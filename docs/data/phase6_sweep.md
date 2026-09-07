@@ -120,6 +120,7 @@ jaccard_bottom10: 1.000
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
 ```text
 block: points
 point: own-only
@@ -151,6 +152,7 @@ jaccard_bottom10: —
 planned_gt_jjc: True
 flag: pinned
 ```
+
 ```text
 block: points
 point: adj-touch
@@ -182,6 +184,7 @@ jaccard_bottom10: —
 planned_gt_jjc: True
 flag: isolates,pinned
 ```
+
 ```text
 block: points
 point: band-0km
@@ -213,6 +216,7 @@ jaccard_bottom10: —
 planned_gt_jjc: True
 flag: isolates,pinned
 ```
+
 ```text
 block: points
 point: band-1km
@@ -244,6 +248,71 @@ jaccard_bottom10: 0.283
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
+```text
+block: points
+point: band-5km
+profile: band-5km
+adjacency: within_distance
+radius_km: 5.0
+decay_form: inverse_linear
+decay_param: —
+decay_distance: centroid
+n_reported: 4131
+n_isolates: 0
+n_links: 1525802
+deg_mean: 350.2
+deg_p50: 360
+deg_max: 820
+preprocess_s: 752.520
+compute_s: 5600.302
+own_share_p50: 0.002
+n_own_share_undef: 0
+cat_order: SDA>Industrial>Other>Planned>UV>JJR>RUAC>UAC>JJC
+tau_vs_own: 0.44
+rho_vs_own: 0.540
+taub_vs_own: 0.403
+tau_vs_bbox: 0.61
+rho_vs_bbox: 0.720
+taub_vs_bbox: 0.540
+jaccard_top10: 0.368
+jaccard_bottom10: 0.195
+planned_gt_jjc: True
+flag: smoothed,pinned
+```
+
+```text
+block: points
+point: band-10km
+profile: band-10km
+adjacency: within_distance
+radius_km: 10.0
+decay_form: inverse_linear
+decay_param: —
+decay_distance: centroid
+n_reported: 4131
+n_isolates: 0
+n_links: 4366055
+deg_mean: 1002.1
+deg_p50: 1048
+deg_max: 1779
+preprocess_s: 2576.421
+compute_s: 14833.117
+own_share_p50: 0.001
+n_own_share_undef: 0
+cat_order: Industrial>Other>SDA>Planned>UV>JJR>RUAC>UAC>JJC
+tau_vs_own: 0.56
+rho_vs_own: 0.527
+taub_vs_own: 0.395
+tau_vs_bbox: 0.72
+rho_vs_bbox: 0.680
+taub_vs_bbox: 0.507
+jaccard_top10: 0.365
+jaccard_bottom10: 0.191
+planned_gt_jjc: True
+flag: smoothed,pinned
+```
+
 ```text
 block: points
 point: decay-none
@@ -275,6 +344,7 @@ jaccard_bottom10: 1.000
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
 ```text
 block: points
 point: decay-power05
@@ -306,6 +376,7 @@ jaccard_bottom10: 1.000
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
 ```text
 block: points
 point: decay-power2
@@ -337,6 +408,7 @@ jaccard_bottom10: 1.000
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
 ```text
 block: points
 point: decay-exp2km
@@ -368,6 +440,7 @@ jaccard_bottom10: 1.000
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
 ```text
 block: points
 point: decay-exp5km
@@ -399,6 +472,7 @@ jaccard_bottom10: 1.000
 planned_gt_jjc: True
 flag: smoothed,pinned
 ```
+
 ```text
 block: points
 point: decay-boundary
@@ -438,22 +512,38 @@ own `own_share_p50` is `0.058` — under the `smoothed` threshold of 0.10 —
 and it carries the `pinned` flag alongside: exactly one settlement sits at
 `norm_psi == 1` while the 99th percentile is well below it, i.e. one
 outlier is compressing the rest of the distribution even before any factor
-is swept. Both flags fire at nearly every point measured so far, which is
+is swept. `pinned` fires at all thirteen points and `smoothed` at ten of
+them — every point except `adj-touch` (`own_share_p50: 0.127`), `band-0km`
+(`0.122`) and the own-only anchor, the three narrowest neighbourhoods in the
+table. That the *published* configuration is among the flagged ones is
 itself the finding this dry run set out to surface — not a defect in the
 flag logic (`tests/test_summarize_sweep.py::test_isolates_flag_is_relative_to_the_baseline_not_absolute`
 and its neighbours pin the corrected, baseline-relative `isolates` rule
 separately).
 
-**Widening the band away from the baseline erodes the ranking fast.**
-`band-1km` — the first band point measured — drops `tau_vs_bbox` to `0.67`
-and `taub_vs_bbox` to `0.677`, against `adj-touch`'s `0.83`/`0.793` and
-`band-0km`'s identical `0.83`/`0.802`. `band-1km` also has the sweep's
-lowest isolate count so far, `15`, against the baseline's `360` — a
-1 km radius averages `deg_mean: 37.9` neighbours per settlement (`deg_p50:
-33`, `deg_max: 252`), against the baseline's `4.9`, and that many
-neighbours leaves almost nobody stranded, at the cost of an
-`own_share_p50` of `0.010`: at 1 km the index is overwhelmingly a property
-of the neighbourhood, not the settlement.
+**The answer to the question this sweep was built to ask: no, the finding
+does not depend on the choice.** `JJC` is the lowest-scoring category at
+**every one of the thirteen points**, both anchors included, and the bottom
+three are `RUAC` > `UAC` > `JJC` in that order at every one — from the
+own-only anchor, where each settlement is scored on its own services alone,
+to the 10 km band, where the median settlement counts `deg_p50: 1048`
+neighbours. The two choices Phase 6 exists to test move the *top* of the
+ranking a great deal and the bottom not at all.
+
+**Widening the band erodes the ranking monotonically, and the erosion is
+concentrated in the top half.** Across the three bands, `taub_vs_bbox` falls
+`0.677` → `0.540` → `0.507` and `rho_vs_bbox` falls `0.850` → `0.720` →
+`0.680`, while the bottom three never move. Isolates go the other way:
+`15` at 1 km and `0` at both 5 km and 10 km, against the baseline's `360` —
+a wide band reaches everyone.
+
+**What it costs to reach everyone is the index itself.** `own_share_p50`
+collapses `0.058` (baseline) → `0.010` → `0.002` → `0.001` as the radius
+widens, against `deg_mean` of `4.9` → `37.9` → `350.2` → `1002.1`. At 10 km
+a settlement's score is 99.9 % other settlements' services: the index has
+stopped being a property of the place and become a spatial smooth of the
+city. Every band point carries the `smoothed` flag, and so — the finding
+above — does the published baseline.
 
 **The own-only anchor's bottom decile is unusable, exactly as spec § 6.3
 predicted before this run.** 1,834 of 4,131 reported settlements own zero
@@ -464,6 +554,15 @@ gate fires on `adj-touch` and `band-0km`'s bottom deciles too (both narrow
 enough to reproduce a large zero-PSI tie block). The top decile survives
 everywhere measured (`jaccard_top10` never gates), because the sweep's
 real numbers put exactly one settlement at `norm_psi == 1`.
+
+The bands are wide enough to break up that tie block, so their decile cells
+report rather than gate — and they show the tails eroding faster than the
+middle: `jaccard_top10` falls `0.527` → `0.368` → `0.365` and
+`jaccard_bottom10` `0.283` → `0.195` → `0.191` across 1, 5 and 10 km. Barely
+a third of the top decile at 5 km or 10 km is the baseline's top decile,
+against a `rho_vs_bbox` of `0.720`/`0.680` overall. That is precisely the
+tail reshuffle a correlation alone would have hidden, and the reason spec
+§ 6.3 asks for both.
 
 **The six decay forms barely move the ranking against the bbox baseline**
 (all share its neighbourhood — spec § 4.2): `tau_vs_bbox` ranges only
@@ -504,6 +603,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: own-only
@@ -520,6 +620,7 @@ n_fragile_pairs: 4
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: adj-touch
@@ -536,6 +637,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: band-0km
@@ -552,6 +654,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: band-1km
@@ -568,6 +671,41 @@ n_fragile_pairs: 4
 seed: 0
 n: 1000
 ```
+
+```text
+block: ordering
+point: band-5km
+SDA: 1 [1-4]
+Industrial: 2 [1-5]
+Other: 3 [1-5]
+Planned: 4 [1-4]
+UV: 5 [4-5]
+JJR: 6 [6-7]
+RUAC: 7 [6-7]
+UAC: 8 [8-8]
+JJC: 9 [9-9]
+n_fragile_pairs: 4
+seed: 0
+n: 1000
+```
+
+```text
+block: ordering
+point: band-10km
+Industrial: 1 [1-4]
+Other: 2 [1-5]
+SDA: 3 [1-5]
+Planned: 4 [1-4]
+UV: 5 [3-5]
+JJR: 6 [6-8]
+RUAC: 7 [6-7]
+UAC: 8 [7-8]
+JJC: 9 [9-9]
+n_fragile_pairs: 4
+seed: 0
+n: 1000
+```
+
 ```text
 block: ordering
 point: decay-none
@@ -584,6 +722,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: decay-power05
@@ -600,6 +739,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: decay-power2
@@ -616,6 +756,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: decay-exp2km
@@ -632,6 +773,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: decay-exp5km
@@ -648,6 +790,7 @@ n_fragile_pairs: 5
 seed: 0
 n: 1000
 ```
+
 ```text
 block: ordering
 point: decay-boundary
@@ -685,8 +828,9 @@ ranking would plausibly reorder under a different settlement draw, while
 the *bottom* would not. `band-1km` and `own-only` are the two narrowest
 top intervals measured (`n_fragile_pairs: 4` each), and they sit at
 OPPOSITE ends of the composition spectrum in the `points` block above:
-`band-1km`'s `own_share_p50` is `0.010` (the most spatially smoothed real
-point in the sweep so far) while `own-only`'s is `1.000` by construction
+`band-1km`'s `own_share_p50` is `0.010` (the third most spatially smoothed
+real point, behind `band-10km`'s `0.001` and `band-5km`'s `0.002`) while
+`own-only`'s is `1.000` by construction
 (no neighbour term at all — the anti-smoothed anchor). The top-of-ranking
 stability measured here does not depend on where a point sits on that
 spectrum, at least at its two extremes; the points in between (every real
@@ -736,6 +880,7 @@ top_decile_share_a: 0.499
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: baseline
@@ -751,6 +896,7 @@ top_decile_share_a: 0.525
 top_decile_share_b: 0.019
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 point: own-only
@@ -766,6 +912,7 @@ top_decile_share_a: 0.477
 top_decile_share_b: 0.000
 bottom_decile_share_b: —
 ```
+
 ```text
 block: gap
 point: own-only
@@ -781,6 +928,7 @@ top_decile_share_a: 0.499
 top_decile_share_b: 0.063
 bottom_decile_share_b: —
 ```
+
 ```text
 block: gap
 point: adj-touch
@@ -796,6 +944,7 @@ top_decile_share_a: 0.499
 top_decile_share_b: 0.000
 bottom_decile_share_b: —
 ```
+
 ```text
 block: gap
 point: adj-touch
@@ -811,6 +960,7 @@ top_decile_share_a: 0.538
 top_decile_share_b: 0.031
 bottom_decile_share_b: —
 ```
+
 ```text
 block: gap
 point: band-0km
@@ -826,6 +976,7 @@ top_decile_share_a: 0.508
 top_decile_share_b: 0.000
 bottom_decile_share_b: —
 ```
+
 ```text
 block: gap
 point: band-0km
@@ -841,6 +992,7 @@ top_decile_share_a: 0.550
 top_decile_share_b: 0.031
 bottom_decile_share_b: —
 ```
+
 ```text
 block: gap
 point: band-1km
@@ -856,6 +1008,7 @@ top_decile_share_a: 0.535
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.746
 ```
+
 ```text
 block: gap
 point: band-1km
@@ -871,6 +1024,71 @@ top_decile_share_a: 0.625
 top_decile_share_b: 0.010
 bottom_decile_share_b: 0.746
 ```
+
+```text
+block: gap
+point: band-5km
+group: Planned_vs_JJC
+a: Planned
+b: JJC
+cliffs_delta: 0.97
+cliffs_delta_ci_lo: 0.95
+cliffs_delta_ci_hi: 0.98
+cohens_d: 0.69
+pct_gap: 59.6
+top_decile_share_a: 0.552
+top_decile_share_b: 0.002
+bottom_decile_share_b: 0.746
+```
+
+```text
+block: gap
+point: band-5km
+group: formal_vs_informal
+a: formal
+b: informal
+cliffs_delta: 0.94
+cliffs_delta_ci_lo: 0.93
+cliffs_delta_ci_hi: 0.96
+cohens_d: 0.70
+pct_gap: 40.2
+top_decile_share_a: 0.625
+top_decile_share_b: 0.012
+bottom_decile_share_b: 0.746
+```
+
+```text
+block: gap
+point: band-10km
+group: Planned_vs_JJC
+a: Planned
+b: JJC
+cliffs_delta: 0.96
+cliffs_delta_ci_lo: 0.95
+cliffs_delta_ci_hi: 0.98
+cohens_d: 0.65
+pct_gap: 58.9
+top_decile_share_a: 0.528
+top_decile_share_b: 0.002
+bottom_decile_share_b: 0.765
+```
+
+```text
+block: gap
+point: band-10km
+group: formal_vs_informal
+a: formal
+b: informal
+cliffs_delta: 0.94
+cliffs_delta_ci_lo: 0.92
+cliffs_delta_ci_hi: 0.95
+cohens_d: 0.65
+pct_gap: 39.5
+top_decile_share_a: 0.596
+top_decile_share_b: 0.012
+bottom_decile_share_b: 0.765
+```
+
 ```text
 block: gap
 point: decay-none
@@ -886,6 +1104,7 @@ top_decile_share_a: 0.479
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: decay-none
@@ -901,6 +1120,7 @@ top_decile_share_a: 0.494
 top_decile_share_b: 0.010
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 point: decay-power05
@@ -916,6 +1136,7 @@ top_decile_share_a: 0.501
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: decay-power05
@@ -931,6 +1152,7 @@ top_decile_share_a: 0.525
 top_decile_share_b: 0.015
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 point: decay-power2
@@ -946,6 +1168,7 @@ top_decile_share_a: 0.475
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: decay-power2
@@ -961,6 +1184,7 @@ top_decile_share_a: 0.508
 top_decile_share_b: 0.039
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 point: decay-exp2km
@@ -976,6 +1200,7 @@ top_decile_share_a: 0.506
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: decay-exp2km
@@ -991,6 +1216,7 @@ top_decile_share_a: 0.533
 top_decile_share_b: 0.017
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 point: decay-exp5km
@@ -1006,6 +1232,7 @@ top_decile_share_a: 0.492
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: decay-exp5km
@@ -1021,6 +1248,7 @@ top_decile_share_a: 0.513
 top_decile_share_b: 0.015
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 point: decay-boundary
@@ -1036,6 +1264,7 @@ top_decile_share_a: 0.499
 top_decile_share_b: 0.000
 bottom_decile_share_b: 0.522
 ```
+
 ```text
 block: gap
 point: decay-boundary
@@ -1051,6 +1280,7 @@ top_decile_share_a: 0.518
 top_decile_share_b: 0.015
 bottom_decile_share_b: 0.524
 ```
+
 ```text
 block: gap
 note: p_a_gt_b is constant at 1.000 across every row above (spec § 6.5) and is dropped rather than printed unchanged
@@ -1064,13 +1294,21 @@ included — read as a probability, a randomly chosen Planned settlement
 outranks a randomly chosen JJC settlement between roughly 91.5% (at
 `0.83`, via (δ+1)/2) and 98% (at `0.96`) of the time, regardless of
 adjacency rule, band width, or decay form. `top_decile_share_b`
-(JJC's share of the top decile) is `0.000` at every single point in this
-table: not one JJC settlement has ever landed in the top 10% under any
-factor swept so far.
+(JJC's share of the top decile) is `0.000` at nine of the eleven real
+points: not one JJC settlement reaches the top 10 % under any adjacency
+rule, any decay form, or a band up to 1 km. The two exceptions are the
+widest bands, `band-5km` and `band-10km`, at `0.002` each — of 749 JJC
+settlements, one or two. Even there JJC's share of the BOTTOM decile is
+`0.746` and `0.765`, its highest anywhere in the table: the widest bands
+let a JJC settlement into the top decile and simultaneously push more of
+the category into the bottom one.
 
-**The band points widen the gap rather than narrow it.** `band-1km` has
-both the largest `cliffs_delta` (`0.96`) and the largest `cohens_d`
-(`0.84`) of every point measured — the opposite of what a wider
+**The band points widen the gap rather than narrow it.** All three bands
+sit above every other point on both statistics: `cliffs_delta` runs `0.96`
+(1 km), `0.97` (5 km) and `0.96` (10 km) against the baseline's `0.90`, and
+`pct_gap` `57.0`, `59.6`, `58.9` against `49.3`. `band-5km` carries the
+largest `cliffs_delta` of any point and `band-1km` the largest `cohens_d`
+(`0.84`) — the opposite of what a wider
 neighbourhood narrowing the formal/informal gap would look like, and the
 opposite of `docs/data/rule_effects.md`'s partial-barrier finding (which
 narrows Planned-over-JJC from about 33× to about 12×). `own-only`, by
