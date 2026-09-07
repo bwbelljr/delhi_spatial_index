@@ -203,6 +203,27 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
     return methodology
 
 
+# --- service-subset filtering (DEL-40 spec § 1-2) -----------------------
+# The reference config's service key differs from the fixture city's group
+# name in exactly one place: config `health` names the file the fixture
+# writes as its `clinic` group (tests/test_cli.py::SERVICE_LAYOUT writes the
+# `clinic` layer to Public Services/Health/Health.shp, under the config's
+# `health` key). Every other service name is the identity between the two.
+CONFIG_TO_FIXTURE_SERVICE = {"health": "clinic"}
+
+
+def configured_fixture_services(cfg):
+    """The fixture-service names (`city.load_services()` keys) that `cfg`
+    configures: its `services.point`/`services.line` keys, translated
+    through CONFIG_TO_FIXTURE_SERVICE. A profile that drops a service from
+    `services.point` (e.g. `services-no-ration`) is what makes this return
+    fewer than all seven names — that subset is what compute_oracle_frame
+    filters the fixture city's services down to.
+    """
+    keys = {**cfg.services.point, **cfg.services.line}
+    return {CONFIG_TO_FIXTURE_SERVICE.get(name, name) for name in keys}
+
+
 def compute_oracle_frame(profile, *, types, stage, denom, city=ORACULUM):
     """compute_frames on the Oraculum city under the DERIVED profile's own
     category mapping, indexed by settlement id.
@@ -212,13 +233,20 @@ def compute_oracle_frame(profile, *, types, stage, denom, city=ORACULUM):
     identity) is what makes a future COLLAPSING profile's fixture record the
     numbers the CLI actually produces; under today's identity profiles it is
     a no-op.
+
+    Services are filtered to `cfg.services` (DEL-40 spec § 1-2): passing
+    `city.load_services()` unconditionally would emit full-service numbers
+    for a profile that subsets services, a silent pin.
     """
     from delhi_psi.pipeline import compute_frames
 
     cfg = oracle_config(profile, city)
+    configured = configured_fixture_services(cfg)
+    services = {name: gdf for name, gdf in city.load_services().items()
+               if name in configured}
     return compute_frames(
         city.load_settlements(), {"canal": city.load_barriers()},
-        city.load_services(), None,
+        services, None,
         methodology_with(profile, types=types, stage=stage, city=city),
         denom, mapping=cfg.categories.mapping, scheme=cfg.categories.scheme,
     ).set_index("USO_AREA_U")

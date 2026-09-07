@@ -1,0 +1,53 @@
+profile: services-no-ration
+# DEL-40: `code-2025` with exactly ONE difference — services.point omits
+# `ration`, so Eq. 1 averages over six services instead of seven. Ration
+# shops are subsidised food distribution targeted at poor households by
+# design; this variant tests whether the paper's formal/informal finding
+# depends on counting them as "public service access" (spec § 5). Every
+# block this file omits — layers, crs, validate, paths, outputs — takes the
+# code-2025 default from the loader, and every methodology/categories key is
+# restated verbatim (spec 3B § 2's "never inherited" rule, and the
+# tests/test_sweep_profiles.py one-factor guard checks it).
+#
+# Ships the fixture and guard only: the reportable numbers wait on the
+# ratified profile (DEL-31), which does not exist yet. See
+# docs/superpowers/specs/2026-09-07-service-subset-variants-design.md.
+services:
+  point: {bank: Public Services/Banking/Banking.shp,
+          health: Public Services/Health/Health.shp,
+          police: Public Services/Police/Police Station.shp,
+          school: Public Services/School/schools7760.shp,
+          transport: Public Services/Transport/Transport.shp}
+                                    # THE CHANGE: `ration` omitted
+  line:  {road: Public Services/Major Road/Road.shp}
+categories:
+  scheme: uso-10
+  mapping:
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
+methodology:
+  adjacency:
+    rule: bbox
+  barrier:
+    rule: global_asymmetric
+    combine: any
+  overlap:
+    lending: whole
+  decay:
+    form: inverse_linear
+    distance: centroid
+    distance_unit: km
+  roads: decayed
+  second_normalization: true
+  exclusion:
+    types: [RV]
+    stage: post_neighbors
+    absent_neighbor: swallowed

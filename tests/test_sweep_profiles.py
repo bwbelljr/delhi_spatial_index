@@ -33,6 +33,20 @@ SWEEP_PROFILES = {
     "decay-boundary": {"decay.distance": "boundary"},
 }
 
+# profile -> the dotted `services.point`/`services.line` keys it moves (a
+# missing key vs `code-2025` is spelled `None`, since that is what the
+# profile file DOES to it — omits it). DEL-40's services-no-ration is the
+# first profile whose one factor is `services`, not `methodology`: it must
+# be guarded here or it ships unguarded, the same silent-pin failure this
+# whole file exists to catch, in a different block (spec § 3).
+SERVICE_PROFILES = {
+    "services-no-ration": {"point.ration": None},
+}
+
+# The union of every one-factor profile this guard knows about, whichever
+# block its one factor lives in.
+ALL_ONE_FACTOR_PROFILES = sorted(set(SWEEP_PROFILES) | set(SERVICE_PROFILES))
+
 # The profiles whose neighbourhood differs from `code-2025`, so each needs its
 # own artifact and must NOT pin a name (the per-profile default keeps two
 # points from overwriting each other). Task 1's five ADJACENCY points only —
@@ -61,16 +75,49 @@ def base_methodology():
     return flatten(load_config(BASE).methodology)
 
 
-@pytest.mark.parametrize("profile", sorted(SWEEP_PROFILES))
+@pytest.mark.parametrize("profile", ALL_ONE_FACTOR_PROFILES)
 def test_the_profile_moves_exactly_the_keys_it_claims(profile, base_methodology):
     got = flatten(load_config(profile).methodology)
     moved = {k: v for k, v in got.items() if base_methodology.get(k) != v}
     expected = {k: (str(v) if not isinstance(v, bool) else v)
-                for k, v in SWEEP_PROFILES[profile].items()}
+                for k, v in SWEEP_PROFILES.get(profile, {}).items()}
     assert moved == expected
 
 
-@pytest.mark.parametrize("profile", sorted(SWEEP_PROFILES))
+def flatten_services(cfg):
+    """{dotted services key: path}, `point.<name>` / `line.<name>` — the
+    services analogue of `flatten()`, kept separate because ServicesConfig's
+    fields are plain dicts (source name -> path), not nested dataclasses,
+    and because a REMOVED key (services-no-ration's dropped `ration`) needs
+    to show up in the diff, which a same-keys dict comparison would miss."""
+    out = {}
+    for name, path in cfg.services.point.items():
+        out[f"point.{name}"] = path
+    for name, path in cfg.services.line.items():
+        out[f"line.{name}"] = path
+    return out
+
+
+@pytest.fixture(scope="module")
+def base_services():
+    return flatten_services(load_config(BASE))
+
+
+@pytest.mark.parametrize("profile", ALL_ONE_FACTOR_PROFILES)
+def test_the_profile_moves_exactly_the_services_it_claims(profile, base_services):
+    """The third comparison the one-factor guard needed (spec § 3): a
+    service-subset profile moves neither `methodology` nor `categories` —
+    it moves `services`. Without this, services-no-ration (or any future
+    service-subset profile) ships unguarded: a second, unnoticed change to
+    its services block would be silently invisible to every other test in
+    this file."""
+    got = flatten_services(load_config(profile))
+    keys = set(base_services) | set(got)
+    moved = {k: got.get(k) for k in keys if base_services.get(k) != got.get(k)}
+    assert moved == SERVICE_PROFILES.get(profile, {})
+
+
+@pytest.mark.parametrize("profile", ALL_ONE_FACTOR_PROFILES)
 def test_the_profile_copies_the_baseline_categories_verbatim(profile):
     """Each sweep profile hand-copies the ten-category identity mapping, and
     the one-factor guard above only inspects `methodology`. A typo in a
