@@ -209,3 +209,49 @@ def test_reprojection_is_load_bearing():
         got = reprojected[reprojected["USO_AREA_U"] == sid]["clinic_pcen"].iloc[0]
         exp = baseline[baseline["USO_AREA_U"] == sid]["clinic_pcen"].iloc[0]
         assert got == pytest.approx(exp, abs=1e-12), sid
+
+
+# --- DEL-40 Task 1: the fixture rail must be service-aware ---------------
+# compute_oracle_frame passed city.load_services() unconditionally, never
+# consulting cfg.services — so a profile that subsets services would today
+# emit full-service numbers, a silent pin (design spec § 1-2). These tests
+# use a TEMP profile file (not the shipped services-no-ration.yaml, which
+# is Task 2) so Task 1's fix is provable on its own.
+def test_configured_fixture_services_translates_health_to_clinic():
+    """The config key `health` names the fixture group `clinic`
+    (tests/test_cli.py::SERVICE_LAYOUT writes that fixture layer to
+    Public Services/Health/Health.shp, under the config's `health` key);
+    every other name is the identity between the two."""
+    from tests.oraculum_fixtures import configured_fixture_services
+
+    cfg = load_config(PROFILE)
+    assert configured_fixture_services(cfg) == {
+        "clinic", "school", "bank", "police", "ration", "transport", "road"}
+
+
+def test_compute_oracle_frame_filters_services_to_the_profiles_configured_set(
+        tmp_path):
+    """A profile whose `services.point` drops a key must produce a frame
+    with NO column for that service at all (absent, not zeroed) — the
+    silent-pin failure this spec exists to catch — while its psi moves and
+    its raw counts for the remaining services do not."""
+    import yaml
+
+    from delhi_psi.config import PROFILES_DIR
+
+    raw = yaml.safe_load((PROFILES_DIR / "code-2025.yaml").read_text())
+    del raw["services"]["point"]["ration"]
+    subset_path = tmp_path / "code-2025-no-ration.yaml"
+    subset_path.write_text(yaml.safe_dump(raw, sort_keys=False))
+
+    full = compute_oracle_frame(PROFILE, types=(), stage="post_neighbors",
+                                denom="pop")
+    subset = compute_oracle_frame(str(subset_path), types=(),
+                                  stage="post_neighbors", denom="pop")
+
+    assert "ration_count" not in subset.columns
+    assert "ration_pcen" not in subset.columns
+    assert "ration_idx" not in subset.columns
+    assert not full["unnorm_psi"].equals(subset["unnorm_psi"])
+    assert full["clinic_count"].equals(subset["clinic_count"])
+    assert full["school_count"].equals(subset["school_count"])

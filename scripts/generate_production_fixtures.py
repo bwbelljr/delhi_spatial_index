@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 from delhi_psi.config import load_config
 from tests.cities import CITIES, ORACULUM
-from tests.oraculum_fixtures import compute_oracle_frame
+from tests.oraculum_fixtures import compute_oracle_frame, configured_fixture_services
 
 
 def production_dir(city=ORACULUM):
@@ -36,20 +36,31 @@ def production_dir(city=ORACULUM):
 PROFILES = ("code-2025", "manuscript",
             "adj-touch", "band-0km", "band-1km", "band-5km", "band-10km",
             "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
-            "decay-exp5km", "decay-boundary")
+            "decay-exp5km", "decay-boundary",
+            "services-no-ration")
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
-SERVICES = POINT_SERVICES + ("road",)
+LINE_SERVICES = ("road",)
+SERVICES = POINT_SERVICES + LINE_SERVICES
 DENOMS = ("pop", "popdensity")
 
 HEADER = ["profile", "scenario", "denom", "settlement", "metric", "value"]
 
 
-def metric_columns(*, second_normalization):
-    """The spec § 4 metric set, in a fixed order (the CSV is sorted anyway)."""
-    columns = [f"{svc}_count" for svc in POINT_SERVICES]
-    columns.append("road_length")
-    for svc in SERVICES:
+def metric_columns(*, second_normalization, point_services=POINT_SERVICES,
+                   line_services=LINE_SERVICES):
+    """The spec § 4 metric set, in a fixed order (the CSV is sorted anyway).
+
+    `point_services`/`line_services` default to the full seven-service set,
+    so every existing caller keeps its shape and its numbers. A profile
+    that subsets services (DEL-40) passes the narrower tuples emit_profile
+    derives from `cfg.services`, and the columns for a dropped service are
+    then absent from the result entirely — never present and zeroed.
+    """
+    columns = [f"{svc}_count" for svc in point_services]
+    for svc in line_services:
+        columns.append(f"{svc}_length")
+    for svc in (*point_services, *line_services):
         columns.append(f"{svc}_pcen")
         columns.append(f"{svc}_idx")
     columns.append("unnorm_psi")
@@ -58,6 +69,17 @@ def metric_columns(*, second_normalization):
     columns.append("population")
     columns.append("area_km2")
     return columns
+
+
+def profile_service_columns(cfg):
+    """(point_services, line_services) fixture-name tuples `cfg` configures,
+    in POINT_SERVICES/LINE_SERVICES canonical order — what `metric_columns`
+    needs to emit metrics for only the services a subset profile carries
+    (DEL-40 spec § 1, Task 1/3)."""
+    configured = configured_fixture_services(cfg)
+    point = tuple(svc for svc in POINT_SERVICES if svc in configured)
+    line = tuple(svc for svc in LINE_SERVICES if svc in configured)
+    return point, line
 
 
 def frame_records(profile, frame, scenario, denom, columns):
@@ -76,9 +98,12 @@ def write_fixture(path, records):
 
 def emit_profile(profile, out_path, city=ORACULUM):
     """Write `profile`'s production fixture for `city` to out_path; return it."""
-    methodology = load_config(profile).methodology
+    cfg = load_config(profile)
+    methodology = cfg.methodology
+    point_services, line_services = profile_service_columns(cfg)
     columns = metric_columns(
-        second_normalization=methodology.second_normalization)
+        second_normalization=methodology.second_normalization,
+        point_services=point_services, line_services=line_services)
     records = []
     for scenario in city.scenarios:
         for denom in DENOMS:
