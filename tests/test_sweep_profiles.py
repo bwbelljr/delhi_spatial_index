@@ -42,6 +42,14 @@ SWEEP_PROFILES = {
 SERVICE_PROFILES = {
     "services-no-ration": {"point.ration": None},
     "services-no-bank": {"point.bank": None},
+    # DEL-42: the uncontested/contested decomposition. Together the two move
+    # every service key EXCEPT the ones they each keep — the partition test
+    # in tests/test_production_fixtures.py checks the complementary property
+    # (union == code-2025, intersection == empty) on the loaded configs.
+    "services-uncontested": {"point.bank": None, "point.police": None,
+                             "point.ration": None, "point.transport": None,
+                             "line.road": None},
+    "services-contested": {"point.health": None, "point.school": None},
 }
 
 # The union of every one-factor profile this guard knows about, whichever
