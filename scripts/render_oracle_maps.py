@@ -92,6 +92,15 @@ plt.rcParams.update({
     "savefig.facecolor": PAGE_BG,
 })
 
+# Matplotlib stamps its own version into every PNG it writes, so re-rendering
+# an unchanged figure still changes the file's bytes and leaves the tree
+# dirty — a contributor who runs this tool sees six modified files they did
+# not modify, and may commit that noise. Suppressing the tag makes a
+# re-render a no-op when nothing changed, which is what a committed figure
+# should be. (`None` removes the key; matplotlib writes no other
+# nondeterministic chunk.)
+PNG_METADATA = {"Software": None}
+
 # Hand-placed label anchors (dx, dy from BASE, ha, va) chosen so the
 # settlement id/pop/area label sits in a corner of each rectangle that is
 # clear of that settlement's own service markers (both are known from the
@@ -277,7 +286,7 @@ def render_city():
                 edgecolor=BASELINE, borderpad=0.8, labelspacing=0.7,
                 title="Legend", title_fontsize=8.2)
 
-    fig.savefig(OUT / "oraculum_city.png", bbox_inches="tight")
+    fig.savefig(OUT / "oraculum_city.png", bbox_inches="tight", metadata=PNG_METADATA)
     plt.close(fig)
 
 
@@ -335,7 +344,7 @@ def render_exclusion_variants():
                 frameon=True, facecolor=SURFACE, edgecolor=BASELINE,
                 bbox_to_anchor=(0.5, -0.08))
 
-    fig.savefig(OUT / "oraculum_exclusion_variants.png", bbox_inches="tight")
+    fig.savefig(OUT / "oraculum_exclusion_variants.png", bbox_inches="tight", metadata=PNG_METADATA)
     plt.close(fig)
 
 
@@ -468,7 +477,7 @@ def render_rv_decision():
                   bbox_to_anchor=(1.01, 1.0), fontsize=7.6, frameon=True,
                   facecolor=SURFACE, edgecolor=BASELINE, borderpad=0.8,
                   labelspacing=0.7, title="Legend", title_fontsize=8.2)
-        fig.savefig(OUT / fname, bbox_inches="tight")
+        fig.savefig(OUT / fname, bbox_inches="tight", metadata=PNG_METADATA)
         plt.close(fig)
 
 
@@ -531,7 +540,7 @@ def render_divergence():
     ax.set_axis_off()
     ax.autoscale_view()
     ax.margins(0.12)
-    fig.savefig(OUT / "oraculum_divergence.png", bbox_inches="tight")
+    fig.savefig(OUT / "oraculum_divergence.png", bbox_inches="tight", metadata=PNG_METADATA)
     plt.close(fig)
 
 
