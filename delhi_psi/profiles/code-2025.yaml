@@ -74,6 +74,9 @@ methodology:
                                     # centroid-to-centroid distance this profile
                                     # has always used; nothing changes
     distance_unit: km               # km
+  transform:
+    form: none                      # none | log1p | cbrt (DEL-34); no stage key
+                                    # when form is none
   roads: decayed                    # decayed | eq4_own_only
   second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
   exclusion:

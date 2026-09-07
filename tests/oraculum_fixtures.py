@@ -172,6 +172,7 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
     from delhi_psi.config import (
         AdjacencyConfig, AdjacencyRule, BarrierConfig, BarrierRule,
         DecayConfig, DecayDistance, DecayForm, OverlapConfig, OverlapLending,
+        TransformConfig, TransformForm, TransformStage,
     )
     from tests.variants import VARIANTS
 
@@ -200,6 +201,12 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
             distance=DecayDistance(block["distance"]),
             exponent=block.get("exponent"),
             scale_km=block.get("scale_km")))
+    if "transform" in spec:
+        block = spec["transform"]
+        methodology = replace(methodology, transform=TransformConfig(
+            form=TransformForm(block["form"]),
+            stage=(TransformStage(block["stage"])
+                  if "stage" in block else None)))
     return methodology
 
 

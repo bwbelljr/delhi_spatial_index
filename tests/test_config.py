@@ -36,6 +36,7 @@ MINIMAL = """profile: minimal
   barrier: {rule: global_asymmetric, combine: any}
   overlap: {lending: whole}
   decay: {form: inverse_linear, distance: centroid, distance_unit: km}
+  transform: {form: none}
   roads: decayed
   second_normalization: true
   exclusion: {types: [RV], stage: post_neighbors, absent_neighbor: swallowed}
@@ -547,7 +548,9 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
                 ("barrier", "rule"): "methodology.barrier.rule",
                 ("overlap", "lending"): "methodology.overlap.lending",
                 ("decay", "form"): "methodology.decay.form",
-                ("decay", "distance"): "methodology.decay.distance"}
+                ("decay", "distance"): "methodology.decay.distance",
+                ("transform", "form"): "methodology.transform.form",
+                ("transform", "stage"): "methodology.transform.stage"}
     for block, values in VARIANTS[variant].items():
         for key, value in values.items():
             if (block, key) in enum_key:
@@ -624,3 +627,83 @@ def test_reserved_key_overlap_counting_rejects_every_value(tmp_path, value):
     assert "unknown key" not in message
     assert message.endswith(RESERVED_KEYS["methodology.overlap.counting"])
     assert "28 Aug 2026" in message
+
+
+# --- DEL-34: the transform block (spec § 3-4) ---------------------------
+def test_transform_is_required_like_every_methodology_block(tmp_path):
+    without = MINIMAL.replace("  transform: {form: none}\n", "")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, without))
+    assert "methodology.transform" in str(exc.value)
+
+
+def test_form_is_required_inside_the_transform_block(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap("  transform:", "  transform: {}")))
+    assert "methodology.transform.form" in str(exc.value)
+
+
+def test_an_unknown_transform_key_is_rejected(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap(
+            "  transform:", "  transform: {form: none, scale: 2}")))
+    assert "methodology.transform.scale" in str(exc.value)
+
+
+@pytest.mark.parametrize("block,expected", [
+    ("  transform: {form: none}", None),
+    ("  transform: {form: log1p, stage: pcen}", "pcen"),
+    ("  transform: {form: log1p, stage: psi}", "psi"),
+    ("  transform: {form: cbrt, stage: pcen}", "pcen"),
+    ("  transform: {form: cbrt, stage: psi}", "psi"),
+])
+def test_stage_loads_with_each_form_that_uses_it(tmp_path, block, expected):
+    cfg = load_config(write(tmp_path, swap("  transform:", block)),
+                      data_dir=str(tmp_path))
+    assert cfg.methodology.transform.stage == expected
+
+
+@pytest.mark.parametrize("key,line_start,bad", [
+    # required by log1p/cbrt and missing
+    ("methodology.transform.stage", "  transform:",
+     "  transform: {form: log1p}"),
+    ("methodology.transform.stage", "  transform:",
+     "  transform: {form: cbrt}"),
+    # rejected when form is none
+    ("methodology.transform.stage", "  transform:",
+     "  transform: {form: none, stage: pcen}"),
+    ("methodology.transform.stage", "  transform:",
+     "  transform: {form: none, stage: psi}"),
+])
+def test_stage_is_conditional_on_form_not_being_none(tmp_path, key,
+                                                     line_start, bad):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap(line_start, bad)))
+    assert key in str(exc.value)
+
+
+@pytest.mark.parametrize("key,line_start,bad", [
+    ("methodology.transform.form", "  transform:",
+     "  transform: {form: sideways}"),
+    ("methodology.transform.stage", "  transform:",
+     "  transform: {form: log1p, stage: sideways}"),
+])
+def test_transform_enums_name_the_key_and_the_allowed_values(tmp_path, key,
+                                                              line_start,
+                                                              bad):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap(line_start, bad)))
+    message = str(exc.value)
+    assert key in message
+    for allowed in REFERENCE_KNOBS[key]:
+        assert str(allowed) in message
+
+
+@pytest.mark.parametrize("profile", ["code-2025", "manuscript"])
+def test_shipped_profiles_keep_transform_form_none(profile, tmp_path):
+    """Neither shipped profile adopts a transform — this ticket makes the
+    alternatives measurable, it does not choose (spec § 2). Every existing
+    expected value and production fixture must therefore be untouched."""
+    cfg = load_config(profile, data_dir=str(tmp_path))
+    assert cfg.methodology.transform.form == "none"
+    assert cfg.methodology.transform.stage is None

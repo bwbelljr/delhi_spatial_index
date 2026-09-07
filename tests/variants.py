@@ -143,6 +143,23 @@ VARIANTS = {
         "decay": {"form": "inverse_linear", "distance": "centroid",
                   "distance_unit": "km"},
     },
+    # DEL-34: the index transforms — alternatives to today's `none` for the
+    # compression Eq. 2's per-service min-max produces on a heavily
+    # right-skewed PCEN distribution (spec § 1). Neither shipped profile
+    # adopts one; this is measurement machinery, scored by both
+    # implementations like every other methodology value.
+    "transform_log1p_pcen": {
+        "transform": {"form": "log1p", "stage": "pcen"},
+    },
+    "transform_log1p_psi": {
+        "transform": {"form": "log1p", "stage": "psi"},
+    },
+    "transform_cbrt_pcen": {
+        "transform": {"form": "cbrt", "stage": "pcen"},
+    },
+    "transform_cbrt_psi": {
+        "transform": {"form": "cbrt", "stage": "psi"},
+    },
 }
 
 BAND_RADII_KM = (0.0, 0.25, 0.75, 1.0, 5.0, 10.0)

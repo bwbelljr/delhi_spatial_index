@@ -15,8 +15,8 @@ import pytest
 
 from tests.cities import CITIES, MESSY, ORACULUM
 from tests.reference_impl import (
-    RULESETS, VARIANT_KNOBS, VARIANT_RULESETS, adjacency, apply_barrier,
-    compute_city, partial_weights, shared_amounts,
+    POINT_SERVICES, RULESETS, VARIANT_KNOBS, VARIANT_RULESETS, adjacency,
+    apply_barrier, compute_city, partial_weights, shared_amounts,
 )
 from tests.variants import (
     ADDED_BAND_PAIRS, BAND_RADII_KM, EXPECTED_BAND_PAIRS, VARIANTS,
@@ -564,3 +564,59 @@ def test_partial_5m_outside_is_each_of_its_halves_on_the_city_that_shows_it():
     for column in overlap_only.columns:
         assert list(both[column]) == pytest.approx(
             list(overlap_only[column]), abs=1e-12), ("messy", column)
+
+
+# --- DEL-34: the index transforms (spec § 3, § 5) -----------------------
+TRANSFORM_VARIANTS = ("transform_log1p_pcen", "transform_log1p_psi",
+                     "transform_cbrt_pcen", "transform_cbrt_psi")
+
+
+@pytest.mark.parametrize("variant_name", TRANSFORM_VARIANTS)
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_transform_preserves_pcen_ordering_within_every_service(city,
+                                                                 variant_name):
+    """THE property test that matters most (spec § 5): a monotone transform
+    must not change the ORDERING of settlements within a service, only the
+    spacing. So for every variant, the rank correlation of each `*_pcen`
+    column against `none` must be exactly 1 — checked here as rank EQUALITY,
+    which is exact and avoids floating-point noise in a correlation
+    coefficient.
+
+    `_pcen` stage variants genuinely reshape these columns (spec § 3: the
+    transform BECOMES the reported PCEN); `_psi` stage variants never touch
+    them at all, so the equality holds trivially there too — both are
+    asserted the same way, which is the point: the invariant holds
+    regardless of where the transform is applied.
+    """
+    baseline = scored(city, RULESETS["code"])
+    transformed = scored(city, VARIANT_RULESETS[variant_name])
+    for svc in POINT_SERVICES + ("road",):
+        col = f"{svc}_pcen"
+        assert (baseline[col].rank() == transformed[col].rank()).all(), \
+            (city.name, variant_name, col)
+
+
+def test_transform_log1p_pcen_matches_the_named_function_on_oraculum():
+    """A hand-checkable pin, in the style of every other item in this file:
+    `bank_pcen` under `transform_log1p_pcen` is log1p of the `code` base's
+    `bank_pcen`, settlement by settlement."""
+    baseline = scored(ORACULUM, RULESETS["code"])
+    transformed = scored(ORACULUM, VARIANT_RULESETS["transform_log1p_pcen"])
+    for sid in baseline.index:
+        assert transformed.loc[sid, "bank_pcen"] == pytest.approx(
+            math.log1p(baseline.loc[sid, "bank_pcen"]), abs=1e-12), sid
+
+
+def test_transform_cbrt_psi_matches_the_named_function_on_oraculum():
+    """The composite pin: `psi_eq1` under `transform_cbrt_psi` is cbrt of
+    the `code` base's `psi_eq1` — the transform never touches `*_pcen` at
+    this stage, which the rank test above also proves."""
+    baseline = scored(ORACULUM, RULESETS["code"])
+    transformed = scored(ORACULUM, VARIANT_RULESETS["transform_cbrt_psi"])
+    for sid in baseline.index:
+        assert transformed.loc[sid, "psi_eq1"] == pytest.approx(
+            math.cbrt(baseline.loc[sid, "psi_eq1"]), abs=1e-12), sid
+        for svc in POINT_SERVICES + ("road",):
+            col = f"{svc}_pcen"
+            assert transformed.loc[sid, col] == baseline.loc[sid, col], \
+                (sid, col)

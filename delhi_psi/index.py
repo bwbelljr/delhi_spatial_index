@@ -190,6 +190,57 @@ def shared_amounts(polygon_gdf, service_gdf, *, kind, amount_col,
 
 DECAY_FORMS = ("inverse_linear", "none", "inverse_power", "exponential")
 
+# DEL-34: the two alternatives to `none` — Eq. 2's per-service min-max on a
+# heavily right-skewed PCEN distribution produces a mass point at 0 larger
+# than a decile (docs/data/phase6_sweep.md). Both are pure, parameter-free
+# functions of a single value, which is what makes them cheap to pin: the
+# reference implementation and production must agree pointwise, with no
+# fitted state (unlike Yeo-Johnson, deliberately excluded — spec § 3).
+TRANSFORM_FORMS = ("none", "log1p", "cbrt")
+TRANSFORM_STAGES = ("pcen", "psi")
+
+
+def _apply_transform(value, transform_form):
+    """The transform itself (spec § 3): none | log1p | cbrt.
+
+    none:  identity — today's behaviour.
+    log1p: log(1 + x) — defined at 0 (many settlements own nothing), the
+        standard remedy for right skew with a zero floor.
+    cbrt:  x^(1/3) — gentler than log, and unlike sqrt defined and monotone
+        for any input this pipeline can produce.
+    """
+    if transform_form == "none":
+        return value
+    if transform_form == "log1p":
+        return math.log1p(value)
+    if transform_form == "cbrt":
+        return math.cbrt(value)
+    raise ValueError(
+        f"unknown transform form {transform_form!r}; allowed values: "
+        f"{list(TRANSFORM_FORMS)}")
+
+
+def _check_transform(transform_form, transform_stage):
+    """`transform_stage` is required iff `transform_form` is not `none`, and
+    rejected when it is — the same conditional shape `_decay` enforces for
+    `exponent`/`scale_km`. Probed once by every caller, even one whose OWN
+    stage does not match, so a bad combination fails even on a city with no
+    rows at all."""
+    if transform_form not in TRANSFORM_FORMS:
+        raise ValueError(
+            f"unknown transform form {transform_form!r}; allowed values: "
+            f"{list(TRANSFORM_FORMS)}")
+    if transform_form == "none":
+        if transform_stage is not None:
+            raise ValueError(
+                f"transform_stage {transform_stage!r} is not used by "
+                "transform form 'none'; it is used when form is 'log1p' or "
+                "'cbrt'")
+    elif transform_stage not in TRANSFORM_STAGES:
+        raise ValueError(
+            f"transform form {transform_form!r} requires transform_stage in "
+            f"{list(TRANSFORM_STAGES)}, got {transform_stage!r}")
+
 
 def _decay(distance_km, decay_form, distance_unit, *, exponent=None,
            scale_km=None):
@@ -411,10 +462,19 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
                   absent_neighbor="swallowed", include_neighbors=True,
                   decay_form="inverse_linear", distance_unit="km",
                   exponent=None, scale_km=None,
+                  transform_form="none", transform_stage=None,
                   pop_col="population", area_col="area_km2",
                   id_col="USO_AREA_U"):
     """pcen then minmax for one service — replaces BOTH create_service_index
-    variants (DEL-16). Fed by point_counts() or road_lengths()."""
+    variants (DEL-16). Fed by point_counts() or road_lengths().
+
+    transform_stage="pcen" (DEL-34): the reported `*_pcen` column BECOMES
+    the transformed value — `_apply_transform` runs BEFORE `minmax`, which
+    is what attacks the compression at its source (spec § 3). A monotone
+    transform never changes the ordering of settlements within a service,
+    only the spacing (spec § 5).
+    """
+    _check_transform(transform_form, transform_stage)
     pcen_col = f"{service}_pcen"
     idx_col = f"{service}_idx"
     out = pcen(polygon_gdf, amount_col=amount_col, pcen_col=pcen_col,
@@ -425,16 +485,30 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
                distance_unit=distance_unit, exponent=exponent,
                scale_km=scale_km, pop_col=pop_col,
                area_col=area_col, id_col=id_col)
+    if transform_stage == "pcen":
+        out[pcen_col] = out[pcen_col].map(
+            lambda value: _apply_transform(value, transform_form))
     return minmax(out, source_col=pcen_col, target_col=idx_col)
 
 
-def overall_psi(polygon_gdf, *, second_normalization):
+def overall_psi(polygon_gdf, *, second_normalization, transform_form="none",
+                transform_stage=None):
     """Eq. 1: the mean of every `*_idx` column, plus the optional second
-    normalization (`norm_psi`); the column is absent when it is off."""
+    normalization (`norm_psi`); the column is absent when it is off.
+
+    transform_stage="psi" (DEL-34): the composite `unnorm_psi` is
+    transformed BEFORE the second normalization — the 2021 notebook's
+    `log(unnorm_psi + 1)`. It re-spreads the final score but cannot undo
+    per-service compression that has already happened (spec § 3).
+    """
+    _check_transform(transform_form, transform_stage)
     out = polygon_gdf.copy()
     idx_columns = [column for column in out.columns
                    if column.endswith("_idx")]
     out["unnorm_psi"] = out[idx_columns].mean(axis=1)
+    if transform_stage == "psi":
+        out["unnorm_psi"] = out["unnorm_psi"].map(
+            lambda value: _apply_transform(value, transform_form))
     if second_normalization:
         out = minmax(out, source_col="unnorm_psi", target_col="norm_psi")
     return out

@@ -104,6 +104,10 @@ EXTRA_PARAMS = {
         {"barrier_buffer_m": 5.0},
     ("methodology.decay.form", "inverse_power"): {"exponent": 2},
     ("methodology.decay.form", "exponential"): {"scale_km": 1.0},
+    ("methodology.transform.form", "log1p"): {"transform_stage": "pcen"},
+    ("methodology.transform.form", "cbrt"): {"transform_stage": "pcen"},
+    ("methodology.transform.stage", "pcen"): {"transform_form": "log1p"},
+    ("methodology.transform.stage", "psi"): {"transform_form": "log1p"},
 }
 
 
@@ -119,6 +123,8 @@ def test_every_mapped_knob_is_one_the_reference_actually_implements():
         "methodology.overlap.lending": "overlap_lending",
         "methodology.decay.form": "decay_form",
         "methodology.decay.distance": "decay_distance",
+        "methodology.transform.form": "transform_form",
+        "methodology.transform.stage": "transform_stage",
         "methodology.roads": "roads_formula",
         "methodology.second_normalization": "second_norm",
         "methodology.exclusion.absent_neighbor": "absent_neighbor_contribution",
