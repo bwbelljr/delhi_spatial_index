@@ -41,6 +41,7 @@ SWEEP_PROFILES = {
 # whole file exists to catch, in a different block (spec § 3).
 SERVICE_PROFILES = {
     "services-no-ration": {"point.ration": None},
+    "services-no-bank": {"point.bank": None},
 }
 
 # The union of every one-factor profile this guard knows about, whichever

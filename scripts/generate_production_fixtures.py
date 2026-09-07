@@ -37,7 +37,7 @@ PROFILES = ("code-2025", "manuscript",
             "adj-touch", "band-0km", "band-1km", "band-5km", "band-10km",
             "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
             "decay-exp5km", "decay-boundary",
-            "services-no-ration")
+            "services-no-ration", "services-no-bank")
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
 LINE_SERVICES = ("road",)
