@@ -27,6 +27,9 @@ methodology:
     distance: centroid              # centroid | boundary — the manuscript's d_ij,
                                     # centroid-to-centroid as always
     distance_unit: km               # manuscript is silent on the unit (spec 8)
+  transform:
+    form: none                      # none | log1p | cbrt (DEL-34); no stage key
+                                    # when form is none
   roads: eq4_own_only
   second_normalization: false                        # no norm_psi column
   exclusion: {types: [], stage: post_neighbors, absent_neighbor: contributes}

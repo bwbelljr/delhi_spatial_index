@@ -52,6 +52,9 @@ methodology:
     exponent: 2                     # THE CHANGE (2 of 2) — steep falloff
     distance: centroid
     distance_unit: km
+  transform:
+    form: none                      # none | log1p | cbrt (DEL-34); no stage key
+                                    # when form is none
   roads: decayed
   second_normalization: true
   exclusion:

@@ -45,6 +45,9 @@ REFERENCE_KNOBS = {
                                "exponential": "exponential"},
     "methodology.decay.distance": {"centroid": "centroid",
                                    "boundary": "boundary"},
+    "methodology.transform.form": {"none": "none", "log1p": "log1p",
+                                   "cbrt": "cbrt"},
+    "methodology.transform.stage": {"pcen": "pcen", "psi": "psi"},
     "methodology.roads": {"decayed": "decayed", "eq4_own_only": "eq4"},
     "methodology.second_normalization": {True: True, False: False},
     "methodology.exclusion.stage": {"post_neighbors": False,
@@ -62,6 +65,8 @@ ENUM_KEYS = (
     "methodology.overlap.lending",
     "methodology.decay.form",
     "methodology.decay.distance",
+    "methodology.transform.form",
+    "methodology.transform.stage",
     "methodology.roads",
     "methodology.exclusion.stage",
     "methodology.exclusion.absent_neighbor",
@@ -82,6 +87,8 @@ BarrierRule = _make_enum("BarrierRule", "methodology.barrier.rule")
 OverlapLending = _make_enum("OverlapLending", "methodology.overlap.lending")
 DecayForm = _make_enum("DecayForm", "methodology.decay.form")
 DecayDistance = _make_enum("DecayDistance", "methodology.decay.distance")
+TransformForm = _make_enum("TransformForm", "methodology.transform.form")
+TransformStage = _make_enum("TransformStage", "methodology.transform.stage")
 RoadsFormula = _make_enum("RoadsFormula", "methodology.roads")
 ExclusionStage = _make_enum("ExclusionStage", "methodology.exclusion.stage")
 AbsentNeighbor = _make_enum("AbsentNeighbor",
@@ -94,6 +101,8 @@ ENUMS = {
     "methodology.overlap.lending": OverlapLending,
     "methodology.decay.form": DecayForm,
     "methodology.decay.distance": DecayDistance,
+    "methodology.transform.form": TransformForm,
+    "methodology.transform.stage": TransformStage,
     "methodology.roads": RoadsFormula,
     "methodology.exclusion.stage": ExclusionStage,
     "methodology.exclusion.absent_neighbor": AbsentNeighbor,
@@ -221,6 +230,18 @@ class DecayConfig:
 
 
 @dataclass(frozen=True)
+class TransformConfig:
+    # DEL-34: an alternative to today's `none` (the compression Eq. 2's
+    # min-max produces on a heavily right-skewed distribution — spec § 1).
+    # Neither shipped profile adopts one; this is measurement machinery.
+    form: TransformForm
+    # None is "not applicable", never a default for the YAML key: it is
+    # required whenever form is not `none` (which *_pcen or the composite it
+    # transforms) and rejected when form IS `none`.
+    stage: TransformStage | None = None
+
+
+@dataclass(frozen=True)
 class ExclusionConfig:
     types: tuple
     stage: ExclusionStage
@@ -233,6 +254,7 @@ class MethodologyConfig:
     barrier: BarrierConfig
     overlap: OverlapConfig
     decay: DecayConfig
+    transform: TransformConfig
     roads: RoadsFormula
     second_normalization: bool
     exclusion: ExclusionConfig
@@ -369,6 +391,22 @@ def _conditional_number(mapping, key, prefix, *, used_by, applies, minimum,
     return float(value)
 
 
+def _conditional_enum(mapping, key, prefix, *, used_by, applies):
+    """The enum equivalent of `_conditional_number`: a value exactly one
+    other value uses, required by that one and refused by every other.
+
+    `used_by` is the dotted key and value(s) that DO use it, so the message
+    tells the reader which line to change.
+    """
+    dotted = f"{prefix}.{key}"
+    if not applies:
+        if key in mapping:
+            raise ConfigError(
+                f"{dotted}: not allowed here — it is only used by {used_by}")
+        return None
+    return _coerce_enum(dotted, _require(mapping, key, prefix))
+
+
 # --- loader ------------------------------------------------------------
 class _UniqueKeyLoader(yaml.SafeLoader):
     """SafeLoader that refuses a repeated mapping key.
@@ -412,8 +450,9 @@ def _profile_path(profile_or_path):
 
 
 def _methodology(raw, *, allowed_categories):
-    _reject_unknown(raw, {"adjacency", "barrier", "overlap", "decay", "roads",
-                          "second_normalization", "exclusion"}, "methodology")
+    _reject_unknown(raw, {"adjacency", "barrier", "overlap", "decay",
+                          "transform", "roads", "second_normalization",
+                          "exclusion"}, "methodology")
 
     adjacency_raw = _require(raw, "adjacency", "methodology")
     _reject_unknown(adjacency_raw, {"rule", "max_distance_km"},
@@ -487,6 +526,18 @@ def _methodology(raw, *, allowed_categories):
             applies=form == DecayForm.EXPONENTIAL,
             minimum=0, strict=True))
 
+    transform_raw = _require(raw, "transform", "methodology")
+    _reject_unknown(transform_raw, {"form", "stage"}, "methodology.transform")
+    transform_form = _coerce_enum(
+        "methodology.transform.form",
+        _require(transform_raw, "form", "methodology.transform"))
+    transform = TransformConfig(
+        form=transform_form,
+        stage=_conditional_enum(
+            transform_raw, "stage", "methodology.transform",
+            used_by="methodology.transform.form: log1p or cbrt",
+            applies=transform_form != TransformForm.NONE))
+
     exclusion_raw = _require(raw, "exclusion", "methodology")
     _reject_unknown(exclusion_raw, {"types", "stage", "absent_neighbor"},
                     "methodology.exclusion")
@@ -517,6 +568,7 @@ def _methodology(raw, *, allowed_categories):
         barrier=barrier,
         overlap=overlap,
         decay=decay,
+        transform=transform,
         roads=_coerce_enum("methodology.roads",
                            _require(raw, "roads", "methodology")),
         second_normalization=_bool(

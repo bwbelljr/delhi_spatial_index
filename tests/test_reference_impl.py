@@ -589,7 +589,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
         BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
         ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
-        RoadsFormula,
+        RoadsFormula, TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -602,6 +602,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         overlap=OverlapConfig(lending=OverlapLending.WHOLE),
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
+        transform=TransformConfig(form=TransformForm.NONE),
         roads=RoadsFormula.DECAYED,
         second_normalization=True,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
@@ -678,7 +679,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
         BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
         ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
-        RoadsFormula,
+        RoadsFormula, TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -691,6 +692,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         overlap=OverlapConfig(lending=OverlapLending.OUTSIDE_RECEIVER),
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
+        transform=TransformConfig(form=TransformForm.NONE),
         roads=RoadsFormula.DECAYED,
         second_normalization=True,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,

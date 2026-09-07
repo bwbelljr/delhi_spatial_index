@@ -108,9 +108,28 @@ both implementations on both fixture cities.
 **One property worth asserting beyond agreement:** a monotone transform must
 not change the *ordering* of settlements within a service, only the spacing.
 So for any variant, the rank correlation of each `*_pcen` column against
-`none` must be exactly 1. If it is not, the transform has been applied
-somewhere it should not be — for instance after min-max rather than before.
-That is a cheap test and it catches the most likely implementation error.
+`none` must be exactly 1.
+
+**Corrected after implementation.** This spec then claimed the test "catches
+the most likely implementation error — applying the transform after min-max
+rather than before". **It cannot, by mathematical necessity**, and the
+implementer said so rather than quietly keeping the claim. Min-max is
+monotone; `log1p` and `cbrt` are monotone; a composition of monotone functions
+is monotone in either order. Verified empirically on 50 exponential draws:
+`minmax(log1p(x))` and `log1p(minmax(x))` have **identical orderings** and
+**different values**.
+
+So the rank-correlation test is a real invariant — it would catch a
+non-monotone transform, or one applied to the wrong column — but the thing
+that catches a misplaced *stage* is the numeric comparison against the
+committed fixtures and the reference implementation. The property test stays,
+described accurately.
+
+The general lesson, and this is the third time this cycle: a test's stated
+purpose is a claim, and claims need checking as much as the code does. Two
+earlier cases were a threshold pinned from one side only and a decile gate
+that fired on the wrong condition. Here the assertion is correct and its
+*justification* was wrong, which is harder to notice.
 
 ## 6. Out of scope
 

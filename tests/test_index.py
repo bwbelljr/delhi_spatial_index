@@ -260,6 +260,167 @@ def test_pcen_uses_the_form_and_its_parameter():
                                         abs=1e-12)   # 0.0025
 
 
+# --- DEL-34: the two index transforms (spec § 3) -----------------------
+@pytest.mark.parametrize("form,stage", [
+    ("none", None), ("log1p", "pcen"), ("log1p", "psi"),
+    ("cbrt", "pcen"), ("cbrt", "psi"),
+])
+def test_check_transform_accepts_every_valid_combination(form, stage):
+    index._check_transform(form, stage)   # must not raise
+
+
+@pytest.mark.parametrize("form,stage,match", [
+    ("sideways", None, "sideways"),
+    ("log1p", None, "transform_stage"),
+    ("cbrt", "sideways", "transform_stage"),
+    ("none", "pcen", "'none'"),
+])
+def test_check_transform_rejects_bad_combinations(form, stage, match):
+    with pytest.raises(ValueError, match=match):
+        index._check_transform(form, stage)
+
+
+@pytest.mark.parametrize("form,value,expected", [
+    ("none", 0.02, 0.02),
+    ("log1p", 0.02, math.log1p(0.02)),
+    ("cbrt", 0.02, math.cbrt(0.02)),
+    ("cbrt", -8.0, -2.0),
+])
+def test_apply_transform_matches_the_named_function(form, value, expected):
+    assert index._apply_transform(value, form) == pytest.approx(
+        expected, abs=1e-15)
+
+
+@pytest.mark.parametrize("kwargs,match", [
+    (dict(transform_form="sideways"), "sideways"),
+    (dict(transform_form="log1p"), "transform_stage"),
+    (dict(transform_form="none", transform_stage="pcen"), "'none'"),
+])
+def test_service_index_rejects_bad_transform_combinations(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        index.service_index(city_with_neighbours(), "clinic_count",
+                            service="clinic", denominator="pop", **kwargs)
+
+
+@pytest.mark.parametrize("kwargs,match", [
+    (dict(transform_form="sideways"), "sideways"),
+    (dict(transform_form="log1p"), "transform_stage"),
+    (dict(transform_form="none", transform_stage="psi"), "'none'"),
+])
+def test_overall_psi_rejects_bad_transform_combinations(kwargs, match):
+    frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
+    with pytest.raises(ValueError, match=match):
+        index.overall_psi(frame, second_normalization=True, **kwargs)
+
+
+@pytest.mark.parametrize("transform_form", ["log1p", "cbrt"])
+def test_service_index_transform_pcen_stage_replaces_the_pcen_column(
+        transform_form):
+    """stage='pcen': the transform runs BEFORE minmax, and the reported
+    `*_pcen` column IS the transformed value (spec § 3)."""
+    got = index.service_index(city_with_neighbours(), "clinic_count",
+                              service="clinic", denominator="pop",
+                              transform_form=transform_form,
+                              transform_stage="pcen")
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["X"] == pytest.approx(
+        index._apply_transform(0.02, transform_form), abs=1e-15)
+    assert values["Y"] == pytest.approx(
+        index._apply_transform(0.005, transform_form), abs=1e-15)
+    # X's raw pcen (0.02) is still the larger one, so its idx is still 1.0.
+    idx = got.set_index("USO_AREA_U")["clinic_idx"]
+    assert list(idx) == pytest.approx([1.0, 0.0], abs=1e-12)
+
+
+@pytest.mark.parametrize("transform_form", ["log1p", "cbrt"])
+def test_service_index_stage_psi_leaves_pcen_untouched(transform_form):
+    """stage='psi' does not touch this function at all — service_index only
+    ever sees transform_stage='pcen' or None from the pipeline's own call,
+    but the guard is the same either way."""
+    got = index.service_index(city_with_neighbours(), "clinic_count",
+                              service="clinic", denominator="pop",
+                              transform_form=transform_form,
+                              transform_stage="psi")
+    values = got.set_index("USO_AREA_U")["clinic_pcen"]
+    assert values["X"] == pytest.approx(0.02, abs=1e-12)
+    assert values["Y"] == pytest.approx(0.005, abs=1e-12)
+
+
+@pytest.mark.parametrize("transform_form", ["log1p", "cbrt"])
+def test_overall_psi_transform_psi_stage_transforms_before_second_minmax(
+        transform_form):
+    """stage='psi': `unnorm_psi` is transformed before the second
+    normalization (the 2021 notebook's log(unnorm_psi + 1) — spec § 3)."""
+    frame = pd.DataFrame({"a_idx": [0.0, 1.0], "b_idx": [1.0, 1.0]})
+    got = index.overall_psi(frame, second_normalization=True,
+                            transform_form=transform_form,
+                            transform_stage="psi")
+    assert list(got["unnorm_psi"]) == pytest.approx(
+        [index._apply_transform(0.5, transform_form),
+         index._apply_transform(1.0, transform_form)], abs=1e-15)
+    assert list(got["norm_psi"]) == pytest.approx([0.0, 1.0], abs=1e-12)
+
+
+def _four_settlements_with_skewed_pcen():
+    """A-D own 0/1/5/40 clinics on equal population — a right-skewed PCEN
+    distribution (0, 0.1, 0.5, 4.0), the shape DEL-34 exists for."""
+    return gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B", "C", "D"],
+         "population": [10.0, 10.0, 10.0, 10.0],
+         "area_km2": [1.0, 1.0, 1.0, 1.0],
+         "nbrs_dist_bbox": [[], [], [], []],
+         "clinic_count": [0, 1, 5, 40]},
+        geometry=[Point(0, 0), Point(1, 0), Point(2, 0), Point(3, 0)],
+        crs="EPSG:7760")
+
+
+@pytest.mark.parametrize("transform_form", ["log1p", "cbrt"])
+def test_transform_preserves_pcen_and_idx_ordering_within_a_service(
+        transform_form):
+    """THE property test (spec § 5): a monotone transform must not change
+    the ORDERING of settlements within a service, only the spacing. The
+    rank correlation of the transformed `*_pcen` column against `none`'s
+    must be exactly 1 — checked here as rank EQUALITY, which is exact and
+    avoids floating-point noise in a correlation coefficient. If it is not,
+    the transform has been applied somewhere it should not be (e.g. after
+    min-max instead of before)."""
+    baseline = index.service_index(_four_settlements_with_skewed_pcen(),
+                                   "clinic_count", service="clinic",
+                                   denominator="pop")
+    transformed = index.service_index(_four_settlements_with_skewed_pcen(),
+                                      "clinic_count", service="clinic",
+                                      denominator="pop",
+                                      transform_form=transform_form,
+                                      transform_stage="pcen")
+    base_pcen = baseline.set_index("USO_AREA_U")["clinic_pcen"]
+    new_pcen = transformed.set_index("USO_AREA_U")["clinic_pcen"]
+    assert (base_pcen.rank() == new_pcen.rank()).all()
+    base_idx = baseline.set_index("USO_AREA_U")["clinic_idx"]
+    new_idx = transformed.set_index("USO_AREA_U")["clinic_idx"]
+    assert (base_idx.rank() == new_idx.rank()).all()
+
+
+@pytest.mark.parametrize("transform_form,expected_idx", [
+    ("log1p", [0.0, math.log1p(0.1) / math.log1p(4.0),
+              math.log1p(0.5) / math.log1p(4.0), 1.0]),
+    ("cbrt", [0.0, math.cbrt(0.1) / math.cbrt(4.0),
+             math.cbrt(0.5) / math.cbrt(4.0), 1.0]),
+])
+def test_transform_pcen_stage_reshapes_the_idx_spacing_not_just_the_order(
+        transform_form, expected_idx):
+    """The numeric companion to the ordering property test above: `idx` must
+    equal minmax(transform(pcen)), NOT transform(minmax(pcen)) — the two
+    happen to share an ordering (both are increasing in raw pcen) but differ
+    in VALUE, which is what would actually surface a transform applied on
+    the wrong side of the min-max."""
+    got = index.service_index(_four_settlements_with_skewed_pcen(),
+                              "clinic_count", service="clinic",
+                              denominator="pop", transform_form=transform_form,
+                              transform_stage="pcen")
+    idx = got.set_index("USO_AREA_U").loc[["A", "B", "C", "D"], "clinic_idx"]
+    assert list(idx) == pytest.approx(expected_idx, abs=1e-12)
+
+
 def test_service_index_forwards_the_decay_parameters():
     """`service_index` is what `index_frames` actually calls, so the
     parameters have to survive that hop too: `exponential` with scale_km 1

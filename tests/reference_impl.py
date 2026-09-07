@@ -50,6 +50,8 @@ VARIANT_KNOBS = {
     ("decay", "exponent"): "exponent",
     ("decay", "scale_km"): "scale_km",
     ("overlap", "lending"): "overlap_lending",
+    ("transform", "form"): "transform_form",
+    ("transform", "stage"): "transform_stage",
 }
 # `barrier.combine` has no reference knob: the reference uses EVERY barrier
 # row, which is what `any` means on a one-layer city, and both fixture cities
@@ -315,13 +317,28 @@ def shared_amounts(nbrs, settlements, services):
 DECAY_FORMS = ("inverse_linear", "none", "inverse_power", "exponential")
 DECAY_DISTANCES = ("centroid", "boundary")
 
+# DEL-34: alternatives to `none` for the compressed 0-1 effect sizes (spec
+# § 3). Independently derived from the equations — this module must never
+# import delhi_psi.index.
+TRANSFORM_FORMS = ("none", "log1p", "cbrt")
+TRANSFORM_STAGES = ("pcen", "psi")
+
+
+def _apply_transform(value, transform_form):
+    if transform_form == "none":
+        return value
+    if transform_form == "log1p":
+        return math.log1p(value)
+    return math.cbrt(value)
+
 
 def compute_city(settlements, services, barriers, *, adjacency_rule,
                  barrier_rule, roads_formula, scenario, denom, second_norm,
                  absent_neighbor_contribution, scenarios=None,
                  max_distance_km=None, barrier_buffer_m=None,
                  decay_form="inverse_linear", exponent=None, scale_km=None,
-                 decay_distance="centroid", overlap_lending="whole"):
+                 decay_distance="centroid", overlap_lending="whole",
+                 transform_form="none", transform_stage=None):
     # Every parameter a form does not use is REJECTED, not ignored — the
     # mapped-knob test relies on an unimplemented combination raising.
     if decay_form not in DECAY_FORMS:
@@ -345,6 +362,19 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     elif scale_km is not None:
         raise ValueError(f"scale_km is not used by decay form "
                          f"{decay_form!r}; it is used by 'exponential'")
+    if transform_form not in TRANSFORM_FORMS:
+        raise ValueError(f"unknown transform form {transform_form!r}; "
+                         f"allowed values: {list(TRANSFORM_FORMS)}")
+    if transform_form == "none":
+        if transform_stage is not None:
+            raise ValueError(
+                f"transform_stage {transform_stage!r} is not used by "
+                "transform form 'none'; it is used when form is 'log1p' or "
+                "'cbrt'")
+    elif transform_stage not in TRANSFORM_STAGES:
+        raise ValueError(
+            f"transform form {transform_form!r} requires transform_stage in "
+            f"{list(TRANSFORM_STAGES)}, got {transform_stage!r}")
 
     # `scenarios` defaults to the module table, so every existing call keeps
     # working; a caller may pass its own WITHOUT mutating the global (which
@@ -415,12 +445,16 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                 decayed_sum += w * lent * contribution_weight(i, j)
             if svc == "road":
                 row["road_length_km"] = own
-                pcen = (own if roads_formula == "eq4"
-                        else own + decayed_sum) / denominator(i)
-                row["road_pcen"] = pcen
+                pcen_value = (own if roads_formula == "eq4"
+                             else own + decayed_sum) / denominator(i)
             else:
                 row[f"{svc}_count"] = own
-                row[f"{svc}_pcen"] = (own + decayed_sum) / denominator(i)
+                pcen_value = (own + decayed_sum) / denominator(i)
+            # DEL-34, stage='pcen': the reported `*_pcen` value BECOMES the
+            # transformed value, before Eq. 2's min-max below.
+            if transform_stage == "pcen":
+                pcen_value = _apply_transform(pcen_value, transform_form)
+            row[f"{svc}_pcen"] = pcen_value
         rows[i] = row
 
     df = pd.DataFrame.from_dict(rows, orient="index")
@@ -437,6 +471,11 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
         df[f"{svc}_idx"] = (pcen - lo) / (hi - lo)
         idx_cols.append(f"{svc}_idx")
     df["psi_eq1"] = df[idx_cols].mean(axis=1)
+    # DEL-34, stage='psi': the composite is transformed BEFORE the second
+    # normalization — the 2021 notebook's log(unnorm_psi + 1).
+    if transform_stage == "psi":
+        df["psi_eq1"] = df["psi_eq1"].map(
+            lambda value: _apply_transform(value, transform_form))
     if second_norm:
         p = df["psi_eq1"]
         lo, hi = p.min(), p.max()

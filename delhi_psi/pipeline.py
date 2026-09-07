@@ -235,10 +235,14 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
             distance_unit=methodology.decay.distance_unit,
             exponent=methodology.decay.exponent,
             scale_km=methodology.decay.scale_km,
+            transform_form=methodology.transform.form,
+            transform_stage=methodology.transform.stage,
             id_col=id_col)
 
     result = index.overall_psi(
-        out, second_normalization=methodology.second_normalization)
+        out, second_normalization=methodology.second_normalization,
+        transform_form=methodology.transform.form,
+        transform_stage=methodology.transform.stage)
     for column in (NBRS_DIST_BOUNDARY_COL, NBRS_WEIGHT_COL):
         if column in result.columns:
             result = result.drop(columns=[column])
