@@ -98,11 +98,47 @@ oracle is for, and it is a real and unusual guarantee, but it is not the same
 thing. Saying so plainly is better than implying more; a methods reviewer will
 ask, and the answer is stronger when we volunteered it.
 
-One line stays soft: **DEL-14 is formally Raj's/the group's**, and Bob's steer
-is an intent rather than a ratified decision. The README states what is
-released today, which needs no retraction if the decision later loosens (add
-a section) or tightens (nothing changes). No text asserts that the question is
-settled.
+**Confirmed by Bob twice on 7 Sep** ("the code + oracle is the artifact to
+release", "I don't think we are releasing our delhi data"), so the README
+states it as the release's actual shape rather than hedging it as a pending
+question. DEL-14 remains the ticket of record for the group's formal
+data-release posture, and nothing here forecloses it: if it later loosens,
+the README gains a section; if it holds, nothing changes.
+
+## 4a. What the code is FOR — an overclaim to remove
+
+Today's README, first paragraph, says: *"Although the data is not provided in
+this repository, the scripts can be used to generate an urban public services
+index in another city."*
+
+**Bob's steer, 7 Sep 2026: that is not the intent, and it is not true enough
+to print.** Someone with their own city's data would have real adaptation work
+to do. Checked against the code rather than assumed:
+
+- The layer paths, id/type columns, service names and category mapping ARE
+  config values — so the parameterisation is genuine as far as it goes.
+- But `crs.epsg` defaults to **7760**, an India-specific projection.
+- The category vocabulary is Delhi's **`uso-10`** scheme, and the exclusion
+  rules are written in its terms (`RV`, `JJC`, …).
+- `ndmc_center` — distance to Delhi's city centre — is optional but writes a
+  column literally named `ndmc_dist_km` (`geometry.py:97`).
+- The service taxonomy (bank / health / police / ration / school / transport
+  / road) is the paper's, not a general one.
+
+So the honest description is a **port**, which is exactly the word DEL-46
+already uses: *"so other cities can validate a port of the method."* The
+release offers three things, and the README should name them in these terms:
+
+1. A **reference implementation** of the method as the paper defines it,
+   specific to Delhi's data model.
+2. A **written methodology** (`docs/methodology-config.md`, the specs, the
+   derivation worksheet) precise enough to port from.
+3. An **oracle** — two hand-built cities with hand-derived expected values —
+   against which somebody porting the method to another city can check that
+   their port computes the same thing.
+
+That is a more useful offer than "point it at your data", and unlike the
+current sentence it is one the repo actually keeps.
 
 ## 5. The README's shape
 

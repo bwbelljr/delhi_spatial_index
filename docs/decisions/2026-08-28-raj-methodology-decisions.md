@@ -1,7 +1,7 @@
 # Methodology decisions — Bob/Raj call, 28 Aug 2026
 
 **Source.** Zoom call "Bob/Raj delhi", Fri 28 Aug 2026, 14:04–14:44 ET.
-Raj's email "meeting notes" (28 Aug 2026, 14:47 ET, to bwbelljr@gmail.com)
+Raj's email "meeting notes" (28 Aug 2026, 14:47 ET, to Bob)
 carries his summary inline and the transcript as the attachment
 `Bob_Raj delhi transcript_2026-08-28_14.44.26.txt`. The transcript is
 **not** committed to this repo (verbatim conversation; the repo is headed

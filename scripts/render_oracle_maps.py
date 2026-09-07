@@ -11,6 +11,7 @@ shape (never color) as their identity channel, since six more categorical
 hues layered on the settlement fills would blow the palette's series budget.
 """
 
+import argparse
 from pathlib import Path
 
 import matplotlib
@@ -544,7 +545,19 @@ def render_divergence():
     plt.close(fig)
 
 
-def main():
+def main(argv=None):
+    # An argument parser for a script that takes no arguments, because the
+    # one thing a stranger types first is `--help` — and without this, that
+    # RAN the script and wrote six files. A tool in a public repo should be
+    # safe to interrogate before it is safe to trust.
+    parser = argparse.ArgumentParser(
+        description=("Render the Oraculum fixture-city figures into "
+                     f"{OUT.relative_to(REPO)}/. Takes no options: the "
+                     "figures are derived entirely from the committed "
+                     "fixtures, so a re-render with nothing changed rewrites "
+                     "the same bytes."))
+    parser.parse_args(argv)
+
     OUT.mkdir(parents=True, exist_ok=True)
     render_city()
     render_exclusion_variants()
