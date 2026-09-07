@@ -77,14 +77,26 @@ profile's in the right way. Specifically, for `services-no-ration` on both
 fixture cities:
 
 - **no `ration_*` metric rows at all** — not zeroed rows, absent ones;
-- **every other settlement's `psi_eq1` and `norm_psi` MOVE**, because Eq. 1
-  averages over the services present and the average is over six terms rather
-  than seven;
+- **every settlement's `psi_eq1` MOVES**, because Eq. 1 averages over the
+  services present and the average is now over six terms rather than seven;
 - **`clinic_count`, `school_count` and the other raw counts do NOT move** —
   dropping a service changes what is averaged, not what is counted.
 
 That third condition is the one that catches a wrong implementation: a filter
 applied in the wrong place would change counts too.
+
+**Corrected after implementation — `norm_psi` does NOT move for every
+settlement, and an earlier draft of this spec wrongly required it to.**
+On Oraculum, `ration_idx` is `0` for every settlement except `D`, so dropping
+ration rescales `unnorm_psi` by exactly 7/6 for all the others — and min-max
+normalisation is invariant under a positive affine transform. Measured: `A`,
+`C` and `IND` tie **bit-for-bit**, `B`, `E` and `RV` differ only in the last
+ulp from summing in a different order, and only `D` genuinely moves.
+
+So the `norm_psi` assertion is "differs somewhere", not "differs everywhere",
+and `psi_eq1` carries the unconditional claim. The implementer found this and
+was right to push back; a spec that demanded the stronger condition would have
+forced either a false test or a contorted implementation.
 
 ## 5. Why DEL-40 is worth building at all
 
