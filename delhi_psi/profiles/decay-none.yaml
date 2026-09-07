@@ -1,0 +1,72 @@
+profile: decay-none
+# A Phase 6 sweep point (DEL-37 / DEL-55): `code-2025` with the DECAY FORM
+# and nothing else moved, so the diff against the baseline's outputs is
+# attributable to the decay weight alone. Every block this file omits —
+# layers, services, crs, validate, paths.data_dir — takes the code-2025
+# default from the loader. `adjacency` is restored to code-2025's `bbox`
+# rule: decay does not change who the neighbours are, which is what lets all
+# six decay points share the one `paths.neighbors_artifact` pinned below.
+#
+# Raj's 28 Aug steer is for forms that spread the neighbour weights UP FROM
+# ZERO. `none` is that limit (every neighbour undecayed) and exponent 2 the
+# steep contrast; without both ends the steer has nothing to be measured
+# against. Decision log § 9.
+#
+# DRY RUN ONLY. Its numbers describe the frozen July 2025 rule set, which
+# Raj's 28 Aug decisions supersede. See
+# docs/superpowers/specs/2026-09-06-phase6-sweep-dry-run-design.md.
+paths:
+  neighbors_artifact: colonies_neighbors_sweep-bbox.joblib
+                                    # PINNED, and shared by all six decay
+                                    # points: the methodology stamp covers
+                                    # adjacency and barrier only, so one bbox
+                                    # preprocess serves every decay point, and
+                                    # check_methodology_stamp refuses the file
+                                    # if that ever stops being true. It is a
+                                    # DIFFERENT name from code-2025's
+                                    # colonies_neighbors.joblib, so a sweep run
+                                    # can never overwrite the proven artifact.
+categories:
+  scheme: uso-10
+  mapping:
+    Planned: Planned
+    UAC: UAC
+    JJC: JJC
+    RUAC: RUAC
+    RV: RV
+    UV: UV
+    SDA: SDA
+    JJR: JJR
+    Industrial: Industrial
+    Other: Other
+methodology:
+  adjacency:
+    rule: bbox
+  barrier:
+    rule: global_asymmetric
+    combine: any
+  overlap:
+    lending: whole
+  decay:
+    form: none                      # THE CHANGE — no distance decay: every
+                                    # neighbour contributes its undecayed
+                                    # weight
+    distance: centroid
+    distance_unit: km
+  roads: decayed
+  second_normalization: true
+  exclusion:
+    types: [RV]
+    stage: post_neighbors
+    absent_neighbor: swallowed
+outputs:
+  denominators: [popdensity]        # ONE denominator: `compute` runs the whole
+                                    # per-link pcen loop once per entry, and on
+                                    # the 10 km band that loop walks 4.37M
+                                    # links. Figure 4's denominator is
+                                    # popdensity; the baseline run carries both
+                                    # and the doc's denominator check compares
+                                    # them once. Spec § 4.3.
+  formats: [csv]                    # the summariser reads CSV; shp/joblib
+                                    # would add ~18 MB per point for nothing
+  name_template: "delhi_psi_{profile}_{denominator}_2020"

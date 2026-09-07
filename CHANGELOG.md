@@ -7,6 +7,106 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **Phase 6 sweep harness + a dry run on `code-2025`** (DEL-55, serving
+  DEL-36 distance bands / DEL-37 decay weights / DEL-39 the adjacency
+  comparison). Eleven sweep profiles, a runner, a summariser, and
+  `docs/data/phase6_sweep.md`. **Every number it produces is provisional by
+  construction** — `code-2025` still carries `bbox` adjacency,
+  `global_asymmetric` barriers and decayed roads, all of which Raj's 28 Aug
+  decisions supersede — and every table in the document says so. The point
+  was to prove the machinery and MEASURE THE COST before the numbers matter,
+  so that Phase 6 against the ratified profile (DEL-31) is a re-run rather
+  than a design exercise.
+  - **Eleven profiles**, each `code-2025` with exactly one factor moved:
+    `adj-touch`, `band-0km/1km/5km/10km`, and `decay-none / -power05 /
+    -power2 / -exp2km / -exp5km / -boundary`. A one-factor guard test
+    (`tests/test_sweep_profiles.py`) proves mechanically that no profile
+    moves a key it does not claim, comparing `methodology` AND `categories`.
+  - **Nothing existing moved.** Both cities' `expected_values.csv` and the
+    `code-2025` / `manuscript` production fixtures are byte-identical;
+    `variants_expected_values.csv` changed by addition only (3,220 lines on
+    messy, 2,254 on oraculum, **zero deletions** by `git diff --numstat`);
+    and the real-data `code-2025` verify still passes at `0.000e+00` on all
+    60 comparisons.
+  - **Seven new `tests/variants.py` rows** put the sweep's own constants
+    through the two-implementation oracle: `decay.form: none`,
+    `inverse_power` at 0.5, `exponential` at 2 and 5 km, and the three real
+    radii. The radii earned their rows against an earlier claim in the spec
+    that they would be redundant: the fixture cities are 4.0 x 3.0 km and
+    21.0 x 2.4 km, not 200 m, so all three radii differ on both — and 1 km
+    lands EXACTLY on the `<=` boundary in both cities (10 km does once on
+    messy). Both implementations agree on every boundary pair, which is now
+    pinned rather than assumed.
+  - `scripts/run_sweep.py` — plans each point against the artifact actually
+    on disk, runs the CLI as a subprocess so one point cannot take the
+    others down, and records cost in a per-point manifest. **The six decay
+    points share one neighbours artifact**, which is safe by construction
+    rather than convention: `check_methodology_stamp` covers the adjacency
+    and barrier blocks, and refuses a mismatch.
+  - `scripts/summarize_sweep.py` — the comparison statistics. **Every
+    cross-point statistic is rank-based**, because PSI levels are NOT
+    comparable across points: Eq. 2's min-max runs per run and widening the
+    neighbourhood inflates everyone at once. A "mean PSI by category" table
+    across points would look rigorous and mean nothing. Decile sets are
+    tie-inclusive and gated, because PSI has a mass point at exactly zero
+    larger than a decile (452 rows at the baseline, 1,834 under the own-only
+    anchor, against a decile of 413) — computed naively, "the bottom 10 %"
+    is decided by sort order, and the same two series gave a Jaccard of
+    0.070 in file order and 0.157 under a random permutation.
+  - **`docs/methodology-config.md` § 3 gains the registration step it was
+    missing**: `tests/test_config.py` asserts the exact set of shipped
+    profiles, so adding one turns the suite red, and the documented
+    procedure never said so.
+  - **The measured cost, which is what DEL-31 needs.** All eleven points ran
+    against the real layer (4,131 reported settlements), total 7.15 h:
+
+    | point | links | preprocess | compute |
+    |---|---|---|---|
+    | `decay-*` (bbox baseline) | 21,211 | 694.6 s cold, then shared | ~70 s each |
+    | `adj-touch` | 14,641 | 91.6 s | 50.4 s |
+    | `band-0km` | 15,462 | 11.7 s | 52.7 s |
+    | `band-1km` | 165,119 | 75.5 s | 569.6 s |
+    | `band-5km` | 1,525,802 | 752.5 s | 5,600.3 s |
+    | `band-10km` | 4,366,055 | 2,576.4 s † | **14,833.1 s (4.12 h)** |
+
+    † measured under concurrent load (an 18-minute test-suite run overlapped
+    it), so it is an upper bound. Every other figure is clean.
+
+    The 10 km link count reproduces August's independent measurement of
+    4,366,055 exactly. Compute is linear in links with a fixed floor. The
+    marginal per-link rate rises across the cheap points (0.002796 → 0.003480
+    → 0.003697 s/link) — **but the trend does not survive its one
+    out-of-sample test**: the 5 km → 10 km interval is 0.003251 s/link, and
+    10 km came in **8.5 % under** the 16,100 s that the rising trend
+    projected. Extrapolate from the measured rate, not from the drift. The settlement
+    dedup is ~620 s of a cold preprocess and is paid **once per work dir**,
+    not per point. `band-0km`'s preprocess is 8× cheaper than `adj-touch`'s
+    despite more links: `dwithin` is one vectorised query, `touch` computes
+    intersection lengths pair by pair — the intersection rule is not the
+    cheap rule.
+  - **What the sweep found.** `JJC` is the lowest-scoring category at all
+    thirteen points, anchors included, and the bottom three are
+    `RUAC` > `UAC` > `JJC` at every one: the adjacency and decay choices move
+    the top of the ranking substantially and the bottom not at all. Widening
+    the band erodes settlement-level agreement monotonically
+    (`taub_vs_bbox` `0.677` → `0.540` → `0.507`) and collapses
+    `own_share_p50` to `0.001` at 10 km — at which point the index is 99.9 %
+    other settlements' services. The published baseline is itself already
+    flagged `smoothed`, at `own_share_p50: 0.058`.
+  - **A finding for DEL-52, which is Raj's open decision and not this run's
+    to make.** The two denominators disagree sharply: Kendall τ between their
+    category orderings is `0.17`, and Cliff's δ for Planned-vs-JJC is `0.22`
+    under `pop` against `0.90` under `popdensity` — P(a random Planned
+    settlement outranks a random JJC) moves from 0.61 to 0.95. The mechanism
+    is that `popdensity`'s denominator is population/area, so the index
+    rewards settlements with a lot of land relative to their population; the
+    `denominator_check` block reports the area-versus-swing relationship that
+    measures it. **Which denominator the paper should use is not a question
+    this dry run answers**, and the size of the disagreement is a reason to
+    decide it deliberately and defend it in the methods — not a reason to
+    prefer whichever denominator reports a larger gap. These are provisional
+    `code-2025` numbers.
+
 - **`methodology.overlap.lending`** — a new required switch: what a
   NEIGHBOUR lends. `whole` (today's rule) lends the neighbour's whole
   amount of a service; `outside_receiver` lends `|S_j \ S_i|` — the amount
