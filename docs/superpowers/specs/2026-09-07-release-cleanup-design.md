@@ -60,7 +60,7 @@ a paper's companion repo that reflex is wrong.
 
 | | verdict | why |
 |---|---|---|
-| `archive/master-2021/` | **ships** | The original 2020-21 notebooks that produced the published numbers. For a methods paper making claims about what the code did, the historical code IS evidence. It already has its own `ARCHIVE_README.md` saying it is a frozen snapshot. Deleting it would remove the only artefact showing where the method came from. |
+| `archive/master-2021/` | **ships, with outputs cleared** | The original 2020-21 notebooks that produced the published numbers. For a methods paper making claims about what the code did, the historical code IS evidence. **But their cell OUTPUTS were not evidence — they were the withheld data.** See below. |
 | `docs/superpowers/` | **ships** | Every spec, plan and design decision behind the rebuild, including the oracle's derivation and the reasoning for each methodology switch. A reviewer asking "why does the code do X" is answered here. It is 1.6 MB of text in a repo that already carries 1.7 MB of notebooks. |
 | `WORKPLAN.md` | **ships, with a header** | It is the project's own record of what is done and what is open — genuinely useful to a reader trying to judge maturity. But it reads as an internal to-do list, so it gets a one-paragraph header saying what it is and that Jira is the live source. |
 
@@ -72,6 +72,31 @@ is to keep evidence and label it.
 What DOES get checked: that no file under any of them contains a credential, a
 private URL, or anything personally identifying. That check is mechanical and
 is part of task 4.
+
+### The archive's outputs were the withheld dataset — found in review
+
+This section's first draft argued `archive/` should ship because "the
+historical code IS evidence", and it checked the code. It did not check the
+**outputs**. The branch review did, and found that **16 of 16 notebooks**
+carried execution outputs embedding real Delhi layer samples: colony names
+(`NEW DELHI 36`, `HARIJAN BASTI, SADAT PUR, DELHI-94`), `USO_AREA_U`
+identifiers, `POLYGON Z` geometries in the projected CRS, populations,
+`ndmc_dist_km`, and computed index columns — plus one notebook printing a
+local Windows path containing a username.
+
+That is a direct contradiction between the shipping tree and the release
+posture in § 4: the README says the layers are not redistributed, while
+`archive/` redistributed a sample of them. A `head()` of a withheld dataset
+is still the withheld dataset.
+
+**Resolved by clearing outputs and keeping code** — 657 code cells untouched,
+0 data-bearing output blocks remaining, verified. `ARCHIVE_README.md` explains
+the gap so a reader does not mistake it for corruption.
+
+**The transferable lesson:** "does this directory ship?" is not answerable by
+reading a directory's *code*. Notebooks, logs, caches and fixtures carry
+results, and results can be data. The check has to be for what a file
+*contains*, not what it *is for*.
 
 ## 4. The data-access posture
 

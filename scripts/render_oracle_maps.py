@@ -94,12 +94,19 @@ plt.rcParams.update({
 })
 
 # Matplotlib stamps its own version into every PNG it writes, so re-rendering
-# an unchanged figure still changes the file's bytes and leaves the tree
-# dirty — a contributor who runs this tool sees six modified files they did
-# not modify, and may commit that noise. Suppressing the tag makes a
-# re-render a no-op when nothing changed, which is what a committed figure
-# should be. (`None` removes the key; matplotlib writes no other
-# nondeterministic chunk.)
+# an unchanged figure still changed the file's bytes and left the tree dirty —
+# a contributor who ran this tool saw six modified files they did not modify,
+# and might commit that noise. Suppressing the tag removes that cause.
+#
+# It does NOT make the output bit-reproducible across machines, and the branch
+# review measured the limit rather than letting the claim stand: on a
+# different host, three of the six figures still differ on a first re-render
+# by about ten pixels, max channel delta 1, confined to a text band — font
+# hinting from an unpinned freetype/fontconfig, not this code. Re-rendering
+# twice on ONE machine is stable, which is the property that keeps the tree
+# clean; byte-identical regeneration everywhere would need the font stack
+# pinned, and is not worth that for figures whose content is checked by the
+# oracle tests rather than by their pixels.
 PNG_METADATA = {"Software": None}
 
 # Hand-placed label anchors (dx, dy from BASE, ha, va) chosen so the

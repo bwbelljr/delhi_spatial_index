@@ -25,3 +25,21 @@ Kept for reference (analyses with no current driver notebook):
 
 The full commit history of this code is reachable from `main` via the
 history merge (see merge commit "Merge master history into main").
+
+## Cell outputs were cleared before public release
+
+Every notebook here has had its execution outputs removed (7 Sep 2026). The
+code cells, markdown and cell order are untouched — 657 code cells, exactly
+as they were.
+
+The reason is not tidiness. These notebooks were saved with their outputs,
+and those outputs contained samples of the real Delhi layers: colony names,
+`USO_AREA_U` identifiers, `POLYGON Z` geometries in the projected CRS,
+per-settlement population estimates and computed index columns. The
+repository does not redistribute those layers (see the root `README.md`), and
+a `head()` preview of a withheld dataset is still the withheld dataset. One
+notebook also printed a local Windows path containing a username.
+
+So the outputs went and the code stayed, which keeps what this archive is
+for: a record of how the published numbers were originally produced. To see
+the outputs, run the notebooks against the layers.
