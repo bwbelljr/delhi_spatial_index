@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from delhi_psi.config import load_config
 from scripts.generate_production_fixtures import (
     REPO, SERVICES, emit_profile, metric_columns, production_dir,
 )
@@ -19,7 +20,8 @@ PROFILES = ["code-2025", "manuscript",
             "adj-touch", "band-0km", "band-1km", "band-5km", "band-10km",
             "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
             "decay-exp5km", "decay-boundary",
-            "services-no-ration", "services-no-bank"]
+            "services-no-ration", "services-no-bank",
+            "services-uncontested", "services-contested"]
 
 
 @pytest.mark.parametrize("profile", PROFILES)
@@ -228,6 +230,113 @@ def test_services_no_bank_leaves_raw_counts_unchanged(city):
     § 3): a wrongly-placed filter would move counts too."""
     base = _pivot(city, "code-2025")
     subset = _pivot(city, "services-no-bank")
+    kept_columns = [c for c in subset.columns
+                    if c.endswith("_count") or c == "road_length"]
+    assert kept_columns, "expected at least one surviving count column"
+    for idx in base.index:
+        for col in kept_columns:
+            assert base.loc[idx, col] == subset.loc[idx, col], (idx, col)
+
+
+# --- DEL-42 § 2, 4: uncontested/contested decompose code-2025 exactly -----
+def _config_service_set(profile):
+    """{config service key} over BOTH services.point and services.line — the
+    set the DEL-42 spec § 4 partition test must compare, on the LOADED
+    config rather than the YAML text, so a loader bug (e.g. `line: {}` not
+    replacing the default) would be caught here too."""
+    cfg = load_config(profile)
+    return set(cfg.services.point) | set(cfg.services.line)
+
+
+def test_uncontested_and_contested_partition_code_2025_services():
+    """Together the two panels must cover code-2025's seven services with no
+    overlap and no gap (spec § 2, § 4): a silently dropped or duplicated
+    service would make the whole decomposition meaningless."""
+    base = _config_service_set("code-2025")
+    uncontested = _config_service_set("services-uncontested")
+    contested = _config_service_set("services-contested")
+    assert uncontested | contested == base
+    assert uncontested & contested == set()
+
+
+def test_services_uncontested_has_no_line_services():
+    """services-uncontested is the first shipped profile with an EMPTY
+    `services.line` (spec § 3) — verified on the loaded config, not assumed
+    from the YAML, since `{**DEFAULT_SERVICES, **raw}` merges at the top
+    level and `line: {}` must replace the default `{road: ...}` rather than
+    leave it in place."""
+    cfg = load_config("services-uncontested")
+    assert cfg.services.line == {}
+    assert set(cfg.services.point) == {"health", "school"}
+
+
+def test_services_contested_carries_road_and_the_other_three_point_services():
+    cfg = load_config("services-contested")
+    assert set(cfg.services.point) == {"bank", "police", "ration",
+                                       "transport"}
+    assert set(cfg.services.line) == {"road"}
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_services_uncontested_has_no_dropped_service_metric_rows_at_all(city):
+    """Absent, not zeroed (spec § 4). Dropped: bank, police, ration,
+    transport, road — identity fixture names for all five."""
+    df = pd.read_csv(production_dir(city) / "services-uncontested.csv")
+    metrics = df["metric"]
+    for dropped in ("bank", "police", "ration", "transport", "road"):
+        assert not metrics.str.startswith(dropped).any(), dropped
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_services_contested_has_no_dropped_service_metric_rows_at_all(city):
+    """Absent, not zeroed (spec § 4). Dropped: health, school — `health`
+    names the fixture group `clinic` (CONFIG_TO_FIXTURE_SERVICE)."""
+    df = pd.read_csv(production_dir(city) / "services-contested.csv")
+    metrics = df["metric"]
+    for dropped in ("clinic", "school"):
+        assert not metrics.str.startswith(dropped).any(), dropped
+
+
+@pytest.mark.parametrize("profile", ["services-uncontested",
+                                     "services-contested"])
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_services_panel_moves_psi_eq1_for_every_settlement(city, profile):
+    """Eq. 1 averages over the services present, so restricting to either
+    panel moves psi_eq1 (`unnorm_psi`) for every reported settlement (spec
+    § 4), unconditionally: no rescaling sits between the per-service indices
+    and this value."""
+    base = _pivot(city, "code-2025")
+    subset = _pivot(city, profile)
+    assert set(base.index) == set(subset.index)
+    assert len(base.index) > 0
+    for idx in base.index:
+        assert base.loc[idx, "unnorm_psi"] != subset.loc[idx, "unnorm_psi"], idx
+
+
+@pytest.mark.parametrize("profile", ["services-uncontested",
+                                     "services-contested"])
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_services_panel_moves_norm_psi_somewhere(city, profile):
+    """norm_psi is Eq. 2's min-max RESCALING of psi_eq1, invariant under a
+    uniform positive-affine transform — DEL-40 established that settlements
+    tied at idx=0 for every dropped service keep tying on norm_psi after a
+    subset is applied, so this checks 'differs somewhere', not everywhere
+    (spec § 4 note; do not assert the stronger claim)."""
+    base = _pivot(city, "code-2025")
+    subset = _pivot(city, profile)
+    assert "norm_psi" in base.columns and "norm_psi" in subset.columns
+    assert (base["norm_psi"] != subset["norm_psi"]).any()
+
+
+@pytest.mark.parametrize("profile", ["services-uncontested",
+                                     "services-contested"])
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_services_panel_leaves_raw_counts_unchanged(city, profile):
+    """Dropping services changes what Eq. 1 averages over, not what is
+    counted — the condition that catches a filter applied in the wrong
+    place (spec § 4): a wrongly-placed filter would move counts too."""
+    base = _pivot(city, "code-2025")
+    subset = _pivot(city, profile)
     kept_columns = [c for c in subset.columns
                     if c.endswith("_count") or c == "road_length"]
     assert kept_columns, "expected at least one surviving count column"

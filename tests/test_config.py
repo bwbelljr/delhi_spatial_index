@@ -62,6 +62,7 @@ SHIPPED = [
     "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
     "decay-exp5km", "decay-boundary",
     "services-no-ration", "services-no-bank",
+    "services-uncontested", "services-contested",
 ]
 
 
