@@ -11,6 +11,7 @@ Reference side only: nothing in this file imports delhi_psi.
 import itertools
 import math
 
+import pandas as pd
 import pytest
 
 from tests.cities import CITIES, MESSY, ORACULUM
@@ -620,3 +621,24 @@ def test_transform_cbrt_psi_matches_the_named_function_on_oraculum():
             col = f"{svc}_pcen"
             assert transformed.loc[sid, col] == baseline.loc[sid, col], \
                 (sid, col)
+
+
+# --- DEL-57: rank aggregation (spec § 2-4) ------------------------------
+@pytest.mark.parametrize("denom", ["pop", "popdensity"])
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_a_pcen_stage_transform_does_not_move_a_rank_aggregation(city, denom):
+    """The sharpest statement of how DEL-34 and DEL-57 relate: log1p is
+    injective, so it preserves the tie structure as well as the ordering,
+    so the average ranks are IDENTICAL — not merely close. This is the only
+    pair of variants in this repo whose values must be equal, and asserting
+    that equality directly is stronger than the 1e-12 agreement each of
+    them separately gets against the reference implementation.
+
+    `_idx` only, deliberately: a `pcen`-stage transform REPLACES the
+    reported `*_pcen` value by design (DEL-34), so those columns differ
+    substantially and must. Verified during plan review on a skewed
+    vector — `*_idx` max abs difference 0.0, `*_pcen` ≈ 4.9."""
+    plain = variant(city, "aggregation_mean_rank", denom)
+    transformed = variant(city, "aggregation_mean_rank_log1p_pcen", denom)
+    idx_cols = [c for c in plain.columns if c.endswith("_idx")]
+    pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])

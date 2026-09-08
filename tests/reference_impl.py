@@ -52,6 +52,7 @@ VARIANT_KNOBS = {
     ("overlap", "lending"): "overlap_lending",
     ("transform", "form"): "transform_form",
     ("transform", "stage"): "transform_stage",
+    ("aggregation", "rule"): "aggregation_rule",
 }
 # `barrier.combine` has no reference knob: the reference uses EVERY barrier
 # row, which is what `any` means on a one-layer city, and both fixture cities

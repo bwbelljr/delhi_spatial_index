@@ -572,8 +572,31 @@ git commit -m "test(reference): the rank rule, stated independently of the packa
 
 **Files:**
 - Modify: `tests/variants.py`
+- Modify: `tests/reference_impl.py` — **one line in `VARIANT_KNOBS`**
 - Modify: `tests/fixtures/*/variants_expected_values.csv` (regenerated)
 - Test: `tests/test_variant_rules.py`
+
+**A plan gap the Task 4 implementer found, fixed by the controller before
+re-dispatch.** Step 3 says to add `("aggregation", "rule"): "aggregation_rule"`
+to "the key-mapping dict beside the two `transform` entries". That dict is
+`VARIANT_KNOBS`, and it lives in `tests/reference_impl.py` — a file the
+first Task 4 brief forbade editing, because Task 3 owns it. Without the
+entry, `variants.py`'s own guard fires at import time:
+
+```
+ValueError: tests/variants.py: aggregation.rule has no reference knob;
+add one to VARIANT_KNOBS or to IGNORED_VARIANT_KEYS
+```
+
+which breaks **every** test module that imports the reference. The
+implementer stopped and reported rather than editing a forbidden file or
+leaving the suite red — the right call. The one line is now applied, and
+`tests/reference_impl.py` is listed above so the next reader is not
+surprised by it in the diff.
+
+Worth noting what worked here: the repo's own guard turned a silently
+dropped override into a named import-time error. That is the guard doing
+exactly its job.
 
 **Interfaces:**
 - Consumes: Task 1's config key, Task 2's production rule, Task 3's reference rule.
