@@ -11,7 +11,7 @@ import pytest
 from delhi_psi.categories import categories_of
 from delhi_psi.config import (
     ENUMS, ENUM_KEYS, REFERENCE_KNOBS, RESERVED_KEYS, RESERVED_VALUES,
-    Config, ConfigError, load_config, shipped_profiles,
+    AggregationRule, Config, ConfigError, load_config, shipped_profiles,
 )
 from tests.variants import VARIANTS
 
@@ -37,6 +37,7 @@ MINIMAL = """profile: minimal
   overlap: {lending: whole}
   decay: {form: inverse_linear, distance: centroid, distance_unit: km}
   transform: {form: none}
+  aggregation: {rule: mean_minmax}
   roads: decayed
   second_normalization: true
   exclusion: {types: [RV], stage: post_neighbors, absent_neighbor: swallowed}
@@ -707,3 +708,49 @@ def test_shipped_profiles_keep_transform_form_none(profile, tmp_path):
     cfg = load_config(profile, data_dir=str(tmp_path))
     assert cfg.methodology.transform.form == "none"
     assert cfg.methodology.transform.stage is None
+
+
+# --- DEL-57: the aggregation block --------------------------------------
+def test_every_profile_declares_an_aggregation_rule():
+    """`methodology:` is a complete statement in every profile (the config
+    contract), so a new methodology block is added to ALL of them, not just
+    the two shipped ones."""
+    import yaml
+
+    from delhi_psi.config import PROFILES_DIR
+
+    for path in sorted(PROFILES_DIR.glob("*.yaml")):
+        raw = yaml.safe_load(path.read_text())
+        assert "aggregation" in raw["methodology"], path.name
+        assert raw["methodology"]["aggregation"]["rule"] in (
+            "mean_minmax", "mean_rank"), path.name
+
+
+def test_both_shipped_profiles_keep_todays_aggregation():
+    for name in ("code-2025", "manuscript"):
+        cfg = load_config(name)
+        assert cfg.methodology.aggregation.rule is AggregationRule.MEAN_MINMAX
+
+
+def test_an_unknown_aggregation_rule_is_rejected(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap("  aggregation:",
+                                         "  aggregation: {rule: median_rank}")))
+    message = str(exc.value)
+    assert "methodology.aggregation.rule" in message
+    for allowed in REFERENCE_KNOBS["methodology.aggregation.rule"]:
+        assert str(allowed) in message
+
+
+def test_the_rule_is_required_inside_the_aggregation_block(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap("  aggregation:",
+                                         "  aggregation: {}")))
+    assert "methodology.aggregation.rule" in str(exc.value)
+
+
+def test_aggregation_is_required_like_every_methodology_block(tmp_path):
+    without = MINIMAL.replace("  aggregation: {rule: mean_minmax}\n", "")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, without))
+    assert "methodology.aggregation" in str(exc.value)

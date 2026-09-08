@@ -586,10 +586,11 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
     and costs no fixture file.
     """
     from delhi_psi.config import (
-        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
-        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
-        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
-        RoadsFormula, TransformConfig, TransformForm,
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, AggregationConfig,
+        AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
+        DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
+        MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
+        TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -603,6 +604,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
         transform=TransformConfig(form=TransformForm.NONE),
+        aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
         second_normalization=True,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
@@ -676,10 +678,11 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
     expected value (spec § 12 item 3).
     """
     from delhi_psi.config import (
-        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
-        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
-        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
-        RoadsFormula, TransformConfig, TransformForm,
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, AggregationConfig,
+        AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
+        DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
+        MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
+        TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -693,6 +696,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
         transform=TransformConfig(form=TransformForm.NONE),
+        aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
         second_normalization=True,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
