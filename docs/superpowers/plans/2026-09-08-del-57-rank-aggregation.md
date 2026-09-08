@@ -73,11 +73,14 @@ suite goes red for reasons unrelated to the feature:
 
    This one is doing real work — without it Task 4 fails and the cause is
    invisible from the failure message.
-4. **`tests/test_profiles_match_reference.py`'s `knob_for_key` dict**
-   (~lines 120-132) is the repo's one generic "every mapped knob actually
-   reaches `compute_city`" cross-check. Add the
-   `"methodology.aggregation.rule"` entry so the new knob is exercised
-   rather than silently skipped.
+4. ~~`tests/test_profiles_match_reference.py`'s `knob_for_key` dict.~~
+   **Moved to Task 3 — the implementer disproved this item.** That dict
+   drives a test which calls `compute_city` with each mapped knob, and
+   `compute_city` does not accept `aggregation_rule` until Task 3 adds it,
+   so adding the entry here fails with
+   `TypeError: compute_city() got an unexpected keyword argument`. Verified
+   concretely and reverted rather than forced. The entry belongs in Task 3,
+   where it becomes true.
 
 **Interfaces:**
 - Produces: `AggregationRule` enum (`MEAN_MINMAX = "mean_minmax"`, `MEAN_RANK = "mean_rank"`), `AggregationConfig(rule)`, and `MethodologyConfig.aggregation`.
@@ -415,6 +418,14 @@ still say `mean_minmax`, so no fixture may move.
 **Files:**
 - Modify: `tests/reference_impl.py`
 - Test: `tests/test_reference_impl.py`
+- Modify: `tests/test_profiles_match_reference.py` — the `knob_for_key` dict (**moved here from Task 1**)
+
+**The `knob_for_key` entry lands in THIS task**, not Task 1. That dict drives
+the repo's one generic "every mapped knob actually reaches `compute_city`"
+cross-check, so the entry is only true once `compute_city` accepts
+`aggregation_rule` — which is this task's Step 3. Add
+`"methodology.aggregation.rule": "aggregation_rule"` to the dict as part of
+Step 3, and include the file in Step 4's test command and Step 5's commit.
 
 **Interfaces:**
 - Consumes: nothing from Tasks 1-2. **`tests/reference_impl.py` imports nothing from `delhi_psi` and must not start now** — implement the rank rule from scratch there. That independence is the entire value of the two-implementation oracle.
