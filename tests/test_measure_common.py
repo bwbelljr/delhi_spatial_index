@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts._measure_common import (FENCE, parse_block, render,
-                                     resolve_work_dir)
+from scripts._measure_common import (FENCE, _block_spans, parse_block,
+                                     render, resolve_work_dir)
 
 REPO = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(os.environ.get("DELHI_DATA_DIR", "~/delhi_data")).expanduser()
@@ -286,3 +286,57 @@ def test_emit_splices_in_place(tmp_path):
 def test_emit_prints_when_neither_flag_is_given(capsys):
     emit("```text\nblock: a\nx: 1\n```")
     assert "x: 1" in capsys.readouterr().out
+
+
+# --- the prose-aware drift guard (DEL-58) --------------------------------
+DOCS_DATA = REPO / "docs" / "data"
+
+
+def _sections_missing_prose(text):
+    """`## ` sections that carry a fenced block but no prose of their own."""
+    lines = text.splitlines()
+    covered = set()
+    for _, _, start, end in _block_spans(text):
+        covered |= set(range(start, end))
+
+    missing, heading, prose, blocks = [], None, 0, 0
+    def close():
+        if heading is not None and blocks and not prose:
+            missing.append(heading)
+    for index, line in enumerate(lines):
+        if index in covered:
+            blocks += 1
+            continue
+        if line.startswith("## "):
+            close()
+            heading, prose, blocks = line.strip(), 0, 0
+            continue
+        if line.strip():
+            prose += 1
+    close()
+    return missing
+
+
+@pytest.mark.parametrize(
+    "path", sorted(DOCS_DATA.glob("*.md")), ids=lambda p: p.name)
+def test_every_committed_document_still_has_its_prose(path):
+    """DEL-58's regression guard. `--out` pointed at a committed document
+    writes BLOCKS ONLY — and the block-level drift tests cannot see it,
+    because a document stripped of all its prose has identical blocks.
+
+    Two clauses. The first is what actually fails on the accident: a
+    blocks-only dump has no `## ` heading at all. The second catches the
+    narrower loss of one section's caption. Both were verified true for all
+    seven committed documents before this test was written.
+    """
+    text = path.read_text()
+    assert "## " in text, f"{path.name} has no section heading — overwritten?"
+    assert _sections_missing_prose(text) == []
+
+
+def test_the_prose_guard_fails_on_a_blocks_only_document():
+    """The guard's own test: a document reduced to its blocks — exactly what
+    `--out` produces — must fail both clauses."""
+    destroyed = "```text\nblock: points\npoint: a\nn: 1\n```\n"
+    assert "## " not in destroyed
+    assert not holds_prose(destroyed)
