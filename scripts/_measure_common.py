@@ -1,7 +1,12 @@
 """Shared plumbing for the `scripts/measure_*.py` measurement scripts.
 
-Exactly five public names (spec § 1): the work-dir guard, the settlement
-loader, the fenced-block renderer, its parser, and the fence itself. NOT a
+Nine public names now (spec § 1 started this at five; DEL-58 added four):
+the work-dir guard (`resolve_work_dir`), the settlement loader
+(`load_settlements`), the fenced-block renderer (`render`), its parser
+(`parse_block`), and the fence itself (`FENCE`) — plus `splice_blocks` (the
+document splicer), `holds_prose` (the `--out` guard's prose detector),
+`emit` (the `--out`/`--splice` CLI behaviour), and `emit_check` (`emit`'s
+cheap pre-flight, callable before any computed input exists). NOT a
 `delhi_psi` module — these are measurement utilities, not pipeline API, and
 they are imported by path-sibling scripts the way `tests/cities.py` is
 imported by tests.
@@ -88,15 +93,20 @@ def render(report, *, name=None):
     return "\n".join(lines)
 
 
-def _blocks(text):
-    """[(label or None, {key: value})] for every fenced block, in order."""
-    out = []
+def _block_spans(text):
+    """[(label, start_line, end_line_exclusive)] for every fenced block.
+
+    THE one scanner: `_blocks` reads bodies out of these spans, and the
+    splice replaces the spans themselves. Two scanners that disagree about
+    where a block ends is the drift this module exists to prevent.
+    """
     lines = text.splitlines()
-    index = 0
+    out, index = [], 0
     while index < len(lines):
         if lines[index].strip() != FENCE:
             index += 1
             continue
+        start = index
         index += 1
         label, body, closed = None, {}, False
         while index < len(lines):
@@ -113,8 +123,203 @@ def _blocks(text):
                 body[key] = value
         if not closed:
             raise ValueError(f"unterminated {FENCE} block")
-        out.append((label, body))
+        out.append((label, body, start, index))
     return out
+
+
+def _blocks(text):
+    """[(label or None, {key: value})] for every fenced block, in order."""
+    return [(label, body) for label, body, _, _ in _block_spans(text)]
+
+
+def _label_runs(text):
+    """[(label, start, end, separator)] — maximal sequences of contiguous
+    same-label blocks, plus the lines the document puts between them.
+
+    A run BREAKS on intervening prose, so a label separated by a paragraph
+    is two runs, not one. That is what makes the ambiguity refusal in
+    `splice_blocks` meaningful: a label with two runs has no single place
+    for the fresh blocks to go, and no committed document has one.
+
+    `separator` is the lines between the run's first two blocks — one blank
+    line in `docs/data/phase6_sweep.md`, nothing in the other documents.
+    Preserving it is why a splice does not silently reformat a document.
+    """
+    lines = text.splitlines()
+    runs = []
+    for label, _, start, end in _block_spans(text):
+        if runs:
+            prev_label, prev_start, prev_end, separator = runs[-1]
+            gap = lines[prev_end:start]
+            if prev_label == label and not any(line.strip() for line in gap):
+                runs[-1] = (label, prev_start, end,
+                            gap if separator is None else separator)
+                continue
+        runs.append((label, start, end, None))
+    return [(label, start, end, separator or [])
+            for label, start, end, separator in runs]
+
+
+def splice_blocks(document, fresh):
+    """`document` with each of `fresh`'s block runs substituted in place.
+
+    Everything outside those runs — headings, captions, `### Finding`
+    sections, blank lines — is preserved byte for byte. Labels `fresh` does
+    not mention are left alone, which is what makes `--block points` refresh
+    one run and keep the rest.
+
+    Refuses rather than guesses (spec § 4). Every refusal writes nothing.
+    """
+    doc_lines = document.splitlines(keepends=True)
+    fresh_lines = fresh.splitlines()
+    doc_runs = _label_runs(document)
+    fresh_runs = _label_runs(fresh)
+
+    if not doc_runs:
+        raise ValueError(
+            f"the document has no {FENCE} block to splice into; "
+            "--out writes a fresh blocks-only file")
+
+    def _one_run_per_label(runs, what):
+        seen = {}
+        for label, *_ in runs:
+            if label in seen:
+                raise ValueError(
+                    f"{what}: block label {label!r} appears as two separate "
+                    "runs, so there is no single place to splice it")
+            seen[label] = True
+        return seen
+
+    doc_labels = _one_run_per_label(doc_runs, "document")
+    _one_run_per_label(fresh_runs, "fresh output")
+
+    for label, *_ in fresh_runs:
+        if label not in doc_labels:
+            raise ValueError(
+                f"block label {label!r} is not in the document (it has "
+                f"{sorted(str(name) for name in doc_labels)}); splicing into "
+                "the wrong file?")
+
+    replacement = {}
+    for label, start, end, _ in fresh_runs:
+        replacement[label] = fresh_lines[start:end]
+
+    out, cursor = [], 0
+    for label, start, end, separator in doc_runs:
+        out.extend(doc_lines[cursor:start])
+        cursor = end
+        if label not in replacement:
+            out.extend(doc_lines[start:end])
+            continue
+        text = "\n".join(_joined(replacement[label], separator))
+        # Only re-add the newline the replaced span actually ended with. An
+        # unconditional "\n" fabricates a trailing newline for a document
+        # that ends at its last block without one (plan review, finding 2).
+        out.append(text + ("\n" if doc_lines[end - 1].endswith("\n") else ""))
+    out.extend(doc_lines[cursor:])
+    return "".join(out)
+
+
+def _joined(fresh_run_lines, separator):
+    """The fresh run's lines re-joined with the document's own separator.
+
+    The blank-line skip is load-bearing, and the plan review caught its
+    absence by executing the code: when `fresh` IS a document (the
+    round-trip case, `splice_blocks(doc, doc)`), the fresh run's lines
+    already carry that document's own blank separators. Without the skip
+    those blanks are absorbed into the NEXT block's accumulator and the
+    document's separator is inserted on top of them — two blank lines where
+    there was one, and the round-trip test this ticket rests on fails.
+    """
+    if not separator:
+        return list(fresh_run_lines)
+    out, block = [], []
+    for line in fresh_run_lines:
+        if not block and not line.strip():
+            continue
+        block.append(line)
+        if line.strip() == "```":
+            if out:
+                out.extend(separator)
+            out.extend(block)
+            block = []
+    out.extend(block)
+    return out
+
+
+def holds_prose(text):
+    """True when `text` has any non-blank line outside a fenced block.
+
+    The `--out` guard (spec § 5). Not "contains a `### Finding`": only two
+    of the seven documents have Findings, and a caption above a block is
+    worth no less than a Finding below it.
+    """
+    lines = text.splitlines()
+    covered = set()
+    for _, _, start, end in _block_spans(text):
+        covered |= set(range(start, end))
+    return any(line.strip() for index, line in enumerate(lines)
+               if index not in covered)
+
+
+def emit_check(*, out=None, splice=None):
+    """The cheap half of `emit`'s `--out`/`--splice` guards (fix round item
+    6): the part that needs no computed `text` at all, so a `main()` can
+    call this FIRST — before any loading or rendering — and refuse a bad
+    flag combination without paying for the work first. `emit` calls this
+    itself too, so its own checks (needed by callers, mainly tests, that
+    invoke `emit` directly without going through a `main()`) stay in force.
+
+    Refuses (`SystemExit`) in exactly the two cases `emit` refuses in:
+    `--out` pointed at a target that already holds hand-written prose, and
+    `--splice` pointed at a document that does not exist.
+    """
+    if splice is not None:
+        target = Path(splice)
+        if not target.exists():
+            raise SystemExit(
+                f"{target} does not exist; --splice refreshes an existing "
+                "document's blocks in place — use --out to write a new file "
+                "instead")
+    if out is not None:
+        target = Path(out)
+        if target.exists() and holds_prose(target.read_text()):
+            raise SystemExit(
+                f"{target} holds hand-written prose, and --out writes blocks "
+                "only — it would delete every caption and Finding. Use "
+                f"--splice {target} to refresh its blocks in place.")
+
+
+def emit(text, *, out=None, splice=None):
+    """The `--out` / `--splice` behaviour shared by two of the CLIs in
+    `scripts/` — `summarize_sweep.py` and `rank_report.py` — not "every
+    measurement CLI": the four `measure_*.py` scripts print to stdout only
+    and offer neither flag.
+
+    ONE implementation, because the failure this guards against — blocks
+    written over a document's prose — happened once already, and a second
+    copy of the guard is a second chance to get it wrong.
+
+    `emit_check` runs first (raising `SystemExit` for either refusal before
+    any of this function's own work happens); `splice_blocks`'s `ValueError`
+    is then caught and re-raised as `SystemExit(str(exc))` so a bad
+    `--splice` target (wrong document, ambiguous label, ...) reports a clear
+    one-line message rather than a raw traceback (fix round item 5).
+    """
+    emit_check(out=out, splice=splice)
+    if splice:
+        target = Path(splice)
+        try:
+            spliced = splice_blocks(target.read_text(), text)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        target.write_text(spliced)
+        return
+    if out:
+        target = Path(out)
+        target.write_text(text + "\n")
+        return
+    print(text)
 
 
 def parse_block(text, *, name=None):

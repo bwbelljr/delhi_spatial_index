@@ -681,7 +681,8 @@ from pathlib import Path
 
 from delhi_psi import io as psi_io
 from delhi_psi.config import load_config
-from scripts._measure_common import FENCE, parse_block, render  # noqa: F401
+from scripts._measure_common import (  # noqa: F401
+    FENCE, emit, emit_check, parse_block, render)
 from scripts.run_sweep import degree_report
 
 BLOCKS = ("points", "ordering", "gap", "denominator_check")
@@ -1257,12 +1258,19 @@ def build_parser():
     parser.add_argument("--baseline-dir", default="~/delhi_data/phase3_verify",
                         help="the proven code-2025 run, read-only "
                              "(default: ~/delhi_data/phase3_verify)")
-    parser.add_argument("--out", default=None,
-                        help="write the blocks here instead of stdout — "
-                             "BLOCKS ONLY, OVERWRITES any prose in the "
-                             "target; to update the committed document, "
-                             "splice the blocks in rather than pointing "
-                             "this at it directly")
+    out_or_splice = parser.add_mutually_exclusive_group()
+    out_or_splice.add_argument(
+        "--out", default=None,
+        help="write the blocks here instead of stdout — BLOCKS ONLY; "
+             "REFUSES (exit 1) to overwrite a target that already holds "
+             "hand-written prose, since that would delete every caption "
+             "and Finding — use --splice to refresh such a document in "
+             "place instead")
+    out_or_splice.add_argument(
+        "--splice", default=None,
+        help="refresh the blocks INSIDE this committed document in place, "
+             "preserving every caption and Finding — the safe way to "
+             "update docs/data/phase6_sweep.md (DEL-58)")
     parser.add_argument("--block", choices=BLOCKS, default=None,
                         help="render only this block")
     return parser
@@ -1270,6 +1278,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    emit_check(out=args.out, splice=args.splice)
     work_dir = Path(args.work_dir).expanduser()
     baseline_dir = Path(args.baseline_dir).expanduser()
     wanted = BLOCKS if args.block is None else (args.block,)
@@ -1282,10 +1291,7 @@ def main(argv=None):
     }
     text = "\n".join(renderers[name]() for name in wanted)
 
-    if args.out:
-        Path(args.out).write_text(text + "\n")
-    else:
-        print(text)
+    emit(text, out=args.out, splice=args.splice)
 
 
 if __name__ == "__main__":

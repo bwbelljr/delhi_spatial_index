@@ -35,9 +35,8 @@ a decile.
 """
 
 import argparse
-from pathlib import Path
 
-from scripts._measure_common import render
+from scripts._measure_common import emit, emit_check, render
 from scripts.summarize_sweep import (
     PSI_COL, _fmt, bootstrap_rank_intervals, category_order, decile_is_gated,
     decile_k, decile_share, load_output_frame, percentile_rank,
@@ -131,22 +130,30 @@ def build_parser():
                         help="bootstrap seed (default: 0)")
     parser.add_argument("--bootstrap-n", type=int, default=1000,
                         help="bootstrap draw count (default: 1000)")
-    parser.add_argument("--out", default=None,
-                        help="write the blocks here instead of stdout")
+    out_or_splice = parser.add_mutually_exclusive_group()
+    out_or_splice.add_argument(
+        "--out", default=None,
+        help="write the blocks here instead of stdout — BLOCKS ONLY; "
+             "REFUSES (exit 1) to overwrite a target that already holds "
+             "hand-written prose, since that would delete every caption "
+             "and Finding — use --splice to refresh such a document in "
+             "place instead")
+    out_or_splice.add_argument(
+        "--splice", default=None,
+        help="refresh the blocks INSIDE this committed document in place, "
+             "preserving every caption and Finding (DEL-58)")
     return parser
 
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    emit_check(out=args.out, splice=args.splice)
     frame = load_output_frame(args.csv)
     text = "\n".join([
         render_categories_block(frame, seed=args.seed, n=args.bootstrap_n),
         render_summary_block(frame),
     ])
-    if args.out:
-        Path(args.out).write_text(text + "\n")
-    else:
-        print(text)
+    emit(text, out=args.out, splice=args.splice)
 
 
 if __name__ == "__main__":
