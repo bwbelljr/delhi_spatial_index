@@ -137,3 +137,113 @@ def test_prose_numbers_finds_only_backticked_numbers_outside_the_blocks():
     text = "\n".join(["prose says `4,357` and `0.05` and 4069 and `touch`",
                       render({"settlements": 4357})])
     assert prose_numbers(text) == {"4357", "0.05"}
+
+
+# --- splice (DEL-58) ---------------------------------------------------
+from scripts._measure_common import holds_prose, splice_blocks
+
+DOC_ONE_RUN = """\
+# Title
+
+## Section
+
+A hand-written caption.
+
+```text
+block: points
+point: a
+n: 1
+```
+
+```text
+block: points
+point: b
+n: 2
+```
+
+### Finding
+
+The prose that `--out` destroys.
+"""
+
+
+def test_splice_replaces_a_run_and_keeps_every_other_byte():
+    fresh = ("```text\nblock: points\npoint: a\nn: 9\n```\n"
+             "```text\nblock: points\npoint: b\nn: 8\n```")
+    out = splice_blocks(DOC_ONE_RUN, fresh)
+
+    assert "A hand-written caption." in out
+    assert "### Finding" in out
+    assert "The prose that `--out` destroys." in out
+    assert "n: 9" in out and "n: 8" in out
+    assert "n: 1" not in out and "n: 2" not in out
+
+
+def test_splice_preserves_the_documents_own_separator():
+    """The committed `phase6_sweep.md` puts one blank line between blocks in
+    a run (50 times); script output puts none. A splice that wrote the fresh
+    text verbatim would silently reformat the document on every refresh."""
+    fresh = ("```text\nblock: points\npoint: a\nn: 9\n```\n"
+             "```text\nblock: points\npoint: b\nn: 8\n```")
+    out = splice_blocks(DOC_ONE_RUN, fresh)
+    assert "n: 9\n```\n\n```text" in out
+
+
+def test_splice_accepts_a_different_block_count():
+    """13 sweep points becoming 11 is the real use; a one-to-one rule could
+    not express it."""
+    fresh = "```text\nblock: points\npoint: only\nn: 5\n```"
+    out = splice_blocks(DOC_ONE_RUN, fresh)
+    assert out.count("block: points") == 1
+    assert "### Finding" in out
+
+
+def test_splice_leaves_labels_the_fresh_text_does_not_mention():
+    doc = ("## S\n\ncaption\n\n```text\nblock: a\nx: 1\n```\n\n"
+           "```text\nblock: b\ny: 2\n```\n")
+    out = splice_blocks(doc, "```text\nblock: a\nx: 9\n```")
+    assert "x: 9" in out
+    assert "y: 2" in out
+
+
+def test_splice_round_trips_its_own_blocks_byte_for_byte():
+    """The strongest statement available that the splice preserves what it
+    is not replacing (spec § 8). It is also the test the plan review's
+    first draft FAILED: splicing a document into itself feeds `_joined` a
+    fresh run that already carries the document's blank separators."""
+    assert splice_blocks(DOC_ONE_RUN, DOC_ONE_RUN) == DOC_ONE_RUN
+
+
+def test_splice_does_not_fabricate_a_trailing_newline():
+    """A document ending at its last block with no trailing newline must
+    come back with no trailing newline (plan review, finding 2)."""
+    doc = "## S\n\ncaption\n\n```text\nblock: a\nx: 1\n```"
+    out = splice_blocks(doc, "```text\nblock: a\nx: 9\n```")
+    assert out.endswith("```")
+    assert "x: 9" in out
+    assert out.startswith("## S\n\ncaption\n\n")
+
+
+def test_splice_refuses_a_label_the_document_does_not_have():
+    with pytest.raises(ValueError, match="ordering"):
+        splice_blocks(DOC_ONE_RUN, "```text\nblock: ordering\nx: 1\n```")
+
+
+def test_splice_refuses_a_label_that_appears_as_two_runs():
+    doc = ("```text\nblock: a\nx: 1\n```\n\nprose between\n\n"
+           "```text\nblock: a\nx: 2\n```\n")
+    with pytest.raises(ValueError, match="two separate runs|separate runs"):
+        splice_blocks(doc, "```text\nblock: a\nx: 9\n```")
+
+
+def test_splice_refuses_a_document_with_no_blocks():
+    with pytest.raises(ValueError, match="no .* block"):
+        splice_blocks("# Just prose\n", "```text\nblock: a\nx: 1\n```")
+
+
+def test_holds_prose_sees_text_outside_blocks_only():
+    assert holds_prose("## S\n\ncaption\n\n```text\nx: 1\n```\n")
+    assert holds_prose("### Finding\n")
+    assert not holds_prose("```text\nx: 1\n```\n")
+    assert not holds_prose("```text\nx: 1\n```\n\n```text\ny: 2\n```\n")
+    assert not holds_prose("")

@@ -88,15 +88,20 @@ def render(report, *, name=None):
     return "\n".join(lines)
 
 
-def _blocks(text):
-    """[(label or None, {key: value})] for every fenced block, in order."""
-    out = []
+def _block_spans(text):
+    """[(label, start_line, end_line_exclusive)] for every fenced block.
+
+    THE one scanner: `_blocks` reads bodies out of these spans, and the
+    splice replaces the spans themselves. Two scanners that disagree about
+    where a block ends is the drift this module exists to prevent.
+    """
     lines = text.splitlines()
-    index = 0
+    out, index = [], 0
     while index < len(lines):
         if lines[index].strip() != FENCE:
             index += 1
             continue
+        start = index
         index += 1
         label, body, closed = None, {}, False
         while index < len(lines):
@@ -113,8 +118,143 @@ def _blocks(text):
                 body[key] = value
         if not closed:
             raise ValueError(f"unterminated {FENCE} block")
-        out.append((label, body))
+        out.append((label, body, start, index))
     return out
+
+
+def _blocks(text):
+    """[(label or None, {key: value})] for every fenced block, in order."""
+    return [(label, body) for label, body, _, _ in _block_spans(text)]
+
+
+def _label_runs(text):
+    """[(label, start, end, separator)] — maximal sequences of contiguous
+    same-label blocks, plus the lines the document puts between them.
+
+    A run BREAKS on intervening prose, so a label separated by a paragraph
+    is two runs, not one. That is what makes the ambiguity refusal in
+    `splice_blocks` meaningful: a label with two runs has no single place
+    for the fresh blocks to go, and no committed document has one.
+
+    `separator` is the lines between the run's first two blocks — one blank
+    line in `docs/data/phase6_sweep.md`, nothing in the other documents.
+    Preserving it is why a splice does not silently reformat a document.
+    """
+    lines = text.splitlines()
+    runs = []
+    for label, _, start, end in _block_spans(text):
+        if runs:
+            prev_label, prev_start, prev_end, separator = runs[-1]
+            gap = lines[prev_end:start]
+            if prev_label == label and not any(line.strip() for line in gap):
+                runs[-1] = (label, prev_start, end,
+                            gap if separator is None else separator)
+                continue
+        runs.append((label, start, end, None))
+    return [(label, start, end, separator or [])
+            for label, start, end, separator in runs]
+
+
+def splice_blocks(document, fresh):
+    """`document` with each of `fresh`'s block runs substituted in place.
+
+    Everything outside those runs — headings, captions, `### Finding`
+    sections, blank lines — is preserved byte for byte. Labels `fresh` does
+    not mention are left alone, which is what makes `--block points` refresh
+    one run and keep the rest.
+
+    Refuses rather than guesses (spec § 4). Every refusal writes nothing.
+    """
+    doc_lines = document.splitlines(keepends=True)
+    fresh_lines = fresh.splitlines()
+    doc_runs = _label_runs(document)
+    fresh_runs = _label_runs(fresh)
+
+    if not doc_runs:
+        raise ValueError(
+            f"the document has no {FENCE} block to splice into; "
+            "--out writes a fresh blocks-only file")
+
+    def _one_run_per_label(runs, what):
+        seen = {}
+        for label, *_ in runs:
+            if label in seen:
+                raise ValueError(
+                    f"{what}: block label {label!r} appears as two separate "
+                    "runs, so there is no single place to splice it")
+            seen[label] = True
+        return seen
+
+    doc_labels = _one_run_per_label(doc_runs, "document")
+    _one_run_per_label(fresh_runs, "fresh output")
+
+    for label, *_ in fresh_runs:
+        if label not in doc_labels:
+            raise ValueError(
+                f"block label {label!r} is not in the document (it has "
+                f"{sorted(str(name) for name in doc_labels)}); splicing into "
+                "the wrong file?")
+
+    replacement = {}
+    for label, start, end, _ in fresh_runs:
+        replacement[label] = fresh_lines[start:end]
+
+    out, cursor = [], 0
+    for label, start, end, separator in doc_runs:
+        out.extend(doc_lines[cursor:start])
+        cursor = end
+        if label not in replacement:
+            out.extend(doc_lines[start:end])
+            continue
+        text = "\n".join(_joined(replacement[label], separator))
+        # Only re-add the newline the replaced span actually ended with. An
+        # unconditional "\n" fabricates a trailing newline for a document
+        # that ends at its last block without one (plan review, finding 2).
+        out.append(text + ("\n" if doc_lines[end - 1].endswith("\n") else ""))
+    out.extend(doc_lines[cursor:])
+    return "".join(out)
+
+
+def _joined(fresh_run_lines, separator):
+    """The fresh run's lines re-joined with the document's own separator.
+
+    The blank-line skip is load-bearing, and the plan review caught its
+    absence by executing the code: when `fresh` IS a document (the
+    round-trip case, `splice_blocks(doc, doc)`), the fresh run's lines
+    already carry that document's own blank separators. Without the skip
+    those blanks are absorbed into the NEXT block's accumulator and the
+    document's separator is inserted on top of them — two blank lines where
+    there was one, and the round-trip test this ticket rests on fails.
+    """
+    if not separator:
+        return list(fresh_run_lines)
+    out, block = [], []
+    for line in fresh_run_lines:
+        if not block and not line.strip():
+            continue
+        block.append(line)
+        if line.strip() == "```":
+            if out:
+                out.extend(separator)
+            out.extend(block)
+            block = []
+    out.extend(block)
+    return out
+
+
+def holds_prose(text):
+    """True when `text` has any non-blank line outside a fenced block.
+
+    The `--out` guard (spec § 5). Not "contains a `### Finding`": only two
+    of the seven documents have Findings, and a caption above a block is
+    worth no less than a Finding below it.
+    """
+    lines = text.splitlines()
+    covered = set()
+    for _, _, start, end in _block_spans(text):
+        covered |= set(range(start, end))
+    return any(line.strip() for index, line in enumerate(lines)
+               if index not in covered)
 
 
 def parse_block(text, *, name=None):
