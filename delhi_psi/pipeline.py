@@ -237,6 +237,7 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
             scale_km=methodology.decay.scale_km,
             transform_form=methodology.transform.form,
             transform_stage=methodology.transform.stage,
+            aggregation_rule=methodology.aggregation.rule,
             id_col=id_col)
 
     result = index.overall_psi(

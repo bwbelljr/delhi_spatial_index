@@ -455,6 +455,55 @@ def minmax(polygon_gdf, *, source_col, target_col):
     return gdf_copy
 
 
+AGGREGATION_RULES = ("mean_minmax", "mean_rank")
+
+
+def percentile_rank_column(polygon_gdf, *, source_col, target_col):
+    """DEL-57's alternative to Eq. 2: the percentile rank of a column.
+
+    Rank ascending, AVERAGING ranks within a tie block, then rescale
+    `(rank - 1) / (n - 1)` so the minimum maps to 0 and the maximum to 1 —
+    the same endpoints `minmax` produces, which is what lets `mean_rank`
+    stand in for `mean_minmax` without anything downstream learning a new
+    range.
+
+    Two deliberate differences from `minmax`:
+
+    * A CONSTANT column is fine here and raises there. Every value ties, so
+      every average rank is equal and every settlement scores 0.5 — a
+      uniform shift that changes no ordering. Eq. 2's min-max is genuinely
+      undefined on that input; a rank is not.
+    * `n == 1` raises, because `(rank - 1) / 0` is the same 0/0 that
+      `minmax`'s hi == lo guard refuses (DEL-54). A one-settlement city has
+      no value to invent.
+    """
+    gdf_copy = polygon_gdf.copy()
+    n = len(gdf_copy)
+    if n < 2:
+        raise ValueError(
+            f"percentile rank of {source_col!r} is undefined across {n} "
+            "row(s): the rescaling divides by (n - 1), so a single "
+            "settlement has no rank to report. Check the exclusion set "
+            "upstream.")
+    ranks = gdf_copy[source_col].rank(method="average", ascending=True)
+    gdf_copy[target_col] = (ranks - 1.0) / (n - 1.0)
+    return gdf_copy
+
+
+def _apply_aggregation(polygon_gdf, *, source_col, target_col,
+                       aggregation_rule):
+    """Eq. 2, dispatched on `methodology.aggregation.rule` (DEL-57)."""
+    if aggregation_rule == "mean_minmax":
+        return minmax(polygon_gdf, source_col=source_col,
+                      target_col=target_col)
+    if aggregation_rule == "mean_rank":
+        return percentile_rank_column(polygon_gdf, source_col=source_col,
+                                      target_col=target_col)
+    raise ValueError(
+        f"unknown aggregation rule {aggregation_rule!r}; allowed values: "
+        f"{list(AGGREGATION_RULES)}")
+
+
 def service_index(polygon_gdf, amount_col, *, service, denominator,
                   nbr_dist_col="nbrs_dist_bbox", nbr_weight_col=None,
                   shared_amounts=None,
@@ -463,6 +512,7 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
                   decay_form="inverse_linear", distance_unit="km",
                   exponent=None, scale_km=None,
                   transform_form="none", transform_stage=None,
+                  aggregation_rule="mean_minmax",
                   pop_col="population", area_col="area_km2",
                   id_col="USO_AREA_U"):
     """pcen then minmax for one service — replaces BOTH create_service_index
@@ -473,6 +523,10 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
     is what attacks the compression at its source (spec § 3). A monotone
     transform never changes the ordering of settlements within a service,
     only the spacing (spec § 5).
+
+    aggregation_rule (DEL-57): the final step dispatches between `minmax`
+    and `percentile_rank_column` via `_apply_aggregation`, instead of always
+    calling `minmax`.
     """
     _check_transform(transform_form, transform_stage)
     pcen_col = f"{service}_pcen"
@@ -488,7 +542,8 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
     if transform_stage == "pcen":
         out[pcen_col] = out[pcen_col].map(
             lambda value: _apply_transform(value, transform_form))
-    return minmax(out, source_col=pcen_col, target_col=idx_col)
+    return _apply_aggregation(out, source_col=pcen_col, target_col=idx_col,
+                              aggregation_rule=aggregation_rule)
 
 
 def overall_psi(polygon_gdf, *, second_normalization, transform_form="none",
