@@ -128,7 +128,21 @@ def test_splice_leaves_labels_the_fresh_text_does_not_mention():
 
 
 def test_splice_round_trips_its_own_blocks_byte_for_byte():
+    """The strongest statement available that the splice preserves what it
+    is not replacing (spec § 8). It is also the test the plan review's
+    first draft FAILED: splicing a document into itself feeds `_joined` a
+    fresh run that already carries the document's blank separators."""
     assert splice_blocks(DOC_ONE_RUN, DOC_ONE_RUN) == DOC_ONE_RUN
+
+
+def test_splice_does_not_fabricate_a_trailing_newline():
+    """A document ending at its last block with no trailing newline must
+    come back with no trailing newline (plan review, finding 2)."""
+    doc = "## S\n\ncaption\n\n```text\nblock: a\nx: 1\n```"
+    out = splice_blocks(doc, "```text\nblock: a\nx: 9\n```")
+    assert out.endswith("```")
+    assert "x: 9" in out
+    assert out.startswith("## S\n\ncaption\n\n")
 
 
 def test_splice_refuses_a_label_the_document_does_not_have():
@@ -287,17 +301,31 @@ def splice_blocks(document, fresh):
             out.extend(doc_lines[start:end])
             continue
         text = "\n".join(_joined(replacement[label], separator))
-        out.append(text + "\n")
+        # Only re-add the newline the replaced span actually ended with. An
+        # unconditional "\n" fabricates a trailing newline for a document
+        # that ends at its last block without one (plan review, finding 2).
+        out.append(text + ("\n" if doc_lines[end - 1].endswith("\n") else ""))
     out.extend(doc_lines[cursor:])
     return "".join(out)
 
 
 def _joined(fresh_run_lines, separator):
-    """The fresh run's lines re-joined with the document's own separator."""
+    """The fresh run's lines re-joined with the document's own separator.
+
+    The blank-line skip is load-bearing, and the plan review caught its
+    absence by executing the code: when `fresh` IS a document (the
+    round-trip case, `splice_blocks(doc, doc)`), the fresh run's lines
+    already carry that document's own blank separators. Without the skip
+    those blanks are absorbed into the NEXT block's accumulator and the
+    document's separator is inserted on top of them — two blank lines where
+    there was one, and the round-trip test this ticket rests on fails.
+    """
     if not separator:
         return list(fresh_run_lines)
     out, block = [], []
     for line in fresh_run_lines:
+        if not block and not line.strip():
+            continue
         block.append(line)
         if line.strip() == "```":
             if out:
@@ -413,8 +441,8 @@ def test_the_rank_report_offers_out_and_splice():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `uv run pytest tests/test_measure_common.py tests/test_rank_report.py -q -W error`
-Expected: FAIL — `cannot import name 'emit'`, and the `--splice` assertions fail.
+Run: `uv run pytest tests/test_measure_common.py tests/test_rank_report.py tests/test_summarize_sweep.py -q -W error`
+Expected: FAIL — `cannot import name 'emit'`, and both `--splice` assertions fail. All three files are named here deliberately: the plan review caught that omitting `test_summarize_sweep.py` from this command would leave its new test's failure unwatched, which is the TDD step this plan mandates.
 
 - [ ] **Step 3: Implement**
 
@@ -605,6 +633,33 @@ round-trip no-op → Task 1 `test_splice_round_trips_its_own_blocks_byte_for_byt
 end)`; `_blocks` unpacks four and yields two; `_label_runs` and `holds_prose`
 unpack four and use `start`/`end`. Task 3's `_sections_missing_prose` unpacks
 four. Consistent throughout.
+
+**Plan review (one round, Sonnet, 7 Sep 2026).** The reviewer executed the
+plan's code rather than reading it, and found one Critical and one
+Important, both fixed above:
+
+1. **Critical** — `_joined` doubled the separator on the round-trip case, so
+   `test_splice_round_trips_its_own_blocks_byte_for_byte` — the test the
+   spec calls its strongest statement — failed against the plan's own
+   implementation. Fixed with the blank-line skip, re-verified by the
+   reviewer against all of Task 1's tests.
+2. **Important** — `out.append(text + "\n")` fabricated a trailing newline
+   for a document ending at its last block without one. Latent today (all
+   seven documents end with a newline and have prose after their last
+   block) but a real violation of the byte-identical contract. Fixed, with
+   a test.
+3. **Minor** — Task 2's failure-verification command omitted
+   `test_summarize_sweep.py`. Fixed.
+
+The reviewer also traced and cleared the four things this plan was most
+likely to get wrong: `splitlines()` vs `splitlines(keepends=True)` index
+spaces (same line count and order, so the slices line up), the separator
+capture across a 3-block run, whether a closing fence counts as prose in
+`holds_prose` (it does not — the span includes it), and the nested `close()`
+in `_sections_missing_prose` (a read-only closure, so no `nonlocal` is
+needed). Stopping after one round per the /ship stopping rule: the round's
+findings are fixed and a second round on a change this size would cost more
+than the build.
 
 **One risk worth naming.** The spec's separator rule keys on the gap between
 a run's *first two* blocks. A document with non-uniform intra-run spacing
