@@ -1,0 +1,619 @@
+# Rank Aggregation Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add `methodology.aggregation.rule: mean_minmax | mean_rank` — an alternative to Eq. 2's min-max that replaces each service's PCEN with its percentile rank — implemented independently in the production package and the reference implementation, cross-checked at 1e-12 on both fixture cities, and adopted by neither shipped profile.
+
+**Architecture:** A new required `methodology.aggregation` block, parsed like `methodology.transform`. `index.service_index` dispatches its last step between `minmax` and a new `percentile_rank_column`; `tests/reference_impl.py` implements the same rule from scratch. Three `tests/variants.py` rows put both implementations against each other.
+
+**Tech Stack:** Python 3, pandas, geopandas, pytest, uv.
+
+**Spec:** `docs/superpowers/specs/2026-09-08-del-57-rank-aggregation-design.md`
+
+## Global Constraints
+
+- **Both shipped profiles (`code-2025`, `manuscript`) carry `rule: mean_minmax`.** Every existing expected value and production fixture must be **byte-identical**. If one moves, STOP and report — the switch has leaked into the default path.
+- **`variants_expected_values.csv` is addition-only**, verified with `git diff --numstat` (zero deletions).
+- **`methodology:` is a complete statement in every profile.** Every profile file in `delhi_psi/profiles/` — the two shipped ones AND all eleven sweep profiles AND the service-subset profiles — gains the `aggregation` block. `tests/test_config.py` asserts the exact set of shipped profiles.
+- **The reference implementation imports nothing from `delhi_psi`.** That independence is the whole value of the oracle; a shared helper would void it.
+- **No real-data run.** No adoption. No new dependency. No licence file (DEL-56, pending Raj).
+- **TDD is mandatory.** Write the failing test, run it, watch it fail, then implement. Code written before its test is unverified — discard and redo.
+- Run only your own task's test files. Do not background any pytest process.
+- The rank rule, verbatim, used identically by both implementations: **rank ascending, averaging ranks within a tie block, then rescale `(rank - 1) / (n - 1)`.** `n == 1` raises.
+
+## Facts verified before this plan was written (8 Sep 2026)
+
+- Under this rank rule, a `pcen`-stage `log1p` or `cbrt` is an **exact** no-op: measured on 100 values with a 30 % mass at zero, `max abs difference = 0.000e+00` for both. This is why Task 4's equality assertion is exact, not approximate.
+- A constant column ranks to **0.5 for every settlement**, where `minmax` raises.
+- `index.minmax` raises on `hi == lo` (DEL-54); `reference_impl` raises the same way at its own `hi == lo` check. `mean_rank` replaces both of those code paths, so neither guard fires under it.
+
+---
+
+### Task 1: the config block
+
+**Files:**
+- Modify: `delhi_psi/config.py`
+- Modify: every `*.yaml` in `delhi_psi/profiles/`
+- Test: `tests/test_config.py`
+
+**Interfaces:**
+- Produces: `AggregationRule` enum (`MEAN_MINMAX = "mean_minmax"`, `MEAN_RANK = "mean_rank"`), `AggregationConfig(rule)`, and `MethodologyConfig.aggregation`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_config.py`, matching the file's existing style for loading a profile and for asserting a rejection:
+
+```python
+def test_every_profile_declares_an_aggregation_rule():
+    """`methodology:` is a complete statement in every profile (the config
+    contract), so a new methodology block is added to ALL of them, not just
+    the two shipped ones."""
+    for path in sorted(PROFILES_DIR.glob("*.yaml")):
+        raw = yaml.safe_load(path.read_text())
+        assert "aggregation" in raw["methodology"], path.name
+        assert raw["methodology"]["aggregation"]["rule"] in (
+            "mean_minmax", "mean_rank"), path.name
+
+
+def test_both_shipped_profiles_keep_todays_aggregation():
+    for name in ("code-2025", "manuscript"):
+        cfg = load_config(name)
+        assert cfg.methodology.aggregation.rule is AggregationRule.MEAN_MINMAX
+
+
+def test_an_unknown_aggregation_rule_is_rejected():
+    with pytest.raises(ValueError, match="mean_minmax"):
+        _methodology_from_raw({"aggregation": {"rule": "median_rank"}})
+
+
+def test_a_missing_aggregation_block_is_rejected():
+    with pytest.raises(ValueError, match="aggregation"):
+        _methodology_from_raw({})
+```
+
+The last two use whatever helper `tests/test_config.py` already uses to
+build a methodology block from a raw dict and assert a rejection — read the
+file's existing rejection tests for `methodology.transform` and copy their
+shape exactly, including the helper name and the `match=` conventions. Do
+not invent a new helper.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_config.py -q -W error`
+Expected: FAIL — `AggregationRule` is not importable and no profile has the block.
+
+- [ ] **Step 3: Implement**
+
+In `delhi_psi/config.py`, following the `transform` block's pattern exactly:
+
+1. Add to the reference-pinned mapping beside `"methodology.transform.stage"`:
+
+```python
+    "methodology.aggregation.rule": {"mean_minmax": "mean_minmax",
+                                     "mean_rank": "mean_rank"},
+```
+
+2. Add `"methodology.aggregation.rule"` to the reference-pinned key list
+   (the tuple a few lines below that holds `"methodology.transform.form"`
+   and `"methodology.transform.stage"`).
+
+3. Add the enum beside `TransformStage`:
+
+```python
+AggregationRule = _make_enum("AggregationRule", "methodology.aggregation.rule")
+```
+
+   and register it in the enum lookup dict beside
+   `"methodology.transform.stage": TransformStage`.
+
+4. Add the dataclass after `TransformConfig`:
+
+```python
+@dataclass(frozen=True)
+class AggregationConfig:
+    # DEL-57: what Eq. 2 IS, as opposed to `transform`, which chooses a
+    # function applied to a value. `mean_minmax` is today: min-max each
+    # service's PCEN, then average. `mean_rank` replaces the min-max with a
+    # percentile rank, which cannot form the mass point at zero that Eq. 2's
+    # min-max produces on a right-skewed distribution (452 of 4,131
+    # settlements at the published baseline). Neither shipped profile adopts
+    # it; this is measurement machinery, and Raj decides adoption.
+    rule: AggregationRule
+```
+
+5. Add `aggregation: AggregationConfig` to `MethodologyConfig`.
+
+6. Add `"aggregation"` to the methodology block's allowed-key tuple (the one
+   listing `"transform", "roads", "second_normalization"`).
+
+7. Parse it beside the transform parsing:
+
+```python
+    aggregation_raw = _require(raw, "aggregation", "methodology")
+    _reject_unknown(aggregation_raw, {"rule"}, "methodology.aggregation")
+    aggregation = AggregationConfig(
+        rule=_coerce_enum(
+            "methodology.aggregation.rule",
+            _require(aggregation_raw, "rule", "methodology.aggregation")))
+```
+
+   and pass `aggregation=aggregation` in the `MethodologyConfig(...)` call.
+
+8. Add to **every** file in `delhi_psi/profiles/`, inside `methodology:`,
+   immediately after the `transform:` block:
+
+```yaml
+  aggregation:
+    rule: mean_minmax               # mean_minmax | mean_rank (DEL-57)
+                                    # mean_minmax is today: Eq. 2 min-maxes
+                                    # each service's PCEN, then Eq. 1
+                                    # averages. mean_rank replaces the
+                                    # min-max with a percentile rank —
+                                    # uniform by construction, so no mass
+                                    # point at zero can form. Not adopted.
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_config.py -q -W error`
+Expected: PASS.
+
+- [ ] **Step 5: Verify no fixture moved, then commit**
+
+```bash
+git diff --stat tests/fixtures/
+git add delhi_psi/config.py delhi_psi/profiles tests/test_config.py
+git commit -m "feat(config): methodology.aggregation.rule — mean_minmax or mean_rank (DEL-57)"
+```
+
+`git diff --stat tests/fixtures/` must print nothing.
+
+---
+
+### Task 2: the production rule
+
+**Files:**
+- Modify: `delhi_psi/index.py`
+- Test: `tests/test_index.py`
+
+**Interfaces:**
+- Consumes from Task 1: `AggregationRule` (as a plain string value at the `index.py` boundary — `index.py` takes `aggregation_rule="mean_minmax"` as a string keyword, matching how `transform_form`/`transform_stage` are already passed).
+- Produces: `percentile_rank_column(polygon_gdf, *, source_col, target_col)` and a new `aggregation_rule` keyword on `service_index`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/test_index.py`:
+
+```python
+def test_percentile_rank_column_scales_min_to_zero_and_max_to_one():
+    frame = gpd.GeoDataFrame({"x": [3.0, 1.0, 2.0]}, geometry=[None] * 3)
+    out = index.percentile_rank_column(frame, source_col="x", target_col="r")
+    assert list(out["r"]) == [1.0, 0.0, 0.5]
+
+
+def test_percentile_rank_column_averages_ranks_within_a_tie_block():
+    """Ranks 1,2,3,4 over values 1,2,2,5 -> the tie block takes (2+3)/2 = 2.5,
+    so the rescaled ranks are 0, 0.5, 0.5, 1."""
+    frame = gpd.GeoDataFrame({"x": [1.0, 2.0, 2.0, 5.0]}, geometry=[None] * 4)
+    out = index.percentile_rank_column(frame, source_col="x", target_col="r")
+    assert list(out["r"]) == [0.0, 0.5, 0.5, 1.0]
+
+
+def test_percentile_rank_column_is_defined_where_minmax_raises():
+    """A constant column: `minmax` raises (Eq. 2 divides 0/0), a rank does
+    not — every settlement ties, so every rescaled rank is 0.5. This is a
+    real behavioural difference between the two rules, not a detail."""
+    frame = gpd.GeoDataFrame({"x": [0.4] * 5}, geometry=[None] * 5)
+    out = index.percentile_rank_column(frame, source_col="x", target_col="r")
+    assert set(out["r"]) == {0.5}
+    with pytest.raises(ValueError, match="undefined"):
+        index.minmax(frame, source_col="x", target_col="r")
+
+
+def test_percentile_rank_column_refuses_a_single_row():
+    """`(rank - 1) / (n - 1)` is the same 0/0 `minmax`'s hi == lo guard
+    refuses (DEL-54); a one-settlement city has no value to invent."""
+    frame = gpd.GeoDataFrame({"x": [1.0]}, geometry=[None])
+    with pytest.raises(ValueError, match="x"):
+        index.percentile_rank_column(frame, source_col="x", target_col="r")
+
+
+def test_an_unknown_aggregation_rule_is_rejected():
+    frame = gpd.GeoDataFrame({"x": [1.0, 2.0]}, geometry=[None] * 2)
+    with pytest.raises(ValueError, match="mean_minmax"):
+        index._apply_aggregation(frame, source_col="x", target_col="r",
+                                 aggregation_rule="median_rank")
+```
+
+Match the file's existing conventions for building a small GeoDataFrame —
+read a nearby `minmax` test first and copy its construction rather than the
+`geometry=[None] * n` shown here if the file does it differently.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_index.py -q -W error`
+Expected: FAIL — `module 'delhi_psi.index' has no attribute 'percentile_rank_column'`.
+
+- [ ] **Step 3: Implement**
+
+In `delhi_psi/index.py`, after `minmax`:
+
+```python
+AGGREGATION_RULES = ("mean_minmax", "mean_rank")
+
+
+def percentile_rank_column(polygon_gdf, *, source_col, target_col):
+    """DEL-57's alternative to Eq. 2: the percentile rank of a column.
+
+    Rank ascending, AVERAGING ranks within a tie block, then rescale
+    `(rank - 1) / (n - 1)` so the minimum maps to 0 and the maximum to 1 —
+    the same endpoints `minmax` produces, which is what lets `mean_rank`
+    stand in for `mean_minmax` without anything downstream learning a new
+    range.
+
+    Two deliberate differences from `minmax`:
+
+    * A CONSTANT column is fine here and raises there. Every value ties, so
+      every average rank is equal and every settlement scores 0.5 — a
+      uniform shift that changes no ordering. Eq. 2's min-max is genuinely
+      undefined on that input; a rank is not.
+    * `n == 1` raises, because `(rank - 1) / 0` is the same 0/0 that
+      `minmax`'s hi == lo guard refuses (DEL-54). A one-settlement city has
+      no value to invent.
+    """
+    gdf_copy = polygon_gdf.copy()
+    n = len(gdf_copy)
+    if n < 2:
+        raise ValueError(
+            f"percentile rank of {source_col!r} is undefined across {n} "
+            "row(s): the rescaling divides by (n - 1), so a single "
+            "settlement has no rank to report. Check the exclusion set "
+            "upstream.")
+    ranks = gdf_copy[source_col].rank(method="average", ascending=True)
+    gdf_copy[target_col] = (ranks - 1.0) / (n - 1.0)
+    return gdf_copy
+
+
+def _apply_aggregation(polygon_gdf, *, source_col, target_col,
+                       aggregation_rule):
+    """Eq. 2, dispatched on `methodology.aggregation.rule` (DEL-57)."""
+    if aggregation_rule == "mean_minmax":
+        return minmax(polygon_gdf, source_col=source_col,
+                      target_col=target_col)
+    if aggregation_rule == "mean_rank":
+        return percentile_rank_column(polygon_gdf, source_col=source_col,
+                                      target_col=target_col)
+    raise ValueError(
+        f"unknown aggregation rule {aggregation_rule!r}; allowed values: "
+        f"{list(AGGREGATION_RULES)}")
+```
+
+Then in `service_index`: add `aggregation_rule="mean_minmax"` to the
+keyword list, and replace the final line
+
+```python
+    return minmax(out, source_col=pcen_col, target_col=idx_col)
+```
+
+with
+
+```python
+    return _apply_aggregation(out, source_col=pcen_col, target_col=idx_col,
+                              aggregation_rule=aggregation_rule)
+```
+
+Extend `service_index`'s docstring with a sentence naming the new keyword
+and pointing at `_apply_aggregation`.
+
+**Then wire it through the caller.** Find where `pipeline.py` calls
+`service_index` and pass `aggregation_rule=cfg.methodology.aggregation.rule.value`
+alongside the existing `transform_form=` / `transform_stage=` arguments,
+matching exactly how those are passed. If they are passed as enum `.value`
+strings, do the same; if the enums are passed directly, do that instead —
+read the call site and match it.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_index.py tests/test_pipeline.py -q -W error`
+Expected: PASS.
+
+- [ ] **Step 5: Verify nothing moved, then commit**
+
+```bash
+git diff --stat tests/fixtures/
+git add delhi_psi/index.py delhi_psi/pipeline.py tests/test_index.py
+git commit -m "feat(index): percentile-rank aggregation as an alternative to Eq. 2's min-max (DEL-57)"
+```
+
+`git diff --stat tests/fixtures/` must print nothing — both shipped profiles
+still say `mean_minmax`, so no fixture may move.
+
+---
+
+### Task 3: the independent reference rule
+
+**Files:**
+- Modify: `tests/reference_impl.py`
+- Test: `tests/test_reference_impl.py`
+
+**Interfaces:**
+- Consumes: nothing from Tasks 1-2. **`tests/reference_impl.py` imports nothing from `delhi_psi` and must not start now** — implement the rank rule from scratch there. That independence is the entire value of the two-implementation oracle.
+- Produces: an `aggregation_rule="mean_minmax"` keyword on `compute_city`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/test_reference_impl.py`:
+
+```python
+def test_reference_mean_rank_ranks_each_service_independently():
+    """Oraculum has 7 settlements, so every average rank is hand-checkable:
+    the ranks of 7 values rescale to 0, 1/6, 2/6, ... 1. Under `mean_rank`
+    every `*_idx` column must be drawn from exactly that set (or a tie
+    average of two adjacent members of it), for every service."""
+    frame = reference_impl.compute_city(
+        *_oraculum_args(), aggregation_rule="mean_rank")
+    allowed = {i / 6 for i in range(7)}
+    allowed |= {(a + b) / 2 for a in allowed for b in allowed}
+    for col in [c for c in frame.columns if c.endswith("_idx")]:
+        assert set(frame[col]).issubset(allowed), col
+
+
+def test_reference_mean_rank_is_unmoved_by_a_pcen_stage_transform():
+    """log1p is strictly monotone and injective, so it preserves both the
+    ordering AND the tie structure — the average ranks cannot change. This
+    is the ticket's claim that `transform` goes moot under `mean_rank`,
+    asserted as an EXACT equality rather than approximately."""
+    plain = reference_impl.compute_city(
+        *_oraculum_args(), aggregation_rule="mean_rank")
+    transformed = reference_impl.compute_city(
+        *_oraculum_args(), aggregation_rule="mean_rank",
+        transform_form="log1p", transform_stage="pcen")
+    idx_cols = [c for c in plain.columns if c.endswith("_idx")]
+    pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])
+```
+
+`_oraculum_args()` stands for however this test module already builds the
+arguments for `compute_city` — read the file and use its existing helper or
+fixture rather than inventing one.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest tests/test_reference_impl.py -q -W error`
+Expected: FAIL — `compute_city() got an unexpected keyword argument 'aggregation_rule'`.
+
+- [ ] **Step 3: Implement**
+
+In `tests/reference_impl.py`, add `aggregation_rule="mean_minmax"` to
+`compute_city`'s keyword list, validate it beside the existing transform
+validation:
+
+```python
+    if aggregation_rule not in ("mean_minmax", "mean_rank"):
+        raise ValueError(
+            f"unknown aggregation rule {aggregation_rule!r}; allowed "
+            "values: ['mean_minmax', 'mean_rank']")
+```
+
+Then replace the per-service normalisation loop. Today it reads:
+
+```python
+    for svc in POINT_SERVICES + ("road",):
+        col = f"{svc}_pcen"
+        pcen = df[col]
+        lo, hi = pcen.min(), pcen.max()
+        if hi == lo:
+            raise ValueError(...)
+        df[f"{svc}_idx"] = (pcen - lo) / (hi - lo)
+        idx_cols.append(f"{svc}_idx")
+```
+
+Make it dispatch, keeping the min-max path byte-for-byte as it is:
+
+```python
+    n = len(df)
+    for svc in POINT_SERVICES + ("road",):
+        col = f"{svc}_pcen"
+        pcen = df[col]
+        if aggregation_rule == "mean_rank":
+            # DEL-57: rank ascending with tie blocks averaged, rescaled so
+            # min -> 0 and max -> 1. Written out longhand rather than via
+            # Series.rank, so this stays an INDEPENDENT statement of the
+            # rule rather than a second call to the same library routine
+            # the production side uses.
+            if n < 2:
+                raise ValueError(
+                    f"percentile rank of {col!r} is undefined across {n} "
+                    "row(s): the rescaling divides by (n - 1)")
+            order = sorted(range(n), key=lambda k: pcen.iloc[k])
+            ranks = [0.0] * n
+            position = 0
+            while position < n:
+                stop = position
+                while (stop + 1 < n
+                       and pcen.iloc[order[stop + 1]] == pcen.iloc[order[position]]):
+                    stop += 1
+                average = (position + stop) / 2 + 1
+                for k in range(position, stop + 1):
+                    ranks[order[k]] = average
+                position = stop + 1
+            df[f"{svc}_idx"] = [(r - 1.0) / (n - 1.0) for r in ranks]
+        else:
+            lo, hi = pcen.min(), pcen.max()
+            if hi == lo:
+                raise ValueError(
+                    f"min-max of {col!r} is undefined: all {len(pcen)} "
+                    f"values equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 "
+                    "— every settlement scores the same on this service")
+            df[f"{svc}_idx"] = (pcen - lo) / (hi - lo)
+        idx_cols.append(f"{svc}_idx")
+```
+
+Keep the existing `hi == lo` message text exactly as it is today — a test
+may match on it.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_reference_impl.py -q -W error`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/reference_impl.py tests/test_reference_impl.py
+git commit -m "test(reference): the rank rule, stated independently of the package it checks (DEL-57)"
+```
+
+---
+
+### Task 4: the variant rows
+
+**Files:**
+- Modify: `tests/variants.py`
+- Modify: `tests/fixtures/*/variants_expected_values.csv` (regenerated)
+- Test: `tests/test_variant_rules.py`
+
+**Interfaces:**
+- Consumes: Task 1's config key, Task 2's production rule, Task 3's reference rule.
+- Produces: nothing later tasks use.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `tests/test_variant_rules.py`:
+
+```python
+def test_a_pcen_stage_transform_does_not_move_a_rank_aggregation():
+    """The sharpest statement of how DEL-34 and DEL-57 relate: log1p is
+    injective, so it preserves the tie structure as well as the ordering,
+    so the average ranks are IDENTICAL — not merely close. This is the only
+    pair of variants in this repo whose expected values must be equal, and
+    asserting that equality directly is stronger than the 1e-12 agreement
+    each of them separately gets against the reference implementation."""
+    plain = _variant_values("aggregation_mean_rank")
+    transformed = _variant_values("aggregation_mean_rank_log1p_pcen")
+    idx = {k: v for k, v in plain.items() if "_idx" in k}
+    assert idx == {k: v for k, v in transformed.items() if "_idx" in k}
+```
+
+`_variant_values(name)` stands for however this module already reads one
+variant's expected values out of `variants_expected_values.csv` — read the
+file and use its existing helper.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest tests/test_variant_rules.py -q -W error`
+Expected: FAIL — the variant names do not exist.
+
+- [ ] **Step 3: Implement**
+
+Add to `tests/variants.py`'s variant dict, following the `transform_*` rows'
+shape exactly, and add `("aggregation", "rule"): "aggregation_rule"` to the
+key-mapping dict beside the two `transform` entries:
+
+```python
+    # DEL-57: rank aggregation — Eq. 2 becomes a percentile rank rather than
+    # a min-max. Alternative to DEL-34's transforms, not a companion: the
+    # third row exists to prove they are alternatives.
+    "aggregation_mean_rank": {
+        "aggregation": {"rule": "mean_rank"},
+    },
+    # Must produce values IDENTICAL to the row above — log1p is injective,
+    # so it moves no rank and breaks no tie.
+    "aggregation_mean_rank_log1p_pcen": {
+        "aggregation": {"rule": "mean_rank"},
+        "transform": {"form": "log1p", "stage": "pcen"},
+    },
+    # A `psi`-stage transform DOES still bite under mean_rank: it acts on
+    # the composite, which is a mean of ranks, not a rank.
+    "aggregation_mean_rank_log1p_psi": {
+        "aggregation": {"rule": "mean_rank"},
+        "transform": {"form": "log1p", "stage": "psi"},
+    },
+```
+
+Then regenerate the variant expected values with whatever generator script
+the repo already uses (look for it in `scripts/` — the same one DEL-34 used;
+`scripts/generate_production_fixtures.py` is a sibling but is NOT it).
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_variant_rules.py tests/test_variants_match_reference.py -q -W error`
+Expected: PASS, with the three new variants agreeing at 1e-12 on both cities.
+
+- [ ] **Step 5: Verify addition-only, then commit**
+
+```bash
+git diff --numstat tests/fixtures/
+git diff --stat tests/fixtures/*/expected_values.csv
+```
+
+The first must show **zero deletions** in the `variants_expected_values.csv`
+rows. The second must print nothing — the non-variant expected values may
+not move at all. If either fails, STOP and report.
+
+```bash
+git add tests/variants.py tests/fixtures tests/test_variant_rules.py
+git commit -m "test(variants): three rank-aggregation rows, and the transform no-op proved (DEL-57)"
+```
+
+---
+
+### Task 5: the config documentation
+
+**Files:**
+- Modify: `docs/methodology-config.md`
+- Test: none new — `tests/test_config.py` from Task 1 covers the behaviour.
+
+- [ ] **Step 1: Write the documentation**
+
+Add `methodology.aggregation.rule` to `docs/methodology-config.md`'s
+switch table (match the existing rows' shape), and add a short subsection
+covering the two things a reader cannot infer from the enum:
+
+1. **A constant column stops being an error.** `mean_minmax` raises when a
+   service's PCEN is constant (Eq. 2 divides 0/0, DEL-54); `mean_rank`
+   returns 0.5 for every settlement. Under `mean_rank` a service nobody
+   owns will pass silently rather than halting the run — a real change in
+   what the pipeline accepts.
+2. **A `pcen`-stage transform becomes a no-op.** `log1p` and `cbrt` are
+   injective, so they change no rank and break no tie; the values are
+   exactly identical. A `psi`-stage transform still bites, because the
+   composite is a mean of ranks rather than a rank. Cite the variant pair
+   that pins it.
+
+Do not restate the spec. Two short paragraphs.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add docs/methodology-config.md
+git commit -m "docs(config): what changes under mean_rank — a constant column, and a moot transform (DEL-57)"
+```
+
+---
+
+## Self-review
+
+**Spec coverage.** § 2 the switch → Task 1. § 3 the rank rule and the `n == 1`
+guard → Task 2. § 4's two measured differences → Task 2 (constant column,
+`n == 1`) and Tasks 3–4 (the transform no-op). § 5 what must not move →
+every task's Step 5. § 6 three variant rows → Task 4. § 8's "documented in
+`docs/methodology-config.md`" → Task 5.
+
+**Placeholders.** Four places name a helper the plan cannot know
+(`_methodology_from_raw`, `_oraculum_args`, `_variant_values`, and the
+variant generator script). Each says explicitly to read the file and use its
+existing helper rather than invent one — that is a deliberate instruction,
+not a gap, because inventing a parallel helper is the more likely error.
+
+**Type consistency.** `AggregationRule` is the config enum; `index.py` takes
+the plain string (`"mean_minmax"` / `"mean_rank"`) exactly as it already
+takes `transform_form`. Task 2's Step 3 tells the implementer to read the
+`transform_form` call site and match it rather than assume, because getting
+this wrong silently passes an enum where a string is compared.
+
+**One risk worth naming.** Task 3 asks for the rank rule to be written
+longhand in the reference implementation rather than via `Series.rank`, to
+keep the two implementations independent. Longhand code is where an
+off-by-one lives, and the tie-block loop is the part to check hardest —
+which is exactly why Task 3's first test pins the whole allowed value set
+for a 7-settlement city, where every legal answer is enumerable.
