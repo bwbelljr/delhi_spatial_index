@@ -100,6 +100,31 @@ into a test**, and it is the sharpest available statement of how DEL-34 and
 DEL-57 relate: they are alternative answers to one complaint, and combining
 them at the `pcen` stage does nothing at all.
 
+**Corrected by the whole-branch review: "injective" holds on the reals, not
+in float64, and the gap is reachable at this pipeline's own scale.** `cbrt`
+maps `0.040000000000000015` and `0.04000000000000002` — distinct doubles
+about one ULP apart, well inside the fixtures' PCEN range of 0 to 0.04 — to
+the *same* double. A monotone transform can never break a tie, but it can
+**create** one, merging two rank blocks and moving the average ranks.
+
+So the honest statement is: the ranks cannot be reordered, an existing tie
+cannot be broken, and the equality holds for every input these fixtures
+contain and for essentially any real run (it needs two settlements whose
+PCEN agree to within an ULP). It is a property of the data, not a theorem —
+and when it fails it fails as a red assertion, not as a quietly different
+number.
+
+The review also found that **`cbrt` had no `mean_rank` coverage at all** —
+§ 6's table paired `mean_rank` only with `log1p`, and `cbrt` is the more
+collision-prone of the two, compressing at every magnitude where `log1p`
+only compresses above ~1e-3. The untested half was the weaker half. A
+`aggregation_mean_rank_cbrt_pcen` row closes it.
+
+This is the third claim this cycle that was true in its narrow form and
+overstated in its general one. The recurring error is not sloppiness about
+the mathematics; it is asserting a mathematical fact about the reals as
+though it described the floating-point pipeline that implements it.
+
 A `psi`-stage transform is **not** a no-op under `mean_rank` — it acts on
 the composite before the second normalisation, and the composite is a mean
 of ranks, not a rank. The combination stays legal and is covered by a
@@ -113,6 +138,15 @@ variant row.
 - `variants_expected_values.csv` is **addition-only**, verified by `diff`.
 - The real-data `code-2025` baseline still verifies at `0.000e+00`.
 
+  **Not run on this branch, deliberately, and here is why the risk is nil.**
+  Cycle 5 forbids real-data runs, and under `mean_minmax` — which all 17
+  profiles carry — `_apply_aggregation` dispatches to `minmax` with
+  textually the same arguments as the line it replaced. The whole-branch
+  reviewer confirmed that dispatch by reading it and by running the
+  fixtures. Every committed fixture, including all 34 production CSVs, is
+  byte-identical to `main`, which is the same claim the baseline check
+  makes, measured on data the repo actually ships.
+
 ## 6. Variant coverage
 
 Three new rows in `tests/variants.py`, each scored by both implementations
@@ -122,6 +156,7 @@ on both fixture cities at `1e-12`:
 |---|---|
 | `aggregation_mean_rank` | the rule itself, against a hand-checkable ranking |
 | `aggregation_mean_rank_log1p_pcen` | the no-op property — must equal `aggregation_mean_rank` **exactly** |
+| `aggregation_mean_rank_cbrt_pcen` | the same, for the **more** collision-prone transform (added in review) |
 | `aggregation_mean_rank_log1p_psi` | that a `psi`-stage transform still bites under `mean_rank` |
 
 The second row is the interesting one: it is the only variant in this repo
@@ -152,7 +187,8 @@ tie-block averaging that a naive `argsort` would get wrong.
   `tests/reference_impl.py`, which imports nothing from `delhi_psi`.
 - The `n == 1` guard, with its own test.
 - Three variant rows agreeing at 1e-12 on both cities.
-- The `log1p`-at-`pcen` no-op asserted as an exact equality.
+- The `pcen`-stage no-op asserted as an exact equality, for **both**
+  `log1p` and `cbrt`.
 - The constant-column difference documented in `docs/methodology-config.md`.
 - Every existing fixture byte-identical; `variants_expected_values.csv`
   addition-only; full suite green.

@@ -33,16 +33,31 @@ section accumulates changes on in-flight branches.
     constant column (Eq. 2 divides 0/0, DEL-54); `mean_rank` returns 0.5 for
     everyone — so a service nobody owns halts one run and passes the other.
     `mean_rank` has its own refusal at `n == 1`, which is the same 0/0.
-  - **`transform` and `aggregation` are alternatives, not companions —
-    proved rather than asserted.** `log1p` and `cbrt` are injective, so
-    under `mean_rank` a `pcen`-stage transform preserves the ordering AND
-    the tie structure and therefore cannot move a single rank. The variant
-    pair `aggregation_mean_rank` / `aggregation_mean_rank_log1p_pcen` is
-    asserted **exactly equal** on every `*_idx` column, on both fixture
-    cities and both denominators — the only pair in this repo whose values
-    must be identical. The ticket claimed the transform knob "becomes
-    largely moot"; this makes that a test. (A `psi`-stage transform still
-    bites: it acts on the composite, a mean of ranks rather than a rank.)
+  - **`transform` and `aggregation` are alternatives, not companions — and
+    now tested rather than argued.** `log1p` and `cbrt` are strictly
+    monotone, so under `mean_rank` a `pcen`-stage transform can never
+    reorder settlements and never break a tie; in exact arithmetic they are
+    injective and no rank moves at all. `aggregation_mean_rank` is asserted
+    **exactly equal** to both `aggregation_mean_rank_log1p_pcen` and
+    `aggregation_mean_rank_cbrt_pcen` on every `*_idx` column, on both
+    fixture cities and both denominators — the only variant rows in this
+    repo whose values must be identical. The ticket claimed the transform
+    knob "becomes largely moot"; this makes that a test. (A `psi`-stage
+    transform still bites: it acts on the composite, a mean of ranks rather
+    than a rank.)
+  - **A claim corrected in review: "injective" is about the reals, not
+    float64.** The first draft of this entry said the ranks "cannot move",
+    proved rather than asserted. A reviewer found the counterexample at
+    this pipeline's own scale — `cbrt` maps `0.040000000000000015` and
+    `0.04000000000000002` to the same double, so a transform can *create* a
+    tie (never break one) and merge two rank blocks. It needs two
+    settlements whose PCEN land within about one ULP, which the fixtures do
+    not contain and real data is overwhelmingly unlikely to, and it would
+    fail the assertion loudly rather than change a number quietly. The
+    review also found that `cbrt` — the more collision-prone of the two,
+    since it compresses at every magnitude while `log1p` only compresses
+    above ~1e-3 — had **no `mean_rank` coverage at all**; it has a variant
+    row now.
   - **Two implementations, as every methodology value gets.** The rule is
     written in `delhi_psi/index.py` and, independently, longhand in
     `tests/reference_impl.py` — which imports nothing from `delhi_psi` and

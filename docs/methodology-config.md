@@ -85,22 +85,47 @@ difference in what the pipeline accepts, not a detail. (`mean_rank` has its
 own refusal in the same spirit: `n == 1`, where `(rank − 1) / (n − 1)` is
 the same 0/0 in different clothing.)
 
-**A `pcen`-stage transform becomes an exact no-op.** `log1p` and `cbrt` are
-strictly monotone and injective, so they preserve the ordering *and* the tie
-structure, so the average ranks cannot move. Not approximately — the variant
-pair `aggregation_mean_rank` and `aggregation_mean_rank_log1p_pcen` is
-asserted **equal** on every `*_idx` column, on both fixture cities and both
-denominators. (The `*_pcen` columns do differ, and must: a `pcen`-stage
+**A `pcen`-stage transform is a no-op on these fixtures, and very nearly one
+in general.** `log1p` and `cbrt` are strictly monotone, so they can never
+reorder settlements and never *break* an existing tie. In exact arithmetic
+they are also injective, so the average ranks are unchanged — and the
+variant pairs `aggregation_mean_rank` against
+`aggregation_mean_rank_log1p_pcen` and `aggregation_mean_rank_cbrt_pcen`
+are asserted **equal** on every `*_idx` column, on both fixture cities and
+both denominators. (The `*_pcen` columns do differ, and must: a `pcen`-stage
 transform replaces the reported PCEN by design.)
+
+**But "injective" is a statement about the reals, not about float64**, and
+the difference is reachable at this pipeline's own scale — `cbrt` maps
+`0.040000000000000015` and `0.04000000000000002` to the same double. A
+transform cannot break a tie, but it *can create* one, merging two rank
+blocks and moving the average ranks. It takes two settlements whose PCEN
+land within about one unit in the last place, which is why the fixtures do
+not contain such a pair and why real data is overwhelmingly unlikely to.
+So: the equality is a property these fixtures have and a near-certainty in
+practice, not a theorem — and if it ever fails, the assertion fails loudly
+rather than a number changing quietly.
 
 A `psi`-stage transform still bites under `mean_rank`, because it acts on
 the composite — a mean of ranks, not a rank.
 
+**The second normalisation stays a min-max under both rules.** `mean_rank`
+replaces Eq. 2 only; `norm_psi` is still `minmax(unnorm_psi)`. So a run in
+which *every* service is constant still halts — later, at the second
+normalisation, rather than at Eq. 2.
+
 The practical reading: **`transform` and `aggregation` are alternative
 answers to the same complaint**, not companions. Both exist because the
-compressed 0–1 index puts 452 of 4,131 settlements at exactly zero; adopting
-a rank aggregation would make the transform knob moot for the composite.
-They should be decided together.
+compressed 0–1 index puts **452 of 4,131** reported settlements at exactly
+zero at the published baseline; adopting a rank aggregation would make the
+transform knob moot for the composite. They should be decided together.
+
+That 452 is `docs/data/phase6_sweep.md`'s `n_own_share_undef` at the
+baseline, which is the same set by a short argument the documents did not
+previously spell out: own-share is undefined exactly when pooled PCEN is
+zero across all seven services, and zero pooled PCEN on every column forces
+every `*_idx` to 0 (zero is that column's minimum), hence `unnorm_psi == 0`
+and `norm_psi == 0`. The converse holds too, so the two counts coincide.
 
 ## 2. Categories — the settlement-type mapping
 
