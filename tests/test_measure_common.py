@@ -247,3 +247,42 @@ def test_holds_prose_sees_text_outside_blocks_only():
     assert not holds_prose("```text\nx: 1\n```\n")
     assert not holds_prose("```text\nx: 1\n```\n\n```text\ny: 2\n```\n")
     assert not holds_prose("")
+
+
+# --- emit (DEL-58) -------------------------------------------------------
+from scripts._measure_common import emit
+
+
+def test_emit_refuses_to_overwrite_a_document_holding_prose(tmp_path, capsys):
+    doc = tmp_path / "doc.md"
+    doc.write_text(DOC_ONE_RUN)
+    with pytest.raises(SystemExit, match="--splice"):
+        emit("```text\nblock: points\npoint: a\nn: 9\n```", out=str(doc))
+    assert doc.read_text() == DOC_ONE_RUN
+
+
+def test_emit_overwrites_a_blocks_only_file(tmp_path):
+    target = tmp_path / "blocks.md"
+    target.write_text("```text\nblock: points\npoint: a\nn: 1\n```\n")
+    emit("```text\nblock: points\npoint: a\nn: 9\n```", out=str(target))
+    assert "n: 9" in target.read_text()
+
+
+def test_emit_writes_a_new_file(tmp_path):
+    target = tmp_path / "new.md"
+    emit("```text\nblock: a\nx: 1\n```", out=str(target))
+    assert target.read_text() == "```text\nblock: a\nx: 1\n```\n"
+
+
+def test_emit_splices_in_place(tmp_path):
+    doc = tmp_path / "doc.md"
+    doc.write_text(DOC_ONE_RUN)
+    emit("```text\nblock: points\npoint: a\nn: 9\n```", splice=str(doc))
+    text = doc.read_text()
+    assert "n: 9" in text
+    assert "### Finding" in text
+
+
+def test_emit_prints_when_neither_flag_is_given(capsys):
+    emit("```text\nblock: a\nx: 1\n```")
+    assert "x: 1" in capsys.readouterr().out

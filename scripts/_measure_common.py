@@ -257,6 +257,29 @@ def holds_prose(text):
                if index not in covered)
 
 
+def emit(text, *, out=None, splice=None):
+    """The `--out` / `--splice` behaviour every measurement CLI shares.
+
+    ONE implementation, because the failure this guards against — blocks
+    written over a document's prose — happened once already, and a second
+    copy of the guard is a second chance to get it wrong.
+    """
+    if splice:
+        target = Path(splice)
+        target.write_text(splice_blocks(target.read_text(), text))
+        return
+    if out:
+        target = Path(out)
+        if target.exists() and holds_prose(target.read_text()):
+            raise SystemExit(
+                f"{target} holds hand-written prose, and --out writes blocks "
+                "only — it would delete every caption and Finding. Use "
+                f"--splice {target} to refresh its blocks in place.")
+        target.write_text(text + "\n")
+        return
+    print(text)
+
+
 def parse_block(text, *, name=None):
     """The inverse of `render`. The SAME parser reads the committed document
     and a script's stdout, so the drift test compares like with like.

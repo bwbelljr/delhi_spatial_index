@@ -592,6 +592,11 @@ def test_the_out_flags_help_warns_it_overwrites_prose():
     assert "prose" in help_text
 
 
+def test_the_splice_flag_is_offered_alongside_out():
+    help_text = S.build_parser().format_help()
+    assert "--splice" in help_text
+
+
 # --- end-to-end smoke test against the real (partial) sweep --------------
 def _run_summarizer(*extra_args):
     proc = subprocess.run(

@@ -207,3 +207,10 @@ def test_end_to_end_against_the_oraculum_production_fixture(tmp_path):
     # summary block.
     assert text.count(FENCE) == 6 + 1
     assert parse_block(text, name="summary")["either_decile_gated"] == "True"
+
+
+def test_the_rank_report_offers_out_and_splice():
+    help_text = R.build_parser().format_help()
+    assert "--out" in help_text
+    assert "--splice" in help_text
+    assert "OVERWRITES" in help_text

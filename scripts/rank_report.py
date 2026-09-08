@@ -35,9 +35,8 @@ a decile.
 """
 
 import argparse
-from pathlib import Path
 
-from scripts._measure_common import render
+from scripts._measure_common import emit, render
 from scripts.summarize_sweep import (
     PSI_COL, _fmt, bootstrap_rank_intervals, category_order, decile_is_gated,
     decile_k, decile_share, load_output_frame, percentile_rank,
@@ -132,7 +131,13 @@ def build_parser():
     parser.add_argument("--bootstrap-n", type=int, default=1000,
                         help="bootstrap draw count (default: 1000)")
     parser.add_argument("--out", default=None,
-                        help="write the blocks here instead of stdout")
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY, OVERWRITES any prose in the "
+                             "target; use --splice for a committed document")
+    parser.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding (DEL-58)")
     return parser
 
 
@@ -143,10 +148,7 @@ def main(argv=None):
         render_categories_block(frame, seed=args.seed, n=args.bootstrap_n),
         render_summary_block(frame),
     ])
-    if args.out:
-        Path(args.out).write_text(text + "\n")
-    else:
-        print(text)
+    emit(text, out=args.out, splice=args.splice)
 
 
 if __name__ == "__main__":

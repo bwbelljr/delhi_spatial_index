@@ -681,7 +681,7 @@ from pathlib import Path
 
 from delhi_psi import io as psi_io
 from delhi_psi.config import load_config
-from scripts._measure_common import FENCE, parse_block, render  # noqa: F401
+from scripts._measure_common import FENCE, emit, parse_block, render  # noqa: F401
 from scripts.run_sweep import degree_report
 
 BLOCKS = ("points", "ordering", "gap", "denominator_check")
@@ -1263,6 +1263,11 @@ def build_parser():
                              "target; to update the committed document, "
                              "splice the blocks in rather than pointing "
                              "this at it directly")
+    parser.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding — the safe way to update "
+                             "docs/data/phase6_sweep.md (DEL-58)")
     parser.add_argument("--block", choices=BLOCKS, default=None,
                         help="render only this block")
     return parser
@@ -1282,10 +1287,7 @@ def main(argv=None):
     }
     text = "\n".join(renderers[name]() for name in wanted)
 
-    if args.out:
-        Path(args.out).write_text(text + "\n")
-    else:
-        print(text)
+    emit(text, out=args.out, splice=args.splice)
 
 
 if __name__ == "__main__":
