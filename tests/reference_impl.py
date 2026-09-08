@@ -324,6 +324,9 @@ DECAY_DISTANCES = ("centroid", "boundary")
 TRANSFORM_FORMS = ("none", "log1p", "cbrt")
 TRANSFORM_STAGES = ("pcen", "psi")
 
+# DEL-57: the two aggregation rules for Eq. 2.
+AGGREGATION_RULES = ("mean_minmax", "mean_rank")
+
 
 def _apply_transform(value, transform_form):
     if transform_form == "none":
@@ -377,10 +380,10 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
         raise ValueError(
             f"transform form {transform_form!r} requires transform_stage in "
             f"{list(TRANSFORM_STAGES)}, got {transform_stage!r}")
-    if aggregation_rule not in ("mean_minmax", "mean_rank"):
+    if aggregation_rule not in AGGREGATION_RULES:
         raise ValueError(
             f"unknown aggregation rule {aggregation_rule!r}; allowed "
-            "values: ['mean_minmax', 'mean_rank']")
+            f"values: {list(AGGREGATION_RULES)}")
 
     # `scenarios` defaults to the module table, so every existing call keeps
     # working; a caller may pass its own WITHOUT mutating the global (which
@@ -474,7 +477,11 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
             # min -> 0 and max -> 1. Written out longhand rather than via
             # Series.rank, so this stays an INDEPENDENT statement of the
             # rule rather than a second call to the same library routine
-            # the production side uses.
+            # the production side uses. This loop does not model NaN: unlike
+            # Series.rank (production), `sorted` places NaN arbitrarily and
+            # `nan == nan` is False, so a NaN would get its own tie block and
+            # a real rank here. Out of scope, same as production: an all-NaN
+            # column means a NaN reached the arithmetic upstream.
             if n < 2:
                 raise ValueError(
                     f"percentile rank of {col!r} is undefined across {n} "

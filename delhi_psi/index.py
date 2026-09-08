@@ -476,6 +476,11 @@ def percentile_rank_column(polygon_gdf, *, source_col, target_col):
     * `n == 1` raises, because `(rank - 1) / 0` is the same 0/0 that
       `minmax`'s hi == lo guard refuses (DEL-54). A one-settlement city has
       no value to invent.
+
+    NaN is left as NaN by `Series.rank` and is out of this function's scope,
+    the same way `minmax`'s note above reads: an all-NaN PCEN column means a
+    NaN reached the arithmetic upstream, which `io.read_population`'s join
+    and `validate` are the place to catch.
     """
     gdf_copy = polygon_gdf.copy()
     n = len(gdf_copy)

@@ -166,11 +166,20 @@ VARIANTS = {
     "aggregation_mean_rank": {
         "aggregation": {"rule": "mean_rank"},
     },
-    # Must produce values IDENTICAL to the row above — log1p is injective,
-    # so it moves no rank and breaks no tie.
+    # Must produce values IDENTICAL to the row above — log1p is monotone and
+    # injective in exact arithmetic, so it moves no rank and breaks no tie.
     "aggregation_mean_rank_log1p_pcen": {
         "aggregation": {"rule": "mean_rank"},
         "transform": {"form": "log1p", "stage": "pcen"},
+    },
+    # Same claim, the more collision-prone transform: cbrt shrinks relative
+    # spacing by a constant factor of 3 at every magnitude (log1p only
+    # compresses above ~1e-3), so this was the untested half of the no-op
+    # claim above — a float64 near-collision is more likely here than under
+    # log1p, even though none exists on these fixtures.
+    "aggregation_mean_rank_cbrt_pcen": {
+        "aggregation": {"rule": "mean_rank"},
+        "transform": {"form": "cbrt", "stage": "pcen"},
     },
     # A `psi`-stage transform DOES still bite under mean_rank: it acts on
     # the composite, which is a mean of ranks, not a rank.

@@ -624,21 +624,37 @@ def test_transform_cbrt_psi_matches_the_named_function_on_oraculum():
 
 
 # --- DEL-57: rank aggregation (spec § 2-4) ------------------------------
+RANK_PCEN_TRANSFORM_VARIANTS = ("aggregation_mean_rank_log1p_pcen",
+                               "aggregation_mean_rank_cbrt_pcen")
+
+
+@pytest.mark.parametrize("transform_variant", RANK_PCEN_TRANSFORM_VARIANTS)
 @pytest.mark.parametrize("denom", ["pop", "popdensity"])
 @pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
-def test_a_pcen_stage_transform_does_not_move_a_rank_aggregation(city, denom):
-    """The sharpest statement of how DEL-34 and DEL-57 relate: log1p is
-    injective, so it preserves the tie structure as well as the ordering,
-    so the average ranks are IDENTICAL — not merely close. This is the only
-    pair of variants in this repo whose values must be equal, and asserting
-    that equality directly is stronger than the 1e-12 agreement each of
-    them separately gets against the reference implementation.
+def test_a_pcen_stage_transform_does_not_move_a_rank_aggregation(
+        city, denom, transform_variant):
+    """The sharpest statement of how DEL-34 and DEL-57 relate: a `pcen`-stage
+    transform is MONOTONE, so it can never reorder settlements or break an
+    existing tie, and is INJECTIVE in exact arithmetic, so there the average
+    ranks are unchanged. It is NOT injective in float64 — two `pcen` values
+    within about one ulp can round to the same transformed value and merge
+    two rank blocks — so the exact equality asserted here is a statement
+    about these fixtures, which contain no such near-collision, not a
+    guarantee about all inputs. This is the only pair of variants in this
+    repo whose values must be equal, and asserting that equality directly is
+    stronger than the 1e-12 agreement each of them separately gets against
+    the reference implementation.
+
+    Both `log1p` and `cbrt` are covered: `cbrt` is the more collision-prone
+    of the two (it shrinks relative spacing by a constant factor of 3 at
+    every magnitude, where `log1p` only compresses above ~1e-3), so it is
+    the sharper check even though both pass on these fixtures.
 
     `_idx` only, deliberately: a `pcen`-stage transform REPLACES the
     reported `*_pcen` value by design (DEL-34), so those columns differ
     substantially and must. Verified during plan review on a skewed
     vector — `*_idx` max abs difference 0.0, `*_pcen` ≈ 4.9."""
     plain = variant(city, "aggregation_mean_rank", denom)
-    transformed = variant(city, "aggregation_mean_rank_log1p_pcen", denom)
+    transformed = variant(city, transform_variant, denom)
     idx_cols = [c for c in plain.columns if c.endswith("_idx")]
     pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])

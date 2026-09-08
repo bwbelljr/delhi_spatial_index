@@ -753,10 +753,12 @@ def test_reference_mean_rank_ranks_each_service_independently(
 
 def test_reference_mean_rank_is_unmoved_by_a_pcen_stage_transform(
         settlements, services, barriers):
-    """log1p is strictly monotone and injective, so it preserves both the
-    ordering AND the tie structure — the average ranks cannot change. This
-    is the ticket's claim that `transform` goes moot under `mean_rank`,
-    asserted as an EXACT equality rather than approximately."""
+    """log1p is monotone, so it can never reorder settlements or break an
+    existing tie; injective in exact arithmetic, so there the average ranks
+    are unchanged. It is NOT injective in float64 — two `pcen` values within
+    about one ulp can round to the same transformed value and merge two rank
+    blocks — so this exact equality is an assertion about these fixtures,
+    which contain no such pair, rather than a guarantee about all inputs."""
     plain = _city_df(settlements, services, barriers, "code",
                      aggregation_rule="mean_rank")
     transformed = _city_df(settlements, services, barriers, "code",
