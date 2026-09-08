@@ -586,10 +586,11 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
     and costs no fixture file.
     """
     from delhi_psi.config import (
-        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
-        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
-        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
-        RoadsFormula, TransformConfig, TransformForm,
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, AggregationConfig,
+        AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
+        DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
+        MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
+        TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -603,6 +604,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
         transform=TransformConfig(form=TransformForm.NONE),
+        aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
         second_normalization=True,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
@@ -676,10 +678,11 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
     expected value (spec § 12 item 3).
     """
     from delhi_psi.config import (
-        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, BarrierConfig,
-        BarrierRule, DecayConfig, DecayDistance, DecayForm, ExclusionConfig,
-        ExclusionStage, MethodologyConfig, OverlapConfig, OverlapLending,
-        RoadsFormula, TransformConfig, TransformForm,
+        AbsentNeighbor, AdjacencyConfig, AdjacencyRule, AggregationConfig,
+        AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
+        DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
+        MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
+        TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -693,6 +696,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         decay=DecayConfig(form=DecayForm.INVERSE_LINEAR, distance_unit="km",
                           distance=DecayDistance.CENTROID),
         transform=TransformConfig(form=TransformForm.NONE),
+        aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
         second_normalization=True,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
@@ -731,3 +735,34 @@ def test_the_synthetic_city_really_shares_a_point_and_a_road():
     assert got["road"][("P", "Q")] == pytest.approx(0.1, abs=1e-12)
     assert got["road"][("Q", "P")] == got["road"][("P", "Q")]
     assert got["school"] == {}          # every other service is clean
+
+
+def test_reference_mean_rank_ranks_each_service_independently(
+        settlements, services, barriers):
+    """Oraculum has 7 settlements, so every average rank is hand-checkable:
+    the ranks of 7 values rescale to 0, 1/6, 2/6, ... 1. Under `mean_rank`
+    every `*_idx` column must be drawn from exactly that set, or from a tie
+    average of two members of it, for every service."""
+    frame = _city_df(settlements, services, barriers, "code",
+                     aggregation_rule="mean_rank")
+    allowed = {i / 6 for i in range(7)}
+    allowed |= {(a + b) / 2 for a in allowed for b in allowed}
+    for col in [c for c in frame.columns if c.endswith("_idx")]:
+        assert set(frame[col]).issubset(allowed), col
+
+
+def test_reference_mean_rank_is_unmoved_by_a_pcen_stage_transform(
+        settlements, services, barriers):
+    """log1p is monotone, so it can never reorder settlements or break an
+    existing tie; injective in exact arithmetic, so there the average ranks
+    are unchanged. It is NOT injective in float64 — two `pcen` values within
+    about one ulp can round to the same transformed value and merge two rank
+    blocks — so this exact equality is an assertion about these fixtures,
+    which contain no such pair, rather than a guarantee about all inputs."""
+    plain = _city_df(settlements, services, barriers, "code",
+                     aggregation_rule="mean_rank")
+    transformed = _city_df(settlements, services, barriers, "code",
+                           aggregation_rule="mean_rank",
+                           transform_form="log1p", transform_stage="pcen")
+    idx_cols = [c for c in plain.columns if c.endswith("_idx")]
+    pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])

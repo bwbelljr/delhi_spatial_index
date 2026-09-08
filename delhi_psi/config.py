@@ -48,6 +48,8 @@ REFERENCE_KNOBS = {
     "methodology.transform.form": {"none": "none", "log1p": "log1p",
                                    "cbrt": "cbrt"},
     "methodology.transform.stage": {"pcen": "pcen", "psi": "psi"},
+    "methodology.aggregation.rule": {"mean_minmax": "mean_minmax",
+                                     "mean_rank": "mean_rank"},
     "methodology.roads": {"decayed": "decayed", "eq4_own_only": "eq4"},
     "methodology.second_normalization": {True: True, False: False},
     "methodology.exclusion.stage": {"post_neighbors": False,
@@ -67,6 +69,7 @@ ENUM_KEYS = (
     "methodology.decay.distance",
     "methodology.transform.form",
     "methodology.transform.stage",
+    "methodology.aggregation.rule",
     "methodology.roads",
     "methodology.exclusion.stage",
     "methodology.exclusion.absent_neighbor",
@@ -89,6 +92,7 @@ DecayForm = _make_enum("DecayForm", "methodology.decay.form")
 DecayDistance = _make_enum("DecayDistance", "methodology.decay.distance")
 TransformForm = _make_enum("TransformForm", "methodology.transform.form")
 TransformStage = _make_enum("TransformStage", "methodology.transform.stage")
+AggregationRule = _make_enum("AggregationRule", "methodology.aggregation.rule")
 RoadsFormula = _make_enum("RoadsFormula", "methodology.roads")
 ExclusionStage = _make_enum("ExclusionStage", "methodology.exclusion.stage")
 AbsentNeighbor = _make_enum("AbsentNeighbor",
@@ -103,6 +107,7 @@ ENUMS = {
     "methodology.decay.distance": DecayDistance,
     "methodology.transform.form": TransformForm,
     "methodology.transform.stage": TransformStage,
+    "methodology.aggregation.rule": AggregationRule,
     "methodology.roads": RoadsFormula,
     "methodology.exclusion.stage": ExclusionStage,
     "methodology.exclusion.absent_neighbor": AbsentNeighbor,
@@ -242,6 +247,18 @@ class TransformConfig:
 
 
 @dataclass(frozen=True)
+class AggregationConfig:
+    # DEL-57: what Eq. 2 IS, as opposed to `transform`, which chooses a
+    # function applied to a value. `mean_minmax` is today: min-max each
+    # service's PCEN, then average. `mean_rank` replaces the min-max with a
+    # percentile rank, which cannot form the mass point at zero that Eq. 2's
+    # min-max produces on a right-skewed distribution (452 of 4,131
+    # settlements at the published baseline). Neither shipped profile adopts
+    # it; this is measurement machinery, and Raj decides adoption.
+    rule: AggregationRule
+
+
+@dataclass(frozen=True)
 class ExclusionConfig:
     types: tuple
     stage: ExclusionStage
@@ -255,6 +272,7 @@ class MethodologyConfig:
     overlap: OverlapConfig
     decay: DecayConfig
     transform: TransformConfig
+    aggregation: AggregationConfig
     roads: RoadsFormula
     second_normalization: bool
     exclusion: ExclusionConfig
@@ -451,8 +469,8 @@ def _profile_path(profile_or_path):
 
 def _methodology(raw, *, allowed_categories):
     _reject_unknown(raw, {"adjacency", "barrier", "overlap", "decay",
-                          "transform", "roads", "second_normalization",
-                          "exclusion"}, "methodology")
+                          "transform", "aggregation", "roads",
+                          "second_normalization", "exclusion"}, "methodology")
 
     adjacency_raw = _require(raw, "adjacency", "methodology")
     _reject_unknown(adjacency_raw, {"rule", "max_distance_km"},
@@ -538,6 +556,13 @@ def _methodology(raw, *, allowed_categories):
             used_by="methodology.transform.form: log1p or cbrt",
             applies=transform_form != TransformForm.NONE))
 
+    aggregation_raw = _require(raw, "aggregation", "methodology")
+    _reject_unknown(aggregation_raw, {"rule"}, "methodology.aggregation")
+    aggregation = AggregationConfig(
+        rule=_coerce_enum(
+            "methodology.aggregation.rule",
+            _require(aggregation_raw, "rule", "methodology.aggregation")))
+
     exclusion_raw = _require(raw, "exclusion", "methodology")
     _reject_unknown(exclusion_raw, {"types", "stage", "absent_neighbor"},
                     "methodology.exclusion")
@@ -569,6 +594,7 @@ def _methodology(raw, *, allowed_categories):
         overlap=overlap,
         decay=decay,
         transform=transform,
+        aggregation=aggregation,
         roads=_coerce_enum("methodology.roads",
                            _require(raw, "roads", "methodology")),
         second_normalization=_bool(

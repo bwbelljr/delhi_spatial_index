@@ -691,3 +691,43 @@ def test_service_index_forwards_the_shared_structure():
     # min-max still runs: X is the max, Y the min
     assert values.loc["X", "clinic_idx"] == 1.0
     assert values.loc["Y", "clinic_idx"] == 0.0
+
+
+def test_percentile_rank_column_scales_min_to_zero_and_max_to_one():
+    frame = pd.DataFrame({"x": [3.0, 1.0, 2.0]})
+    out = index.percentile_rank_column(frame, source_col="x", target_col="r")
+    assert list(out["r"]) == [1.0, 0.0, 0.5]
+
+
+def test_percentile_rank_column_averages_ranks_within_a_tie_block():
+    """Ranks 1,2,3,4 over values 1,2,2,5 -> the tie block takes (2+3)/2 = 2.5,
+    so the rescaled ranks are 0, 0.5, 0.5, 1."""
+    frame = pd.DataFrame({"x": [1.0, 2.0, 2.0, 5.0]})
+    out = index.percentile_rank_column(frame, source_col="x", target_col="r")
+    assert list(out["r"]) == [0.0, 0.5, 0.5, 1.0]
+
+
+def test_percentile_rank_column_is_defined_where_minmax_raises():
+    """A constant column: `minmax` raises (Eq. 2 divides 0/0), a rank does
+    not — every settlement ties, so every rescaled rank is 0.5. This is a
+    real behavioural difference between the two rules, not a detail."""
+    frame = pd.DataFrame({"x": [0.4] * 5})
+    out = index.percentile_rank_column(frame, source_col="x", target_col="r")
+    assert set(out["r"]) == {0.5}
+    with pytest.raises(ValueError, match="undefined"):
+        index.minmax(frame, source_col="x", target_col="r")
+
+
+def test_percentile_rank_column_refuses_a_single_row():
+    """`(rank - 1) / (n - 1)` is the same 0/0 `minmax`'s hi == lo guard
+    refuses (DEL-54); a one-settlement city has no value to invent."""
+    frame = pd.DataFrame({"x": [1.0]})
+    with pytest.raises(ValueError, match="x"):
+        index.percentile_rank_column(frame, source_col="x", target_col="r")
+
+
+def test_an_unknown_aggregation_rule_is_rejected():
+    frame = pd.DataFrame({"x": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="mean_minmax"):
+        index._apply_aggregation(frame, source_col="x", target_col="r",
+                                 aggregation_rule="median_rank")

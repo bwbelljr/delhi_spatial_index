@@ -7,6 +7,67 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **`methodology.aggregation.rule`** — a new required switch: what Eq. 2
+  *is*, as opposed to `transform`, which chooses a function applied to a
+  value. `mean_minmax` (today) min-maxes each service's PCEN across
+  settlements and averages the results; **`mean_rank`** replaces the min-max
+  with a percentile rank — ties averaged, rescaled `(rank − 1) / (n − 1)` so
+  the minimum maps to 0 and the maximum to 1, the same endpoints Eq. 2
+  produces (DEL-57, cycle 5). **Neither shipped profile adopts it**; Raj
+  decides, and should decide it together with DEL-34's transforms.
+  - **This is reading (a) of the ambiguity DEL-35 settled.** WORKPLAN said
+    "instead of averaging, explore ranking mechanisms", which admitted both
+    a different *report* (DEL-35 built that: `scripts/rank_report.py`) and a
+    different *index*. This is the index. It was split onto its own ticket
+    rather than dropped in a PR body.
+  - **Why it is worth having, and why it is not free.** Eq. 2's min-max on a
+    right-skewed distribution puts **452 of 4,131 reported settlements at
+    exactly `norm_psi == 0`** — a mass point larger than a decile, and the
+    reason `docs/data/phase6_sweep.md` needed decile gating at all. Ranks
+    are uniform by construction, so no mass point can form. But Eq. 1's
+    average of normalised counts preserves *magnitude* — ten clinics beat
+    two — and a rank aggregation preserves only *order*, discarding exactly
+    the intensity the paper's "how much service is reachable" framing rests
+    on. That is a methodological argument, not an implementation detail.
+  - **Two behavioural differences, both pinned.** `minmax` raises on a
+    constant column (Eq. 2 divides 0/0, DEL-54); `mean_rank` returns 0.5 for
+    everyone — so a service nobody owns halts one run and passes the other.
+    `mean_rank` has its own refusal at `n == 1`, which is the same 0/0.
+  - **`transform` and `aggregation` are alternatives, not companions — and
+    now tested rather than argued.** `log1p` and `cbrt` are strictly
+    monotone, so under `mean_rank` a `pcen`-stage transform can never
+    reorder settlements and never break a tie; in exact arithmetic they are
+    injective and no rank moves at all. `aggregation_mean_rank` is asserted
+    **exactly equal** to both `aggregation_mean_rank_log1p_pcen` and
+    `aggregation_mean_rank_cbrt_pcen` on every `*_idx` column, on both
+    fixture cities and both denominators — the only variant rows in this
+    repo whose values must be identical. The ticket claimed the transform
+    knob "becomes largely moot"; this makes that a test. (A `psi`-stage
+    transform still bites: it acts on the composite, a mean of ranks rather
+    than a rank.)
+  - **A claim corrected in review: "injective" is about the reals, not
+    float64.** The first draft of this entry said the ranks "cannot move",
+    proved rather than asserted. A reviewer found the counterexample at
+    this pipeline's own scale — `cbrt` maps `0.040000000000000015` and
+    `0.04000000000000002` to the same double, so a transform can *create* a
+    tie (never break one) and merge two rank blocks. It needs two
+    settlements whose PCEN land within about one ULP, which the fixtures do
+    not contain and real data is overwhelmingly unlikely to, and it would
+    fail the assertion loudly rather than change a number quietly. The
+    review also found that `cbrt` — the more collision-prone of the two,
+    since it compresses at every magnitude while `log1p` only compresses
+    above ~1e-3 — had **no `mean_rank` coverage at all**; it has a variant
+    row now.
+  - **Two implementations, as every methodology value gets.** The rule is
+    written in `delhi_psi/index.py` and, independently, longhand in
+    `tests/reference_impl.py` — which imports nothing from `delhi_psi` and
+    deliberately does not call `Series.rank`, because a second call to the
+    same library routine is not an independent statement of the rule.
+  - **Nothing existing moved.** All **17 profiles** carry `mean_minmax`;
+    both cities' `expected_values.csv` and every production fixture are
+    byte-identical; `variants_expected_values.csv` changed by addition only
+    (1,380 lines on messy, 966 on oraculum, **zero deletions**).
+
 - **`docs/data/` documents are regenerable** (DEL-58). `summarize_sweep.py
   --out <committed document>` wrote **blocks only**, so pointing it at
   `docs/data/phase6_sweep.md` deleted every hand-written caption and every

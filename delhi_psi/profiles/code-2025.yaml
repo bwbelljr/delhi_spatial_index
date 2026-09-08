@@ -77,6 +77,14 @@ methodology:
   transform:
     form: none                      # none | log1p | cbrt (DEL-34); no stage key
                                     # when form is none
+  aggregation:
+    rule: mean_minmax               # mean_minmax | mean_rank (DEL-57)
+                                    # mean_minmax is today: Eq. 2 min-maxes
+                                    # each service's PCEN, then Eq. 1
+                                    # averages. mean_rank replaces the
+                                    # min-max with a percentile rank —
+                                    # uniform by construction, so no mass
+                                    # point at zero can form. Not adopted.
   roads: decayed                    # decayed | eq4_own_only
   second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
   exclusion:

@@ -37,6 +37,9 @@ column is what the Phase 4 profile, DEL-31, will carry):
 | `adjacency.max_distance_km` | — (unused) | — (unused) | — | DEL-36 — the band's radius in km, polygon-to-polygon. **Required** iff `adjacency.rule: within_distance`, and **rejected** otherwise; `>= 0`, where 0 means "every polygon that intersects i" (§ 6) |
 | `decay.form` | `inverse_linear` | `inverse_linear` | `inverse_linear` — sweep later (DEL-37; Raj wants weights spread away from zero) | the decay weight w(D): `inverse_linear` = 1/(1+D), `none` = 1, `inverse_power` = 1/(1+D)^`exponent`, `exponential` = e^(−D/`scale_km`). `exponent` / `scale_km` are required by, and only by, their own form |
 | `decay.distance` | `centroid` | `centroid` | `centroid` | DEL-37 — what D means: `centroid` (centroid-to-centroid, as every run so far) or `boundary` (polygon-to-polygon, so every touching or overlapping neighbour is at 0 and lends its services undecayed) |
+| `transform.form` | `none` | `none` | **Raj to choose** — measurable since DEL-34, adopted by neither profile | DEL-34 — a function applied to a value, to spread the compressed 0–1 scores: `none`, `log1p` = log(1+x), `cbrt` = x^(1/3). Yeo-Johnson and sigmoid were excluded with reasons (a scikit-learn dependency and a fitted λ; an arbitrary scale parameter) |
+| `transform.stage` | — (unused) | — (unused) | — | DEL-34 — WHERE the transform applies: `pcen` (each service's PCEN, before Eq. 2 — attacks the skew at its source) or `psi` (the composite, before the second normalisation — what the 2021 notebook did). **Required** iff `transform.form` is not `none`, **rejected** otherwise |
+| `aggregation.rule` | `mean_minmax` | `mean_minmax` | **Raj to choose, with `transform.form`** — measurable since DEL-57, adopted by neither profile | DEL-57 — what Eq. 2 IS, as opposed to `transform`, which chooses a function applied to a value. `mean_minmax` min-maxes each service's PCEN then averages; `mean_rank` replaces the min-max with a percentile rank (ties averaged, rescaled so min → 0 and max → 1). See § 1.1 |
 
 Also in the block: `exclusion.stage` (`post_neighbors` = today and
 ratified: neighbours are built on the full universe, exclusion happens at
@@ -65,6 +68,64 @@ switch). A reserved value is a cycle-3x ticket, not a YAML edit.
 `barrier.rule: partial_weighted` was reserved until cycle 3E (DEL-48)
 supplied the reference rule, the anchors and the production implementation;
 it is now a loadable value, and it is what Raj chose.
+
+### 1.1 What changes under `aggregation.rule: mean_rank`
+
+Two consequences a reader cannot infer from the enum, both of which the
+oracle pins.
+
+**A constant column stops being an error.** `mean_minmax` *raises* when a
+service's PCEN is the same for every reported settlement — Eq. 2 divides
+0/0, and the DEL-54 guard refuses to invent a value. Under `mean_rank`
+every settlement ties, every average rank is equal, and the result is
+**0.5 for all of them**: defined, and a uniform shift that changes no
+ordering. So a service nobody owns, or one everybody owns equally, halts a
+`mean_minmax` run and passes silently under `mean_rank`. That is a real
+difference in what the pipeline accepts, not a detail. (`mean_rank` has its
+own refusal in the same spirit: `n == 1`, where `(rank − 1) / (n − 1)` is
+the same 0/0 in different clothing.)
+
+**A `pcen`-stage transform is a no-op on these fixtures, and very nearly one
+in general.** `log1p` and `cbrt` are strictly monotone, so they can never
+reorder settlements and never *break* an existing tie. In exact arithmetic
+they are also injective, so the average ranks are unchanged — and the
+variant pairs `aggregation_mean_rank` against
+`aggregation_mean_rank_log1p_pcen` and `aggregation_mean_rank_cbrt_pcen`
+are asserted **equal** on every `*_idx` column, on both fixture cities and
+both denominators. (The `*_pcen` columns do differ, and must: a `pcen`-stage
+transform replaces the reported PCEN by design.)
+
+**But "injective" is a statement about the reals, not about float64**, and
+the difference is reachable at this pipeline's own scale — `cbrt` maps
+`0.040000000000000015` and `0.04000000000000002` to the same double. A
+transform cannot break a tie, but it *can create* one, merging two rank
+blocks and moving the average ranks. It takes two settlements whose PCEN
+land within about one unit in the last place, which is why the fixtures do
+not contain such a pair and why real data is overwhelmingly unlikely to.
+So: the equality is a property these fixtures have and a near-certainty in
+practice, not a theorem — and if it ever fails, the assertion fails loudly
+rather than a number changing quietly.
+
+A `psi`-stage transform still bites under `mean_rank`, because it acts on
+the composite — a mean of ranks, not a rank.
+
+**The second normalisation stays a min-max under both rules.** `mean_rank`
+replaces Eq. 2 only; `norm_psi` is still `minmax(unnorm_psi)`. So a run in
+which *every* service is constant still halts — later, at the second
+normalisation, rather than at Eq. 2.
+
+The practical reading: **`transform` and `aggregation` are alternative
+answers to the same complaint**, not companions. Both exist because the
+compressed 0–1 index puts **452 of 4,131** reported settlements at exactly
+zero at the published baseline; adopting a rank aggregation would make the
+transform knob moot for the composite. They should be decided together.
+
+That 452 is `docs/data/phase6_sweep.md`'s `n_own_share_undef` at the
+baseline, which is the same set by a short argument the documents did not
+previously spell out: own-share is undefined exactly when pooled PCEN is
+zero across all seven services, and zero pooled PCEN on every column forces
+every `*_idx` to 0 (zero is that column's minimum), hence `unnorm_psi == 0`
+and `norm_psi == 0`. The converse holds too, so the two counts coincide.
 
 ## 2. Categories — the settlement-type mapping
 
