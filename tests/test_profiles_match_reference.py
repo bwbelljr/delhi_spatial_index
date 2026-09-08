@@ -125,6 +125,7 @@ def test_every_mapped_knob_is_one_the_reference_actually_implements():
         "methodology.decay.distance": "decay_distance",
         "methodology.transform.form": "transform_form",
         "methodology.transform.stage": "transform_stage",
+        "methodology.aggregation.rule": "aggregation_rule",
         "methodology.roads": "roads_formula",
         "methodology.second_normalization": "second_norm",
         "methodology.exclusion.absent_neighbor": "absent_neighbor_contribution",

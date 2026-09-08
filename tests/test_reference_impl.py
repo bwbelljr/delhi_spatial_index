@@ -735,3 +735,32 @@ def test_the_synthetic_city_really_shares_a_point_and_a_road():
     assert got["road"][("P", "Q")] == pytest.approx(0.1, abs=1e-12)
     assert got["road"][("Q", "P")] == got["road"][("P", "Q")]
     assert got["school"] == {}          # every other service is clean
+
+
+def test_reference_mean_rank_ranks_each_service_independently(
+        settlements, services, barriers):
+    """Oraculum has 7 settlements, so every average rank is hand-checkable:
+    the ranks of 7 values rescale to 0, 1/6, 2/6, ... 1. Under `mean_rank`
+    every `*_idx` column must be drawn from exactly that set, or from a tie
+    average of two members of it, for every service."""
+    frame = _city_df(settlements, services, barriers, "code",
+                     aggregation_rule="mean_rank")
+    allowed = {i / 6 for i in range(7)}
+    allowed |= {(a + b) / 2 for a in allowed for b in allowed}
+    for col in [c for c in frame.columns if c.endswith("_idx")]:
+        assert set(frame[col]).issubset(allowed), col
+
+
+def test_reference_mean_rank_is_unmoved_by_a_pcen_stage_transform(
+        settlements, services, barriers):
+    """log1p is strictly monotone and injective, so it preserves both the
+    ordering AND the tie structure — the average ranks cannot change. This
+    is the ticket's claim that `transform` goes moot under `mean_rank`,
+    asserted as an EXACT equality rather than approximately."""
+    plain = _city_df(settlements, services, barriers, "code",
+                     aggregation_rule="mean_rank")
+    transformed = _city_df(settlements, services, barriers, "code",
+                           aggregation_rule="mean_rank",
+                           transform_form="log1p", transform_stage="pcen")
+    idx_cols = [c for c in plain.columns if c.endswith("_idx")]
+    pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])

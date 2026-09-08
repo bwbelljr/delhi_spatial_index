@@ -338,7 +338,8 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                  max_distance_km=None, barrier_buffer_m=None,
                  decay_form="inverse_linear", exponent=None, scale_km=None,
                  decay_distance="centroid", overlap_lending="whole",
-                 transform_form="none", transform_stage=None):
+                 transform_form="none", transform_stage=None,
+                 aggregation_rule="mean_minmax"):
     # Every parameter a form does not use is REJECTED, not ignored — the
     # mapped-knob test relies on an unimplemented combination raising.
     if decay_form not in DECAY_FORMS:
@@ -375,6 +376,10 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
         raise ValueError(
             f"transform form {transform_form!r} requires transform_stage in "
             f"{list(TRANSFORM_STAGES)}, got {transform_stage!r}")
+    if aggregation_rule not in ("mean_minmax", "mean_rank"):
+        raise ValueError(
+            f"unknown aggregation rule {aggregation_rule!r}; allowed "
+            "values: ['mean_minmax', 'mean_rank']")
 
     # `scenarios` defaults to the module table, so every existing call keeps
     # working; a caller may pass its own WITHOUT mutating the global (which
@@ -459,16 +464,41 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
 
     df = pd.DataFrame.from_dict(rows, orient="index")
     idx_cols = []
+    n = len(df)
     for svc in POINT_SERVICES + ("road",):
         col = f"{svc}_pcen"
         pcen = df[col]
-        lo, hi = pcen.min(), pcen.max()
-        if hi == lo:
-            raise ValueError(
-                f"min-max of {col!r} is undefined: all {len(pcen)} values "
-                f"equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 — every "
-                f"settlement scores the same on this service")
-        df[f"{svc}_idx"] = (pcen - lo) / (hi - lo)
+        if aggregation_rule == "mean_rank":
+            # DEL-57: rank ascending with tie blocks averaged, rescaled so
+            # min -> 0 and max -> 1. Written out longhand rather than via
+            # Series.rank, so this stays an INDEPENDENT statement of the
+            # rule rather than a second call to the same library routine
+            # the production side uses.
+            if n < 2:
+                raise ValueError(
+                    f"percentile rank of {col!r} is undefined across {n} "
+                    "row(s): the rescaling divides by (n - 1)")
+            order = sorted(range(n), key=lambda k: pcen.iloc[k])
+            ranks = [0.0] * n
+            position = 0
+            while position < n:
+                stop = position
+                while (stop + 1 < n
+                       and pcen.iloc[order[stop + 1]] == pcen.iloc[order[position]]):
+                    stop += 1
+                average = (position + stop) / 2 + 1
+                for k in range(position, stop + 1):
+                    ranks[order[k]] = average
+                position = stop + 1
+            df[f"{svc}_idx"] = [(r - 1.0) / (n - 1.0) for r in ranks]
+        else:
+            lo, hi = pcen.min(), pcen.max()
+            if hi == lo:
+                raise ValueError(
+                    f"min-max of {col!r} is undefined: all {len(pcen)} "
+                    f"values equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 "
+                    "— every settlement scores the same on this service")
+            df[f"{svc}_idx"] = (pcen - lo) / (hi - lo)
         idx_cols.append(f"{svc}_idx")
     df["psi_eq1"] = df[idx_cols].mean(axis=1)
     # DEL-34, stage='psi': the composite is transformed BEFORE the second
