@@ -34,7 +34,50 @@
 **Files:**
 - Modify: `delhi_psi/config.py`
 - Modify: every `*.yaml` in `delhi_psi/profiles/`
-- Test: `tests/test_config.py`
+- Modify: `tests/test_config.py` — **including the `MINIMAL` constant**
+- Modify: `tests/test_reference_impl.py` — **two direct `MethodologyConfig(...)` constructions**
+- Modify: `tests/oraculum_fixtures.py` — `variant_methodology`
+- Modify: `tests/test_profiles_match_reference.py` — the `knob_for_key` dict
+
+**Making `aggregation` a required block breaks four things the first draft
+of this plan missed.** The plan review found all four; each is a hard
+failure, not a value mismatch, and each must be fixed IN THIS TASK or the
+suite goes red for reasons unrelated to the feature:
+
+1. **`tests/test_config.py`'s `MINIMAL` constant** (~line 33) is the YAML
+   nearly every test in that file builds on, referenced 28 times. Without an
+   `aggregation` key every one of them raises `ConfigError`. Add
+   `  aggregation: {rule: mean_minmax}` immediately after its `transform:`
+   line.
+2. **`tests/test_reference_impl.py` constructs `MethodologyConfig(...)`
+   directly** in two tests (~lines 598 and ~688) — the only two places in
+   the repo outside `config.py` that do. A new field with no default makes
+   both raise `TypeError`. Add
+   `aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX)` to
+   both, and import the two names locally as those tests already import
+   their siblings.
+3. **`tests/oraculum_fixtures.py::variant_methodology`** (~lines 155-207)
+   applies a variant's override block by block — `if "adjacency" in spec`,
+   `"barrier"`, `"overlap"`, `"decay"`, `"transform"`. With no
+   `"aggregation"` branch it **silently drops the override**, so production
+   would compute `mean_minmax` while the reference computes `mean_rank`,
+   and `test_variants_match_reference` fails at 1e-12 on 12 cases with no
+   hint as to why. Add:
+
+   ```python
+   if "aggregation" in spec:
+       block = spec["aggregation"]
+       methodology = replace(methodology, aggregation=AggregationConfig(
+           rule=AggregationRule(block["rule"])))
+   ```
+
+   This one is doing real work — without it Task 4 fails and the cause is
+   invisible from the failure message.
+4. **`tests/test_profiles_match_reference.py`'s `knob_for_key` dict**
+   (~lines 120-132) is the repo's one generic "every mapped knob actually
+   reaches `compute_city`" cross-check. Add the
+   `"methodology.aggregation.rule"` entry so the new knob is exercised
+   rather than silently skipped.
 
 **Interfaces:**
 - Produces: `AggregationRule` enum (`MEAN_MINMAX = "mean_minmax"`, `MEAN_RANK = "mean_rank"`), `AggregationConfig(rule)`, and `MethodologyConfig.aggregation`.
@@ -61,26 +104,51 @@ def test_both_shipped_profiles_keep_todays_aggregation():
         assert cfg.methodology.aggregation.rule is AggregationRule.MEAN_MINMAX
 
 
-def test_an_unknown_aggregation_rule_is_rejected():
-    with pytest.raises(ValueError, match="mean_minmax"):
-        _methodology_from_raw({"aggregation": {"rule": "median_rank"}})
+def test_an_unknown_aggregation_rule_is_rejected(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap("  aggregation:",
+                                         "  aggregation: {rule: median_rank}")))
+    message = str(exc.value)
+    assert "methodology.aggregation.rule" in message
+    for allowed in REFERENCE_KNOBS["methodology.aggregation.rule"]:
+        assert str(allowed) in message
 
 
-def test_a_missing_aggregation_block_is_rejected():
-    with pytest.raises(ValueError, match="aggregation"):
-        _methodology_from_raw({})
+def test_the_rule_is_required_inside_the_aggregation_block(tmp_path):
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, swap("  aggregation:",
+                                         "  aggregation: {}")))
+    assert "methodology.aggregation.rule" in str(exc.value)
+
+
+def test_aggregation_is_required_like_every_methodology_block(tmp_path):
+    without = MINIMAL.replace("  aggregation: {rule: mean_minmax}\n", "")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, without))
+    assert "methodology.aggregation" in str(exc.value)
 ```
 
-The last two use whatever helper `tests/test_config.py` already uses to
-build a methodology block from a raw dict and assert a rejection — read the
-file's existing rejection tests for `methodology.transform` and copy their
-shape exactly, including the helper name and the `match=` conventions. Do
-not invent a new helper.
+**These use the file's real idiom, which the first draft of this plan got
+wrong.** `tests/test_config.py` has no raw-dict helper: every rejection test
+builds a **complete YAML profile** from the `MINIMAL` constant via `write()`
+and `swap()`/`.replace()`, calls `load_config()`, and catches
+**`ConfigError`** — not `ValueError`. Read the existing
+`test_form_is_required_inside_the_transform_block` and
+`test_transform_enums_name_the_key_and_the_allowed_values` and match them
+exactly. The `swap()` calls above assume `MINIMAL` gains its `aggregation`
+line as a `{rule: mean_minmax}` one-liner, matching how `transform` appears
+there.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_config.py -q -W error`
 Expected: FAIL — `AggregationRule` is not importable and no profile has the block.
+
+Note the ordering: adding the `aggregation` line to `MINIMAL` before
+`config.py` accepts the key will make the *existing* tests fail too, with
+"unknown key". That is expected and transient — do Step 3's `config.py`
+change and the `MINIMAL` change together, then Step 4 must show the whole
+file green.
 
 - [ ] **Step 3: Implement**
 
@@ -155,14 +223,14 @@ class AggregationConfig:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `uv run pytest tests/test_config.py -q -W error`
-Expected: PASS.
+Run: `uv run pytest tests/test_config.py tests/test_reference_impl.py tests/test_profiles_match_reference.py -q -W error`
+Expected: PASS — all three, because this task touches all three.
 
 - [ ] **Step 5: Verify no fixture moved, then commit**
 
 ```bash
 git diff --stat tests/fixtures/
-git add delhi_psi/config.py delhi_psi/profiles tests/test_config.py
+git add delhi_psi/config.py delhi_psi/profiles tests/test_config.py tests/test_reference_impl.py tests/oraculum_fixtures.py tests/test_profiles_match_reference.py
 git commit -m "feat(config): methodology.aggregation.rule — mean_minmax or mean_rank (DEL-57)"
 ```
 
@@ -305,12 +373,24 @@ with
 Extend `service_index`'s docstring with a sentence naming the new keyword
 and pointing at `_apply_aggregation`.
 
-**Then wire it through the caller.** Find where `pipeline.py` calls
-`service_index` and pass `aggregation_rule=cfg.methodology.aggregation.rule.value`
-alongside the existing `transform_form=` / `transform_stage=` arguments,
-matching exactly how those are passed. If they are passed as enum `.value`
-strings, do the same; if the enums are passed directly, do that instead —
-read the call site and match it.
+**Then wire it through the caller.** `delhi_psi/pipeline.py`, in
+`index_frames` (~lines 238-239), passes the enum members **directly, never
+`.value`** — this works because every config enum is a `StrEnum` and so
+compares equal to its bare string:
+
+```python
+transform_form=methodology.transform.form,
+transform_stage=methodology.transform.stage,
+```
+
+Add, in the same call, in the same style:
+
+```python
+aggregation_rule=methodology.aggregation.rule,
+```
+
+Do **not** write `.value`. (The plan review resolved this against the real
+call site; the first draft guessed wrong.)
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -345,36 +425,48 @@ still say `mean_minmax`, so no fixture may move.
 Append to `tests/test_reference_impl.py`:
 
 ```python
-def test_reference_mean_rank_ranks_each_service_independently():
+def test_reference_mean_rank_ranks_each_service_independently(
+        settlements, services, barriers):
     """Oraculum has 7 settlements, so every average rank is hand-checkable:
     the ranks of 7 values rescale to 0, 1/6, 2/6, ... 1. Under `mean_rank`
-    every `*_idx` column must be drawn from exactly that set (or a tie
-    average of two adjacent members of it), for every service."""
-    frame = reference_impl.compute_city(
-        *_oraculum_args(), aggregation_rule="mean_rank")
+    every `*_idx` column must be drawn from exactly that set, or from a tie
+    average of two members of it, for every service."""
+    frame = _city_df(settlements, services, barriers, "code",
+                     aggregation_rule="mean_rank")
     allowed = {i / 6 for i in range(7)}
     allowed |= {(a + b) / 2 for a in allowed for b in allowed}
     for col in [c for c in frame.columns if c.endswith("_idx")]:
         assert set(frame[col]).issubset(allowed), col
 
 
-def test_reference_mean_rank_is_unmoved_by_a_pcen_stage_transform():
+def test_reference_mean_rank_is_unmoved_by_a_pcen_stage_transform(
+        settlements, services, barriers):
     """log1p is strictly monotone and injective, so it preserves both the
     ordering AND the tie structure — the average ranks cannot change. This
     is the ticket's claim that `transform` goes moot under `mean_rank`,
     asserted as an EXACT equality rather than approximately."""
-    plain = reference_impl.compute_city(
-        *_oraculum_args(), aggregation_rule="mean_rank")
-    transformed = reference_impl.compute_city(
-        *_oraculum_args(), aggregation_rule="mean_rank",
-        transform_form="log1p", transform_stage="pcen")
+    plain = _city_df(settlements, services, barriers, "code",
+                     aggregation_rule="mean_rank")
+    transformed = _city_df(settlements, services, barriers, "code",
+                           aggregation_rule="mean_rank",
+                           transform_form="log1p", transform_stage="pcen")
     idx_cols = [c for c in plain.columns if c.endswith("_idx")]
     pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])
 ```
 
-`_oraculum_args()` stands for however this test module already builds the
-arguments for `compute_city` — read the file and use its existing helper or
-fixture rather than inventing one.
+**Use the module's real fixtures and helper**, resolved by the plan review:
+`tests/test_reference_impl.py` has module-scoped `settlements()`,
+`services()` and `barriers()` fixtures (~lines 33-45) and a helper
+
+```python
+def _city_df(settlements, services, barriers, rule, **overrides):
+```
+
+which fills in `RULESETS[rule]` plus `scenario="baseline"`, `denom="pop"`.
+`compute_city` takes `adjacency_rule`, `barrier_rule`, `roads_formula`,
+`scenario`, `denom`, `second_norm` and `absent_neighbor_contribution` as
+required keyword arguments, so calling it with a bare positional triple
+would raise `TypeError` — the first draft of this plan did exactly that.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -481,22 +573,32 @@ git commit -m "test(reference): the rank rule, stated independently of the packa
 Append to `tests/test_variant_rules.py`:
 
 ```python
-def test_a_pcen_stage_transform_does_not_move_a_rank_aggregation():
+@pytest.mark.parametrize("denom", ["pop", "popdensity"])
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_a_pcen_stage_transform_does_not_move_a_rank_aggregation(city, denom):
     """The sharpest statement of how DEL-34 and DEL-57 relate: log1p is
     injective, so it preserves the tie structure as well as the ordering,
     so the average ranks are IDENTICAL — not merely close. This is the only
-    pair of variants in this repo whose expected values must be equal, and
-    asserting that equality directly is stronger than the 1e-12 agreement
-    each of them separately gets against the reference implementation."""
-    plain = _variant_values("aggregation_mean_rank")
-    transformed = _variant_values("aggregation_mean_rank_log1p_pcen")
-    idx = {k: v for k, v in plain.items() if "_idx" in k}
-    assert idx == {k: v for k, v in transformed.items() if "_idx" in k}
+    pair of variants in this repo whose values must be equal, and asserting
+    that equality directly is stronger than the 1e-12 agreement each of
+    them separately gets against the reference implementation.
+
+    `_idx` only, deliberately: a `pcen`-stage transform REPLACES the
+    reported `*_pcen` value by design (DEL-34), so those columns differ
+    substantially and must. Verified during plan review on a skewed
+    vector — `*_idx` max abs difference 0.0, `*_pcen` ≈ 4.9."""
+    plain = variant(city, "aggregation_mean_rank", denom)
+    transformed = variant(city, "aggregation_mean_rank_log1p_pcen", denom)
+    idx_cols = [c for c in plain.columns if c.endswith("_idx")]
+    pd.testing.assert_frame_equal(plain[idx_cols], transformed[idx_cols])
 ```
 
-`_variant_values(name)` stands for however this module already reads one
-variant's expected values out of `variants_expected_values.csv` — read the
-file and use its existing helper.
+**Use the module's real helper and its parametrization convention**, both
+resolved by the plan review: `variant(city, name, denom)` (~lines 51-62)
+returns a settlement × metric DataFrame, and every other test in this file
+is parametrized over `CITIES` and both denominators. The first draft of
+this plan invented a `_variant_values(name)` helper that does not exist and
+covered one city.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -530,9 +632,20 @@ key-mapping dict beside the two `transform` entries:
     },
 ```
 
-Then regenerate the variant expected values with whatever generator script
-the repo already uses (look for it in `scripts/` — the same one DEL-34 used;
-`scripts/generate_production_fixtures.py` is a sibling but is NOT it).
+Then regenerate the variant expected values. The plan review resolved the
+exact commands — it is **not** `scripts/generate_production_fixtures.py`
+(that writes `tests/fixtures/*/production/*.csv`); the variant CSVs are
+written by `scripts/check_oraculum_invariants.emit_checked_variant_expected_values`,
+which the two per-city geometry generators call:
+
+```bash
+uv run python scripts/generate_oraculum_fixtures.py
+uv run python scripts/generate_messy_fixtures.py
+```
+
+Both also rewrite the cities' geometry and `expected_values.csv`. **No
+geometry changes here, so only `variants_expected_values.csv` may differ** —
+Step 5 checks exactly that.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -611,9 +724,36 @@ takes `transform_form`. Task 2's Step 3 tells the implementer to read the
 `transform_form` call site and match it rather than assume, because getting
 this wrong silently passes an enum where a string is compared.
 
-**One risk worth naming.** Task 3 asks for the rank rule to be written
-longhand in the reference implementation rather than via `Series.rank`, to
-keep the two implementations independent. Longhand code is where an
-off-by-one lives, and the tie-block loop is the part to check hardest —
-which is exactly why Task 3's first test pins the whole allowed value set
-for a 7-settlement city, where every legal answer is enumerable.
+**Plan review (one round, Sonnet, 8 Sep 2026).** It resolved every helper
+this plan could not name and found **three Criticals**, all of the same
+shape: making `aggregation` a REQUIRED block breaks consumers of
+`MethodologyConfig` that the first draft never looked for. All three are
+fixed above, in Task 1:
+
+1. `tests/test_config.py`'s `MINIMAL` constant — 28 references, every one
+   of which would raise `ConfigError`.
+2. `tests/test_reference_impl.py`'s two direct `MethodologyConfig(...)`
+   constructions — the only two outside `config.py` — would raise
+   `TypeError`.
+3. `tests/oraculum_fixtures.py::variant_methodology` applies overrides
+   block by block and has no `aggregation` branch, so it would **silently
+   drop** the override: production computing `mean_minmax` against a
+   reference computing `mean_rank`, failing 12 cases at 1e-12 with nothing
+   in the message to say why. This is the one that would have cost real
+   debugging time.
+
+It also corrected three things the plan had guessed: the enum is passed to
+`service_index` **directly, not as `.value`**; `test_config.py` raises
+`ConfigError` from full-YAML fixtures rather than `ValueError` from a
+raw-dict helper that does not exist; and the variant regeneration runs
+through the two per-city geometry generators.
+
+**The risk this plan named was the wrong one.** The first draft warned that
+the longhand tie-block loop in Task 3 was where an off-by-one would live.
+The reviewer executed it against all-distinct, tie blocks at the start,
+middle and end, two tie blocks, all-tied, and `n = 2` — it matches
+`Series.rank(method="average")` exactly in every case, and
+`average = (position + stop) / 2 + 1` is algebraically the mean of the
+1-based ranks it stands for. The arithmetic was never the danger; the
+integration surface was. Worth remembering: the part of a change that feels
+delicate is not reliably the part that breaks.
