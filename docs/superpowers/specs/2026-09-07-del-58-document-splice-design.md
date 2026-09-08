@@ -16,9 +16,32 @@ Two things make this worse than an ordinary footgun:
 
 1. **The drift test cannot see it.** `test_a_fresh_run_reproduces_the_committed_blocks`
    compares *parsed blocks*. A document stripped of all its prose has
-   **identical blocks**, so the suite stays green while the analysis is gone.
-   The one test standing guard over this document is blind to the exact way
-   it gets destroyed.
+   **identical blocks**, so that test passes on the wreckage.
+
+   **Corrected after the whole-branch review, which ran the accident instead
+   of reasoning about it.** This spec first said "the suite stays green while
+   the analysis is gone". That is false, and the reviewer disproved it by
+   overwriting a scratch copy of `docs/data/phase6_sweep.md` with a real
+   blocks-only dump and running the suite: **two pre-existing tests fail**
+   (`test_every_caption_says_the_run_is_provisional` and
+   `test_the_document_records_its_provenance`). Destroying all seven
+   documents fails a per-document provenance test for **six of the seven**.
+
+   The narrow claim holds — that one drift test *is* blind, verified — but
+   the generalisation to "the suite" was wrong, and it was wrong in the
+   direction that overstates this ticket's necessity. What the new guard is
+   actually worth, stated honestly:
+
+   - it is the **only** test in the repo that references
+     `docs/data/uso_final_vocabulary.md` — the one document with no coverage
+     at all before this branch;
+   - it is glob-parametrised, so a *future* document inherits it without
+     anyone remembering to write a per-document provenance test;
+   - its second clause catches the loss of a single section's caption, which
+     nothing else covers.
+
+   That is a smaller claim than the one this spec opened with, and it is the
+   true one.
 2. **The command that destroys it is the command the harness exists for.**
    Whoever re-runs Phase 6 against the ratified profile (DEL-31) is the next
    person to type it, and by then the prose describes the paper's actual
@@ -37,12 +60,12 @@ not:
 |---|---|---|
 | **`--splice`** | replaces the block runs in place, leaves everything else byte-identical | the legitimate need: refresh the numbers in a committed document |
 | **`--out` refusal** | errors when the target holds prose, naming `--splice` | the accident: muscle memory types `--out <committed doc>` |
-| **prose-aware drift test** | asserts the committed documents still have their structure | the regression: some *other* path empties a document |
+| **prose-aware drift test** | asserts every committed document still has its structure, by glob | the document nobody wrote a per-document guard for — today `uso_final_vocabulary.md`, tomorrow whichever document is added next |
 
 `--splice` alone would leave `--out` as a loaded gun. The refusal alone
 turns silent loss into a message but gives no way to do the thing the user
 wanted. The test alone catches the loss after the fact — but it is cheap and
-it is the only part that guards against a future third writer.
+it is the only part that scales to documents nobody has written yet.
 
 ## 3. Where it lives: one implementation, two callers
 

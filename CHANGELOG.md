@@ -7,6 +7,71 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **`docs/data/` documents are regenerable** (DEL-58). `summarize_sweep.py
+  --out <committed document>` wrote **blocks only**, so pointing it at
+  `docs/data/phase6_sweep.md` deleted every hand-written caption and every
+  `### Finding` — 154 insertions against 292 deletions when it happened
+  during DEL-55. **The drift test could not see it**: it compares parsed
+  blocks, and a document stripped of all its prose has identical blocks, so
+  that test passes on the wreckage. DEL-46 added a warning to the help text;
+  this replaces the warning with a mechanism.
+  - **`--splice <document>`** on both `summarize_sweep.py` and
+    `rank_report.py` replaces the fenced-block runs in place and preserves
+    every other byte. Blocks are matched and replaced in **runs** — maximal
+    sequences of contiguous same-label blocks — because a run is not one
+    block: `phase6_sweep.md`'s `points` run is 13 blocks, and
+    `rank_report`'s `categories` run is one block per settlement category.
+    A one-block-to-one-block rule could not express "13 sweep points became
+    11".
+  - **The rule was measured, not assumed.** All seven committed documents
+    were checked before the spec was written: 54 blocks in
+    `phase6_sweep.md` across 4 runs, no label appearing as two separate
+    runs anywhere, and no prose interleaved inside any run. The splice also
+    preserves the **separator a document uses between blocks in a run** —
+    `phase6_sweep.md` puts one blank line there, 50 times, while script
+    output puts none, so a splice that wrote the fresh text verbatim would
+    silently reformat the document on every refresh.
+  - **`--out` now refuses** a target holding any non-blank line outside a
+    fenced block, and names `--splice` and the file in the message. Not the
+    ticket's proposed "contains a `### Finding`" test: only two of the seven
+    documents have Findings at all, and a caption above a block is worth no
+    less than a Finding below it. Overwriting a blocks-only scratch file
+    stays allowed. No `--force` — a force flag is a second way to make the
+    original mistake.
+  - **A prose-aware test over *every* `docs/data/*.md`**, by glob, so a new
+    document inherits it without anyone remembering. Two clauses — the
+    document has a `## ` heading, and every section carrying a block also
+    carries prose. Verified true for all seven documents (0 violations)
+    before the test was written, and proved able to FAIL against a scratch
+    copy of `barriers.md` with one section's prose stripped.
+  - **What that guard is actually worth — corrected during review.** The
+    spec first claimed the accident left "the suite green". Running it
+    disproved that: overwriting a scratch `phase6_sweep.md` with a real
+    blocks-only dump **fails two pre-existing tests**, and six of the seven
+    documents already had a per-document provenance test that catches the
+    same destruction. The narrow claim survives — the block-level drift test
+    is genuinely blind to it — but the honest value of the new guard is
+    narrower and different: it is the only test in the repo that covers
+    `uso_final_vocabulary.md`, it is the only one a *future* document
+    inherits automatically, and its second clause is the only thing covering
+    the loss of a single section's caption.
+  - **One implementation, two callers.** The splice, the refusal and the
+    `--out`/`--splice` dispatch all live in `scripts/_measure_common.py`,
+    which already owned `FENCE`, `render` and the block parser. Two copies
+    of a guard against a mistake that has already happened once is a second
+    chance to get it wrong.
+  - **A plan-review round earned its keep.** Reviewing by *executing* the
+    plan's code rather than reading it found that the separator logic
+    doubled the blank line on the round-trip case — so
+    `splice_blocks(doc, doc) == doc`, the property the spec calls its
+    strongest guarantee, failed against the plan's own implementation. Also
+    caught an unconditional trailing newline that would fabricate one for a
+    document ending at its last block without it. Both fixed before any
+    implementer saw the plan.
+  - **Nothing moved.** Every committed `docs/data/*.md` is byte-identical
+    (`git diff --stat docs/data/` empty), no statistic or block field
+    changed, no new dependency, no real-data run.
+
 - **Phase 6 sweep harness + a dry run on `code-2025`** (DEL-55, serving
   DEL-36 distance bands / DEL-37 decay weights / DEL-39 the adjacency
   comparison). Eleven sweep profiles, a runner, a summariser, and
