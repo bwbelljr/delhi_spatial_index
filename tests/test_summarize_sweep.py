@@ -582,19 +582,32 @@ def test_the_document_records_its_provenance():
         assert label in doc, label
 
 
-def test_the_out_flags_help_warns_it_overwrites_prose():
-    """Fix round item 5: `--out` writes BLOCKS ONLY, and pointing it at
-    `docs/data/phase6_sweep.md` deletes every hand-written caption and
-    Finding — it already happened once. The help text must say so
-    explicitly rather than reading like a harmless stdout redirect."""
+def test_the_out_flag_help_describes_the_refusal_not_the_old_overwrite():
+    """Whole-branch review, fix 1: `--out` no longer OVERWRITES a target
+    holding prose — it now REFUSES (exit 1, naming `--splice`). The old help
+    text ("BLOCKS ONLY, OVERWRITES any prose in the target") described
+    behaviour this branch removed. The help text must describe the refusal
+    and name `--splice` explicitly, not the old OVERWRITES wording."""
     help_text = S.build_parser().format_help()
-    assert "OVERWRITES" in help_text
+    assert "OVERWRITES" not in help_text
+    assert "refus" in help_text.lower()
     assert "prose" in help_text
+    assert "--splice" in help_text
 
 
 def test_the_splice_flag_is_offered_alongside_out():
     help_text = S.build_parser().format_help()
     assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse():
+    """Fix 2: `emit` checks `splice` first and returns, so
+    `--out dump.md --splice doc.md` used to splice and silently discard
+    `--out` — exit 0, no message. `--out` and `--splice` are now a mutually
+    exclusive argparse group, so parsing both together is refused up front."""
+    with pytest.raises(SystemExit):
+        S.build_parser().parse_args(
+            ["--out", "dump.md", "--splice", "doc.md"])
 
 
 # --- end-to-end smoke test against the real (partial) sweep --------------

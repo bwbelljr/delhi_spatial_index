@@ -1,7 +1,12 @@
 """Shared plumbing for the `scripts/measure_*.py` measurement scripts.
 
-Exactly five public names (spec § 1): the work-dir guard, the settlement
-loader, the fenced-block renderer, its parser, and the fence itself. NOT a
+Nine public names now (spec § 1 started this at five; DEL-58 added four):
+the work-dir guard (`resolve_work_dir`), the settlement loader
+(`load_settlements`), the fenced-block renderer (`render`), its parser
+(`parse_block`), and the fence itself (`FENCE`) — plus `splice_blocks` (the
+document splicer), `holds_prose` (the `--out` guard's prose detector),
+`emit` (the `--out`/`--splice` CLI behaviour), and `emit_check` (`emit`'s
+cheap pre-flight, callable before any computed input exists). NOT a
 `delhi_psi` module — these are measurement utilities, not pipeline API, and
 they are imported by path-sibling scripts the way `tests/cities.py` is
 imported by tests.
@@ -257,24 +262,61 @@ def holds_prose(text):
                if index not in covered)
 
 
-def emit(text, *, out=None, splice=None):
-    """The `--out` / `--splice` behaviour every measurement CLI shares.
+def emit_check(*, out=None, splice=None):
+    """The cheap half of `emit`'s `--out`/`--splice` guards (fix round item
+    6): the part that needs no computed `text` at all, so a `main()` can
+    call this FIRST — before any loading or rendering — and refuse a bad
+    flag combination without paying for the work first. `emit` calls this
+    itself too, so its own checks (needed by callers, mainly tests, that
+    invoke `emit` directly without going through a `main()`) stay in force.
 
-    ONE implementation, because the failure this guards against — blocks
-    written over a document's prose — happened once already, and a second
-    copy of the guard is a second chance to get it wrong.
+    Refuses (`SystemExit`) in exactly the two cases `emit` refuses in:
+    `--out` pointed at a target that already holds hand-written prose, and
+    `--splice` pointed at a document that does not exist.
     """
-    if splice:
+    if splice is not None:
         target = Path(splice)
-        target.write_text(splice_blocks(target.read_text(), text))
-        return
-    if out:
+        if not target.exists():
+            raise SystemExit(
+                f"{target} does not exist; --splice refreshes an existing "
+                "document's blocks in place — use --out to write a new file "
+                "instead")
+    if out is not None:
         target = Path(out)
         if target.exists() and holds_prose(target.read_text()):
             raise SystemExit(
                 f"{target} holds hand-written prose, and --out writes blocks "
                 "only — it would delete every caption and Finding. Use "
                 f"--splice {target} to refresh its blocks in place.")
+
+
+def emit(text, *, out=None, splice=None):
+    """The `--out` / `--splice` behaviour shared by two of the CLIs in
+    `scripts/` — `summarize_sweep.py` and `rank_report.py` — not "every
+    measurement CLI": the four `measure_*.py` scripts print to stdout only
+    and offer neither flag.
+
+    ONE implementation, because the failure this guards against — blocks
+    written over a document's prose — happened once already, and a second
+    copy of the guard is a second chance to get it wrong.
+
+    `emit_check` runs first (raising `SystemExit` for either refusal before
+    any of this function's own work happens); `splice_blocks`'s `ValueError`
+    is then caught and re-raised as `SystemExit(str(exc))` so a bad
+    `--splice` target (wrong document, ambiguous label, ...) reports a clear
+    one-line message rather than a raw traceback (fix round item 5).
+    """
+    emit_check(out=out, splice=splice)
+    if splice:
+        target = Path(splice)
+        try:
+            spliced = splice_blocks(target.read_text(), text)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        target.write_text(spliced)
+        return
+    if out:
+        target = Path(out)
         target.write_text(text + "\n")
         return
     print(text)

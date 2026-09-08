@@ -250,10 +250,10 @@ def test_holds_prose_sees_text_outside_blocks_only():
 
 
 # --- emit (DEL-58) -------------------------------------------------------
-from scripts._measure_common import emit
+from scripts._measure_common import emit, emit_check
 
 
-def test_emit_refuses_to_overwrite_a_document_holding_prose(tmp_path, capsys):
+def test_emit_refuses_to_overwrite_a_document_holding_prose(tmp_path):
     doc = tmp_path / "doc.md"
     doc.write_text(DOC_ONE_RUN)
     with pytest.raises(SystemExit, match="--splice"):
@@ -288,6 +288,54 @@ def test_emit_prints_when_neither_flag_is_given(capsys):
     assert "x: 1" in capsys.readouterr().out
 
 
+def test_emit_refuses_to_splice_into_a_document_that_does_not_exist(tmp_path):
+    """Fix round item 5: before, `--splice` at a missing path raised a bare
+    `FileNotFoundError` (a raw traceback). Now `emit` raises a `SystemExit`
+    naming both flags: `--splice` refreshes an EXISTING document, `--out`
+    writes a new one."""
+    target = tmp_path / "missing.md"
+    with pytest.raises(SystemExit, match="--out"):
+        emit("```text\nblock: a\nx: 1\n```", splice=str(target))
+    assert not target.exists()
+
+
+def test_emit_turns_a_splice_value_error_into_a_system_exit(tmp_path):
+    """Fix round item 5: `splice_blocks` itself still raises `ValueError`
+    (its own tests depend on that), but `emit` must not let that surface as
+    a 9-frame traceback — it wraps it as `SystemExit(str(exc))`."""
+    doc = tmp_path / "doc.md"
+    doc.write_text(DOC_ONE_RUN)
+    with pytest.raises(SystemExit, match="ordering"):
+        emit("```text\nblock: ordering\nx: 1\n```", splice=str(doc))
+    assert doc.read_text() == DOC_ONE_RUN
+
+
+# --- emit_check (DEL-58 fix round item 6) --------------------------------
+def test_emit_check_refuses_an_out_target_holding_prose_without_any_data(tmp_path):
+    """The whole point of `emit_check`: it must be able to refuse before any
+    computed input exists, so a `main()` can call it before doing ~59s of
+    bootstrap work. No `text` argument is even accepted."""
+    doc = tmp_path / "doc.md"
+    doc.write_text(DOC_ONE_RUN)
+    with pytest.raises(SystemExit, match="--splice"):
+        emit_check(out=str(doc))
+    assert doc.read_text() == DOC_ONE_RUN
+
+
+def test_emit_check_refuses_a_splice_target_that_does_not_exist(tmp_path):
+    target = tmp_path / "missing.md"
+    with pytest.raises(SystemExit, match="--out"):
+        emit_check(splice=str(target))
+
+
+def test_emit_check_passes_silently_when_nothing_is_wrong(tmp_path):
+    target = tmp_path / "blocks.md"
+    target.write_text("```text\nblock: a\nx: 1\n```\n")
+    emit_check(out=str(target))
+    emit_check(splice=str(target))
+    emit_check()
+
+
 # --- the prose-aware drift guard (DEL-58) --------------------------------
 DOCS_DATA = REPO / "docs" / "data"
 
@@ -299,9 +347,9 @@ def _sections_missing_prose(text):
     for _, _, start, end in _block_spans(text):
         covered |= set(range(start, end))
 
-    missing, heading, prose, blocks = [], None, 0, 0
+    missing, heading, prose, blocks = [], "(preamble)", 0, 0
     def close():
-        if heading is not None and blocks and not prose:
+        if blocks and not prose:
             missing.append(heading)
     for index, line in enumerate(lines):
         if index in covered:
@@ -334,9 +382,41 @@ def test_every_committed_document_still_has_its_prose(path):
     assert _sections_missing_prose(text) == []
 
 
-def test_the_prose_guard_fails_on_a_blocks_only_document():
-    """The guard's own test: a document reduced to its blocks — exactly what
-    `--out` produces — must fail both clauses."""
-    destroyed = "```text\nblock: points\npoint: a\nn: 1\n```\n"
-    assert "## " not in destroyed
-    assert not holds_prose(destroyed)
+def test_a_preamble_block_with_no_prose_is_reported():
+    """Fix round item 3: `_sections_missing_prose` used to start
+    `heading = None` and require `heading is not None` in `close()`, so a
+    fenced block in a document's PREAMBLE — before the first `## ` heading —
+    was never checked for a caption at all. `docs/data/layer_pathologies.md`
+    is exactly that shape: its only fenced block sits in the preamble,
+    before line 39's first `## `. With `heading` initialised to
+    `"(preamble)"` and the `is not None` guard dropped, a preamble block with
+    no prose around it is now reported, closing that gap."""
+    doc = "```text\nblock: a\nx: 1\n```\n\n## Section\n\ncaption\n"
+    assert _sections_missing_prose(doc) == ["(preamble)"]
+
+
+def test_the_prose_guard_catches_both_a_blocks_only_dump_and_a_captionless_section():
+    """Fix round item 4: the previous version of this test
+    (`test_the_prose_guard_fails_on_a_blocks_only_document`) asserted
+    `"## " not in destroyed` and `not holds_prose(destroyed)` against a
+    string literal defined two lines above — it never called
+    `_sections_missing_prose` or exercised the guard at all. Replacing
+    `_sections_missing_prose` with `return []` would still pass it.
+
+    This exercises both clauses of the real guard
+    (`test_every_committed_document_still_has_its_prose`) directly, built
+    hermetically rather than read from `docs/data/`:
+
+    Clause 1: a document reduced to its blocks alone — exactly what `--out`
+    produces — has no `## ` heading at all.
+    Clause 2: a document that DOES have a heading, but whose only content
+    under it is a fenced block with no prose, is reported by
+    `_sections_missing_prose`.
+    """
+    blocks_only = "```text\nblock: points\npoint: a\nn: 1\n```\n"
+    assert "## " not in blocks_only
+
+    captionless_section = ("# Title\n\n## Section\n\n"
+                           "```text\nblock: a\nx: 1\n```\n")
+    assert "## " in captionless_section
+    assert _sections_missing_prose(captionless_section) == ["## Section"]

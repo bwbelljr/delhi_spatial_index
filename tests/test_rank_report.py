@@ -210,7 +210,21 @@ def test_end_to_end_against_the_oraculum_production_fixture(tmp_path):
 
 
 def test_the_rank_report_offers_out_and_splice():
+    """Whole-branch review, fix 1: `--out` no longer OVERWRITES a target
+    holding prose — it now REFUSES (exit 1, naming `--splice`). The help
+    text must describe the refusal, not the old OVERWRITES behaviour, and
+    must name `--splice` explicitly."""
     help_text = R.build_parser().format_help()
     assert "--out" in help_text
     assert "--splice" in help_text
-    assert "OVERWRITES" in help_text
+    assert "OVERWRITES" not in help_text
+    assert "refus" in help_text.lower()
+
+
+def test_out_and_splice_together_are_refused_by_argparse():
+    """Fix 2: `--out` and `--splice` are a mutually exclusive argparse
+    group, so parsing both together is refused up front rather than
+    silently splicing and discarding `--out` (exit 0, no message)."""
+    with pytest.raises(SystemExit):
+        R.build_parser().parse_args(
+            ["some.csv", "--out", "dump.md", "--splice", "doc.md"])
