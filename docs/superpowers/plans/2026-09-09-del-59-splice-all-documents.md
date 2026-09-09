@@ -70,13 +70,26 @@ Then one behavioural test per script, using the module's existing runner and kee
 def test_stdout_carries_blocks_and_nothing_else():
     """DEL-59: the provenance lines move to stderr so --out and --splice
     have a clean stream to work with. `parse_block` always ignored those
-    lines, so this is the first test that would notice one coming back."""
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one."""
     proc = <the module's existing runner>
-    assert "work-dir:" not in proc.stdout
-    assert "work-dir:" in proc.stderr
+    assert not holds_prose(proc.stdout)
+    for prefix in <every diagnostic prefix this script prints>:
+        assert prefix in proc.stderr
 ```
 
-Adapt the diagnostic string to what each script actually prints — `work-dir:` for `inventory_barriers` and `measure_psi_columns`, `cache:` for `measure_layer_pathologies`. Read each `main` and match it.
+**`holds_prose(proc.stdout)` is the load-bearing assertion — do not replace it with a substring check.** The plan review caught the first draft doing exactly that: it named one diagnostic per script, while every one of these scripts prints several, so an implementation that moved only the named one would have gone green with diagnostics still on stdout. Import `holds_prose` from `scripts._measure_common`; it already means "any non-blank line outside a fenced block", which is precisely this test's question.
+
+The per-script diagnostic prefixes, read from each `main` — assert **all** of them reach stderr:
+
+| script | diagnostics |
+|---|---|
+| `inventory_barriers.py` | `layer {name}:` (one per layer, in a loop), `work-dir:`, and `candidate missing:` inside the `--all-candidates` branch |
+| `measure_psi_columns.py` | `baseline-dir:`, `verify-dir:`, `work-dir:`, and the `WARNING:` line after the block |
+| `measure_layer_pathologies.py` | `layer:`, `cache:` |
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -170,7 +183,9 @@ Separate from Task 1 because `measure_rule_effects.py` carries `--only`, which m
 
 - [ ] **Step 1: Write the failing tests**
 
-The same four assertions as Task 1 for both scripts, plus, for `measure_rule_effects.py` only:
+The same four assertions as Task 1 for both scripts — **including the `holds_prose(proc.stdout)` whole-stream check**. Both of these scripts print `layer:`, `verify-dir:` and `work-dir:`; assert all three reach stderr.
+
+Plus, for `measure_rule_effects.py` only:
 
 ```python
 def test_only_plus_splice_refreshes_one_run_and_leaves_the_other(tmp_path):
@@ -323,4 +338,8 @@ Run `git diff --stat docs/data/` — it must print nothing. Then stage `tests/te
 
 **Type consistency.** `emit(text, *, out=None, splice=None)` and `emit_check(*, out=None, splice=None)` are used identically in all five scripts, matching their signatures in `_measure_common.py`.
 
-**One risk worth naming, and it is not the splice.** The splice machinery is proven — DEL-58's review round-tripped every one of these documents byte-identically. The risk here is the **stream separation**: a diagnostic `print` left on stdout would land inside a spliced document, and the existing drift tests cannot see it, because `parse_block` ignores every line outside a fence. That is why Task 1's behavioural test asserts on stdout's *shape* rather than only on its blocks — it is the only test in this plan that would catch a missed `print`.
+**One risk worth naming, and it is not the splice.** The splice machinery is proven — DEL-58's review round-tripped every one of these documents byte-identically, and the reviewer re-confirmed both awkward shapes round-trip today. The risk here is the **stream separation**: a diagnostic `print` left on stdout would land inside a spliced document, and the existing drift tests cannot see it, because `parse_block` ignores every line outside a fence.
+
+**Plan review (one round, Sonnet, 9 Sep 2026) — one Important finding, fixed above.** The first draft's behavioural test named a single diagnostic per script (`work-dir:`, `cache:`) while every one of these scripts prints several — `inventory_barriers.py` alone prints three, one of them in a loop and one behind `--all-candidates`. An implementation that moved only the named `print` would have passed the whole suite with diagnostics still on stdout, in direct violation of this plan's own definition of done. Worse, this self-review section claimed the test "asserts on stdout's *shape*" when it asserted on one substring. Both fixed: the assertion is now `holds_prose(proc.stdout)`, which is exactly "any non-blank line outside a fenced block", and every diagnostic prefix is enumerated per script.
+
+The reviewer also cleared what the plan was most likely to have got wrong: `emit_check(out=None, splice=None)` is a no-op so calling it unconditionally is safe; none of the five parsers has a conflicting option or an existing mutually-exclusive group; `DOCUMENT_GENERATORS` matches the block-bearing documents exactly (six, with `uso_final_vocabulary.md` legitimately absent); both round-trip tests pass today; and the `--only` join has a working precedent in `summarize_sweep.py`. One instruction is a harmless no-op: `import sys` is already present in all five scripts.
