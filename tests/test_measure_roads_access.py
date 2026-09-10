@@ -475,9 +475,13 @@ def test_out_and_splice_appear_in_help(capsys):
     assert "--splice" in help_text
 
 
-def test_out_and_splice_together_are_refused_by_argparse():
-    with pytest.raises(SystemExit):
-        main(["--verify-dir", "x", "--out", "dump.md", "--splice", "doc.md"])
+def test_out_and_splice_together_are_refused_by_argparse(tmp_path):
+    splice_target = tmp_path / "doc.md"
+    splice_target.write_text("existing doc\n")
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--verify-dir", "x", "--out", str(tmp_path / "dump.md"),
+              "--splice", str(splice_target)])
+    assert exc_info.value.code == 2
 
 
 def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):

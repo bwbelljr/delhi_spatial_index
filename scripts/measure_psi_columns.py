@@ -191,13 +191,20 @@ def main(argv=None):
     print(f"verify-dir: {verify_dir}", file=sys.stderr)
     print(f"work-dir: {work_dir}", file=sys.stderr)
     report = measure(baseline_dir, verify_dir=verify_dir)
-    emit(render(report), out=args.out, splice=args.splice)
     best = report["best_candidate"]
-    if report[f"matched_{best}"] < MATCH_FLOOR:
-        print(f"WARNING: the best candidate ({best}) matches only "
+    below_floor = report[f"matched_{best}"] < MATCH_FLOOR
+    warning = (f"WARNING: the best candidate ({best}) matches only "
               f"{report[f'matched_{best}']} of {len(FIGURE_4_BARS)} bars — "
               "the figure was not produced from these columns as-is "
-              "(spec § 2.4: escalate, do not guess)", file=sys.stderr)
+              "(spec § 2.4: escalate, do not guess)")
+    if below_floor and (args.out or args.splice):
+        # A committed document is not the place for a match this weak —
+        # refuse rather than write, so the warning cannot be buried under
+        # tqdm's stderr noise with an exit 0 (fix round item 3).
+        raise SystemExit(warning)
+    emit(render(report), out=args.out, splice=args.splice)
+    if below_floor:
+        print(warning, file=sys.stderr)
     return 0
 
 

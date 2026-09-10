@@ -28,7 +28,7 @@ import geopandas as gpd
 from delhi_psi import geometry, io, neighbors, pipeline
 from delhi_psi.config import load_config
 from scripts._measure_common import (emit, emit_check, load_settlements,
-                                     parse_block, render, resolve_work_dir)
+                                     render, resolve_work_dir)
 
 
 def count_rectangles(gdf, *, rtol=1e-9):

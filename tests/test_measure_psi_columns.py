@@ -13,9 +13,10 @@ import pandas as pd
 import pytest
 
 from scripts._measure_common import FENCE, holds_prose, parse_block
-from scripts.measure_psi_columns import (FIGURE_4_BARS, FIGURE_TOLERANCE,
-                                         cross_check, main, score_candidate,
-                                         score_candidates, type_means)
+from scripts.measure_psi_columns import (BASELINE_FILES, FIGURE_4_BARS,
+                                         FIGURE_TOLERANCE, cross_check, main,
+                                         score_candidate, score_candidates,
+                                         type_means)
 from tests.test_measure_common import (DATA_DIR,
                                        assert_prose_numbers_come_from_the_blocks,
                                        needs_data)
@@ -184,9 +185,13 @@ def test_out_and_splice_appear_in_help(capsys):
     assert "--splice" in help_text
 
 
-def test_out_and_splice_together_are_refused_by_argparse():
-    with pytest.raises(SystemExit):
-        main(["--out", "dump.md", "--splice", "doc.md"])
+def test_out_and_splice_together_are_refused_by_argparse(tmp_path):
+    splice_target = tmp_path / "doc.md"
+    splice_target.write_text("existing doc\n")
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--out", str(tmp_path / "dump.md"),
+              "--splice", str(splice_target)])
+    assert exc_info.value.code == 2
 
 
 def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
@@ -198,6 +203,53 @@ def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
     with pytest.raises(SystemExit):
         main(["--out", str(target)])
     assert target.read_text() == before
+
+
+def _write_below_floor_baseline(baseline_dir):
+    """A baseline whose only settlement type ("JJR") is nowhere near any
+    Figure 4 bar for either candidate column — matched is 0 for every
+    candidate, well under MATCH_FLOOR, for both --out and plain stdout."""
+    baseline_dir.mkdir(parents=True, exist_ok=True)
+    frame = pd.DataFrame({
+        "USO_FINAL": ["JJR"],
+        "unnorm_psi": [5.0],
+        "norm_psi": [5.0],
+    })
+    for name in BASELINE_FILES.values():
+        frame.to_csv(baseline_dir / name, index=False)
+
+
+def test_a_match_below_match_floor_is_refused_when_out_is_given(tmp_path):
+    """DEL-59 fix round item 3: --out must not write a document that carries
+    a match this weak — refuse (non-zero exit, the warning as the message)
+    rather than write suspect numbers and bury the warning under stderr's
+    tqdm noise with exit 0."""
+    baseline_dir = tmp_path / "baseline"
+    _write_below_floor_baseline(baseline_dir)
+    target = tmp_path / "out.md"
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--baseline-dir", str(baseline_dir),
+              "--data-dir", str(tmp_path / "data"),
+              "--work-dir", str(tmp_path / "work"),
+              "--out", str(target)])
+    assert "WARNING" in str(exc_info.value)
+    assert "escalate, do not guess" in str(exc_info.value)
+    assert not target.exists()
+
+
+def test_a_match_below_match_floor_still_warns_and_exits_zero_on_stdout(
+        capsys, tmp_path):
+    """Plain stdout runs (no --out/--splice) keep today's behaviour: warn on
+    stderr and exit 0."""
+    baseline_dir = tmp_path / "baseline"
+    _write_below_floor_baseline(baseline_dir)
+    result = main(["--baseline-dir", str(baseline_dir),
+                  "--data-dir", str(tmp_path / "data"),
+                  "--work-dir", str(tmp_path / "work")])
+    assert result == 0
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err
+    assert FENCE in captured.out
 
 
 @needs_data
