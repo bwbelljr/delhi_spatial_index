@@ -68,6 +68,23 @@ services:
 keeps meaning exactly what it means today. A new `roads-lane-weighted`
 profile carries the mapping form.
 
+**The parsed shape keeps `services.line` a plain `{name: path}` mapping**,
+and that is not a detail — four existing consumers use it directly as a path:
+
+- `delhi_psi/pipeline.py` merges `{**cfg.services.point, **cfg.services.line}`
+  and iterates `name, path`;
+- `scripts/measure_roads_access.py` does
+  `io.read_layer(cfg.paths.data_dir / cfg.services.line[ROAD_SERVICE])`, twice;
+- `scripts/measure_rule_effects.py` repeats the merge pattern;
+- `scripts/generate_production_fixtures.py` derives its column set from it.
+
+So the YAML mapping is **split during parsing**, not carried through:
+`ServicesConfig.line` stays exactly what it is today, and a new sibling
+`ServicesConfig.line_weights` — `{name: weight_col}`, empty by default —
+holds the column. Every existing consumer is then untouched by construction
+rather than by inspection, and the only code that needs to know about
+weighting is the code that computes a road amount.
+
 ## 3. The fixture authority decision, and the measurement behind it
 
 The fixture road features carry no attributes today, so they need a `lanes`
@@ -140,6 +157,24 @@ implementations on both fixture cities at 1e-12. Degenerate on Oraculum
 
 The reference implementation multiplies each road's clipped length by that
 road's `lanes` before summing, written independently of the production path.
+
+**Both road paths need weighting, not just the obvious one.** A road's amount
+is computed in two places, and they must agree or the overlap rule breaks:
+
+1. the **own amount** — `index.road_lengths` / the reference's
+   `_service_amounts`;
+2. the **shared amount** — `index.shared_amounts` / the reference's shared
+   table, which measures road length inside `i ∩ j` for the
+   `overlap.lending: outside_receiver` rule.
+
+If (1) is weighted and (2) is not, then `|S_j \ S_i| = amount_j - shared_ij`
+mixes lane-km with plain km, and the existing guard — the one DEL-61 shows
+is strict to a fault — will fire with a large negative residual rather than
+float noise. That guard firing loudly is the good outcome; the bad one is a
+profile where `overlap.lending` is `whole`, which never subtracts, so the
+mismatch would pass silently. **Weight both, and pin the combination with a
+variant that sets `overlap.lending: outside_receiver` alongside the
+weighting.**
 
 ## 6. Out of scope
 
