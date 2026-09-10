@@ -26,7 +26,8 @@ from pathlib import Path
 from delhi_psi import geometry, io, neighbors
 from delhi_psi.config import load_config
 from delhi_psi.pipeline import ID_COL
-from scripts._measure_common import load_settlements, render, resolve_work_dir
+from scripts._measure_common import (emit, emit_check, load_settlements,
+                                     render, resolve_work_dir)
 
 DEFAULT_EPSG = 7760
 # The columns that say WHOSE layer this is, per the 5 Sep 2026 survey.
@@ -157,7 +158,21 @@ def main(argv=None):
     parser.add_argument("--all-candidates", action="store_true",
                         help="also inventory the other copies of these layers "
                              "found under the data root on 5 Sep 2026")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--out", default=None,
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY; REFUSES (exit 1) to overwrite a "
+                             "target that already holds hand-written prose, "
+                             "since that would delete every caption and "
+                             "Finding — use --splice to refresh such a "
+                             "document in place instead")
+    target.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding (DEL-59)")
     args = parser.parse_args(argv)
+
+    emit_check(out=args.out, splice=args.splice)
 
     cfg = load_config(args.config, data_dir=args.data_dir)
     work_dir = resolve_work_dir(args.work_dir, data_dir=cfg.paths.data_dir,
@@ -171,19 +186,20 @@ def main(argv=None):
             if candidate.exists():
                 paths[name] = candidate
             else:
-                print(f"candidate missing: {candidate}")
+                print(f"candidate missing: {candidate}", file=sys.stderr)
     layers = {name: io.read_layer(path) for name, path in paths.items()}
     settlements = load_settlements(cfg, work_dir)
 
     for name, path in paths.items():
-        print(f"layer {name}: {path}")
-    print(f"work-dir: {work_dir}")
+        print(f"layer {name}: {path}", file=sys.stderr)
+    print(f"work-dir: {work_dir}", file=sys.stderr)
     blocks = inventory(layers, settlements, paths=paths, epsg=cfg.crs.epsg,
                        id_col=cfg.layers.settlements.id_col,
                        combine=cfg.methodology.barrier.combine,
                        configured=tuple(cfg.layers.barriers))
-    for name, report in blocks.items():
-        print(render(report, name=name))
+    text = "\n".join(render(report, name=name)
+                     for name, report in blocks.items())
+    emit(text, out=args.out, splice=args.splice)
     return 0
 
 

@@ -16,11 +16,11 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Polygon, box
 
-from scripts._measure_common import parse_block, resolve_work_dir
+from scripts._measure_common import holds_prose, parse_block, resolve_work_dir
 from scripts.measure_layer_pathologies import (corner_only_pairs,
                                                count_corner_only_pairs,
                                                count_isolated_bbox,
-                                               count_isolated_touch)
+                                               count_isolated_touch, main)
 from tests.cities import MESSY, ORACULUM
 
 REPO = Path(__file__).resolve().parent.parent
@@ -87,7 +87,7 @@ def fresh(tmp_path_factory):
         cwd=REPO, capture_output=True, text=True)
     after = set(DATA_DIR.rglob("*"))
     assert proc.returncode == 0, proc.stderr[-4000:]
-    return parse_block(proc.stdout), before, after
+    return parse_block(proc.stdout), before, after, proc
 
 
 def test_the_doc_has_the_fenced_block_with_every_required_key(committed):
@@ -135,7 +135,7 @@ def test_a_fresh_run_reproduces_the_committed_counts(committed, fresh):
     """Counts only: the prose header (date, layer, commit) is never compared,
     and the three float area keys are checked for presence and parseability
     by the shape test instead of by text equality."""
-    measured, _, _ = fresh
+    measured, _, _, _ = fresh
     assert set(measured) == set(committed), sorted(set(measured)
                                                    ^ set(committed))
     for key, value in committed.items():
@@ -149,10 +149,58 @@ def test_the_script_writes_nothing_under_the_data_directory(fresh):
     """~/delhi_data is bisynced hourly, so an unrelated file can appear
     mid-run; assert specifically that no dedup artifact — the only thing this
     script could ever write there — was created."""
-    _, before, after = fresh
+    _, before, after, _ = fresh
     created = after - before
     leaked = sorted(str(path) for path in created if ".dedup." in path.name)
     assert leaked == [], leaked
+
+
+# --- DEL-59: --out / --splice ------------------------------------------
+def test_out_and_splice_appear_in_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--out" in help_text
+    assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse(tmp_path):
+    splice_target = tmp_path / "doc.md"
+    splice_target.write_text("existing doc\n")
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--out", str(tmp_path / "dump.md"),
+              "--splice", str(splice_target)])
+    assert exc_info.value.code == 2
+
+
+def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
+    """--out writes blocks only; a target already holding hand-written prose
+    must be refused (exit 1) rather than clobbered, and left untouched."""
+    target = tmp_path / "prose.md"
+    before = "# Layer pathologies\n\nA hand-written caption.\n"
+    target.write_text(before)
+    with pytest.raises(SystemExit):
+        main(["--out", str(target)])
+    assert target.read_text() == before
+
+
+@needs_data
+def test_stdout_carries_blocks_and_nothing_else(fresh):
+    """DEL-59: the provenance lines move to stderr so --out and --splice
+    have a clean stream to work with. `parse_block` always ignored those
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one. Reuses the
+    module-scoped `fresh` fixture's subprocess rather than paying for a
+    second cold (~3 min) dedup.
+    """
+    _, _, _, proc = fresh
+    assert not holds_prose(proc.stdout)
+    assert "layer:" in proc.stderr
+    assert "cache:" in proc.stderr
 
 
 # --- DEL-50: corner-only contact pairs ---------------------------------

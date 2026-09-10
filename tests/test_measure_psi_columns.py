@@ -12,10 +12,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from scripts._measure_common import FENCE, parse_block
-from scripts.measure_psi_columns import (FIGURE_4_BARS, FIGURE_TOLERANCE,
-                                         cross_check, main, score_candidate,
-                                         score_candidates, type_means)
+from scripts._measure_common import FENCE, holds_prose, parse_block
+from scripts.measure_psi_columns import (BASELINE_FILES, FIGURE_4_BARS,
+                                         FIGURE_TOLERANCE, cross_check, main,
+                                         score_candidate, score_candidates,
+                                         type_means)
 from tests.test_measure_common import (DATA_DIR,
                                        assert_prose_numbers_come_from_the_blocks,
                                        needs_data)
@@ -172,3 +173,108 @@ def test_main_prints_its_usage_and_exits_zero(capsys):
         main(["--help"])
     assert exc.value.code == 0
     assert "--baseline-dir" in capsys.readouterr().out
+
+
+# --- DEL-59: --out / --splice ------------------------------------------
+def test_out_and_splice_appear_in_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--out" in help_text
+    assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse(tmp_path):
+    splice_target = tmp_path / "doc.md"
+    splice_target.write_text("existing doc\n")
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--out", str(tmp_path / "dump.md"),
+              "--splice", str(splice_target)])
+    assert exc_info.value.code == 2
+
+
+def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
+    """--out writes blocks only; a target already holding hand-written prose
+    must be refused (exit 1) rather than clobbered, and left untouched."""
+    target = tmp_path / "prose.md"
+    before = "# PSI columns\n\nA hand-written caption.\n"
+    target.write_text(before)
+    with pytest.raises(SystemExit):
+        main(["--out", str(target)])
+    assert target.read_text() == before
+
+
+def _write_below_floor_baseline(baseline_dir):
+    """A baseline whose only settlement type ("JJR") is nowhere near any
+    Figure 4 bar for either candidate column — matched is 0 for every
+    candidate, well under MATCH_FLOOR, for both --out and plain stdout."""
+    baseline_dir.mkdir(parents=True, exist_ok=True)
+    frame = pd.DataFrame({
+        "USO_FINAL": ["JJR"],
+        "unnorm_psi": [5.0],
+        "norm_psi": [5.0],
+    })
+    for name in BASELINE_FILES.values():
+        frame.to_csv(baseline_dir / name, index=False)
+
+
+def test_a_match_below_match_floor_is_refused_when_out_is_given(tmp_path):
+    """DEL-59 fix round item 3: --out must not write a document that carries
+    a match this weak — refuse (non-zero exit, the warning as the message)
+    rather than write suspect numbers and bury the warning under stderr's
+    tqdm noise with exit 0."""
+    baseline_dir = tmp_path / "baseline"
+    _write_below_floor_baseline(baseline_dir)
+    target = tmp_path / "out.md"
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--baseline-dir", str(baseline_dir),
+              "--data-dir", str(tmp_path / "data"),
+              "--work-dir", str(tmp_path / "work"),
+              "--out", str(target)])
+    assert "WARNING" in str(exc_info.value)
+    assert "escalate, do not guess" in str(exc_info.value)
+    assert not target.exists()
+
+
+def test_a_match_below_match_floor_still_warns_and_exits_zero_on_stdout(
+        capsys, tmp_path):
+    """Plain stdout runs (no --out/--splice) keep today's behaviour: warn on
+    stderr and exit 0."""
+    baseline_dir = tmp_path / "baseline"
+    _write_below_floor_baseline(baseline_dir)
+    result = main(["--baseline-dir", str(baseline_dir),
+                  "--data-dir", str(tmp_path / "data"),
+                  "--work-dir", str(tmp_path / "work")])
+    assert result == 0
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err
+    assert FENCE in captured.out
+
+
+@needs_data
+def test_stdout_carries_blocks_and_nothing_else(tmp_path):
+    """DEL-59: the provenance lines move to stderr so --out and --splice
+    have a clean stream to work with. `parse_block` always ignored those
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one.
+
+    The `WARNING:` line is not asserted unconditionally here: against this
+    machine's real baseline/verify data the best candidate matches all 8
+    bars (well above MATCH_FLOOR), so the warning never prints at all —
+    `not holds_prose(proc.stdout)` still catches it if it ever leaked to
+    stdout.
+    """
+    proc = subprocess.run(
+        [sys.executable, "scripts/measure_psi_columns.py",
+         "--baseline-dir", str(BASELINE_DIR), "--verify-dir", str(VERIFY_DIR),
+         "--data-dir", str(DATA_DIR), "--work-dir", str(tmp_path / "work")],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    assert not holds_prose(proc.stdout)
+    assert "baseline-dir:" in proc.stderr
+    assert "verify-dir:" in proc.stderr
+    assert "work-dir:" in proc.stderr

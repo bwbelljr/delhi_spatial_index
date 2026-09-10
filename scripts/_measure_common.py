@@ -291,10 +291,10 @@ def emit_check(*, out=None, splice=None):
 
 
 def emit(text, *, out=None, splice=None):
-    """The `--out` / `--splice` behaviour shared by two of the CLIs in
-    `scripts/` — `summarize_sweep.py` and `rank_report.py` — not "every
-    measurement CLI": the four `measure_*.py` scripts print to stdout only
-    and offer neither flag.
+    """The `--out` / `--splice` behaviour shared by every measurement CLI in
+    `scripts/` — all seven generators (the five `measure_*.py`/
+    `inventory_*.py` scripts plus `summarize_sweep.py` and `rank_report.py`)
+    offer both flags and plain stdout when neither is given.
 
     ONE implementation, because the failure this guards against — blocks
     written over a document's prose — happened once already, and a second

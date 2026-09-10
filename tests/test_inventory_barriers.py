@@ -15,7 +15,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import LineString
 
-from scripts._measure_common import FENCE, parse_block
+from scripts._measure_common import FENCE, holds_prose, parse_block
 from scripts.inventory_barriers import (attributes, barrier_flagged,
                                         inventory, layer_facts, main,
                                         metadata_dates)
@@ -161,3 +161,61 @@ def test_main_prints_its_usage_and_exits_zero(capsys):
         main(["--help"])
     assert exc.value.code == 0
     assert "--all-candidates" in capsys.readouterr().out
+
+
+# --- DEL-59: --out / --splice ------------------------------------------
+def test_out_and_splice_appear_in_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--out" in help_text
+    assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse(tmp_path):
+    splice_target = tmp_path / "doc.md"
+    splice_target.write_text("existing doc\n")
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--out", str(tmp_path / "dump.md"),
+              "--splice", str(splice_target)])
+    assert exc_info.value.code == 2
+
+
+def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
+    """--out writes blocks only; a target already holding hand-written prose
+    must be refused (exit 1) rather than clobbered, and left untouched."""
+    target = tmp_path / "prose.md"
+    before = "# Barriers\n\nA hand-written caption.\n"
+    target.write_text(before)
+    with pytest.raises(SystemExit):
+        main(["--out", str(target)])
+    assert target.read_text() == before
+
+
+@needs_measure_cache
+def test_stdout_carries_blocks_and_nothing_else():
+    """DEL-59: the provenance lines move to stderr so --out and --splice
+    have a clean stream to work with. `parse_block` always ignored those
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one.
+
+    `candidate missing:` (the --all-candidates diagnostic) is not asserted
+    unconditionally here: on this machine's ~/delhi_data, all four
+    candidates in CANDIDATES already exist, so that line never prints at
+    all — `not holds_prose(proc.stdout)` still catches it if it ever
+    leaked to stdout.
+    """
+    proc = subprocess.run(
+        [sys.executable, "scripts/inventory_barriers.py",
+         "--config", "code-2025", "--data-dir", str(DATA_DIR),
+         "--all-candidates", "--work-dir", MEASURE_CACHE],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    assert not holds_prose(proc.stdout)
+    for name in CONFIGURED:
+        assert f"layer {name}:" in proc.stderr
+    assert "work-dir:" in proc.stderr
