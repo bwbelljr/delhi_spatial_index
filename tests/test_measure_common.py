@@ -420,3 +420,54 @@ def test_the_prose_guard_catches_both_a_blocks_only_dump_and_a_captionless_secti
                            "```text\nblock: a\nx: 1\n```\n")
     assert "## " in captionless_section
     assert _sections_missing_prose(captionless_section) == ["## Section"]
+
+
+# --- DEL-59: every docs/data document has a generator that can splice it ---
+DOCUMENT_GENERATORS = {
+    "barriers.md": "scripts/inventory_barriers.py",
+    "roads_access.md": "scripts/measure_roads_access.py",
+    "rule_effects.md": "scripts/measure_rule_effects.py",
+    "psi_columns.md": "scripts/measure_psi_columns.py",
+    "layer_pathologies.md": "scripts/measure_layer_pathologies.py",
+    "phase6_sweep.md": "scripts/summarize_sweep.py",
+}
+
+
+def test_every_generated_document_has_a_generator_that_can_splice():
+    """Pinned as a literal mapping, never a `scripts/measure_*.py` glob:
+    `inventory_barriers.py` has no `measure_` prefix, so a glob silently
+    drops `barriers.md` — which is exactly the mistake DEL-59's own ticket
+    made before the code was written."""
+    for document, script in DOCUMENT_GENERATORS.items():
+        assert (REPO / "docs" / "data" / document).exists(), document
+        source = (REPO / script).read_text()
+        assert '"--splice"' in source, f"{script} cannot splice {document}"
+        assert '"--out"' in source, f"{script} has no --out"
+
+
+def test_the_mapping_covers_every_block_bearing_document():
+    """A new document must not be able to appear without a splice path.
+    `uso_final_vocabulary.md` is hand-written and carries no blocks, so it
+    is legitimately absent."""
+    for path in sorted((REPO / "docs" / "data").glob("*.md")):
+        if not _block_spans(path.read_text()):
+            continue
+        assert path.name in DOCUMENT_GENERATORS, path.name
+
+
+def test_splice_round_trips_a_preamble_block_document():
+    """`layer_pathologies.md` is the only document whose block sits before
+    the first `## ` heading. Every other document's blocks are inside a
+    section, so this shape is the one most likely to be broken by a change
+    to the run rule."""
+    path = REPO / "docs" / "data" / "layer_pathologies.md"
+    text = path.read_text()
+    assert splice_blocks(text, text) == text
+
+
+def test_splice_round_trips_an_unlabelled_block_document():
+    """`psi_columns.md` carries a single block with no `block:` label, which
+    `_label_runs` keys on the absence of a label."""
+    path = REPO / "docs" / "data" / "psi_columns.md"
+    text = path.read_text()
+    assert splice_blocks(text, text) == text
