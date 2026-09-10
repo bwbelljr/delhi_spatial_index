@@ -3,6 +3,22 @@
 **Ticket:** DEL-43. **Branch:** `del-43-lane-weighted-roads` off `main` at `00ae40d`.
 **Date:** 9 Sep 2026. Cycle 5, ticket 3 of 3.
 
+> **STATUS: design approved, implementation blocked by DEL-62.**
+>
+> This document is committed as the design record; **no code follows it on
+> this branch.** The spec review found that the oracle harness has no channel
+> for a services-level variant override — `tests/variants.py` is
+> methodology-only, enforced in three places (§ 5) — so DEL-43 cannot add its
+> variant row until that channel exists.
+>
+> Bob's call on 9 Sep 2026 was to **split** rather than let a Low-priority
+> road variant carry shared infrastructure. **DEL-62** builds the channel and
+> proves it with a no-op override that moves no expected value; DEL-43 then
+> adds the first row that moves numbers, following § 3's corrected fixture
+> values and § 6.1's pinned arithmetic order.
+>
+> Adoption remains Raj's decision either way, as with DEL-34 and DEL-57.
+
 ---
 
 ## 1. The ticket asked for capacity; the data has exactly one usable field
