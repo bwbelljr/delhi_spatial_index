@@ -20,7 +20,7 @@ from shapely.geometry import LineString, Polygon, box
 from delhi_psi import cli, pipeline
 from delhi_psi.config import PROFILES_DIR
 from scripts import measure_roads_access
-from scripts._measure_common import FENCE, parse_block
+from scripts._measure_common import FENCE, holds_prose, parse_block
 from scripts.measure_roads_access import (DENOMINATORS, OWN_ONLY_PROFILE,
                                           REPORTED_TYPES,
                                           assert_road_inside_matches_output,
@@ -463,3 +463,52 @@ def test_main_requires_a_verify_dir(capsys):
         main(["--config", "code-2025"])
     assert exc.value.code == 2
     assert "--verify-dir" in capsys.readouterr().err
+
+
+# --- DEL-59: --out / --splice ------------------------------------------
+def test_out_and_splice_appear_in_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--out" in help_text
+    assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse():
+    with pytest.raises(SystemExit):
+        main(["--verify-dir", "x", "--out", "dump.md", "--splice", "doc.md"])
+
+
+def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
+    """--out writes blocks only; a target already holding hand-written prose
+    must be refused (exit 1) rather than clobbered, and left untouched."""
+    target = tmp_path / "prose.md"
+    before = "# Roads access\n\nA hand-written caption.\n"
+    target.write_text(before)
+    with pytest.raises(SystemExit):
+        main(["--verify-dir", "x", "--out", str(target)])
+    assert target.read_text() == before
+
+
+@needs_measure_cache
+def test_stdout_carries_blocks_and_nothing_else():
+    """DEL-59: the provenance lines move to stderr so --out and --splice
+    have a clean stream to work with. `parse_block` always ignored those
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one.
+    """
+    proc = subprocess.run(
+        [sys.executable, "scripts/measure_roads_access.py",
+         "--config", "code-2025", "--data-dir", str(DATA_DIR),
+         "--verify-dir", str(VERIFY_DIR), "--work-dir", MEASURE_CACHE],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    assert not holds_prose(proc.stdout)
+    assert "layer:" in proc.stderr
+    assert "roads:" in proc.stderr
+    assert "verify-dir:" in proc.stderr
+    assert "work-dir:" in proc.stderr

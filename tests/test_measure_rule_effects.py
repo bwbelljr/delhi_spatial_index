@@ -16,7 +16,7 @@ import yaml
 
 from delhi_psi import cli
 from scripts import measure_rule_effects
-from scripts._measure_common import FENCE, parse_block
+from scripts._measure_common import FENCE, holds_prose, parse_block, splice_blocks
 from scripts.measure_rule_effects import (
     BLOCKS, WEIGHT_CLASSES, derived_profile, overlapping_neighbours,
     pcen_changes, shared_pair_counts, weight_classes,
@@ -254,3 +254,72 @@ def test_a_fresh_overlap_run_reproduces_the_committed_block():
         cwd=REPO, capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-4000:]
     assert parse_block(proc.stdout, name="overlap_lending") == block
+
+
+# --- DEL-59: --out / --splice ------------------------------------------
+def test_out_and_splice_appear_in_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        measure_rule_effects.main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--out" in help_text
+    assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse():
+    with pytest.raises(SystemExit):
+        measure_rule_effects.main(
+            ["--verify-dir", "x", "--out", "dump.md", "--splice", "doc.md"])
+
+
+def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
+    """--out writes blocks only; a target already holding hand-written prose
+    must be refused (exit 1) rather than clobbered, and left untouched."""
+    target = tmp_path / "prose.md"
+    before = "# Rule effects\n\nA hand-written caption.\n"
+    target.write_text(before)
+    with pytest.raises(SystemExit):
+        measure_rule_effects.main(["--verify-dir", "x", "--out", str(target)])
+    assert target.read_text() == before
+
+
+@needs_measure_cache
+def test_stdout_carries_blocks_and_nothing_else():
+    """DEL-59: the provenance lines move to stderr so --out and --splice
+    have a clean stream to work with. `parse_block` always ignored those
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one. `--only
+    overlap_lending` is the cheap block (stages the proven artifact and runs
+    `compute` alone), used here because this test only cares about the
+    stream, not which block ran.
+    """
+    proc = subprocess.run(
+        [sys.executable, "scripts/measure_rule_effects.py",
+         "--config", "code-2025", "--data-dir", str(DATA_DIR),
+         "--verify-dir", str(VERIFY_DIR), "--work-dir", MEASURE_CACHE,
+         "--only", "overlap_lending"],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    assert not holds_prose(proc.stdout)
+    assert "layer:" in proc.stderr
+    assert "verify-dir:" in proc.stderr
+    assert "work-dir:" in proc.stderr
+
+
+def test_only_plus_splice_refreshes_one_run_and_leaves_the_other(tmp_path):
+    """The behaviour DEL-58 proved on the real phase6_sweep.md, here on a
+    two-run document: refreshing `partial_barriers` must replace that run
+    and leave `overlap_lending` untouched, along with every caption."""
+    doc = ("## Partial barriers\n\nA caption.\n\n"
+           "```text\nblock: partial_barriers\nx: 1\n```\n\n"
+           "### Finding\n\nProse.\n\n"
+           "## Overlap lending\n\nAnother caption.\n\n"
+           "```text\nblock: overlap_lending\ny: 2\n```\n")
+    out = splice_blocks(doc, "```text\nblock: partial_barriers\nx: 9\n```")
+    assert "x: 9" in out
+    assert "y: 2" in out
+    assert "### Finding" in out
+    assert "Another caption." in out

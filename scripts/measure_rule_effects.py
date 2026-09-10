@@ -52,7 +52,7 @@ import yaml
 from delhi_psi import geometry, index, io, pipeline
 from delhi_psi.config import PROFILES_DIR, load_config
 from delhi_psi.pipeline import ID_COL, NBRS_COL, NBRS_WEIGHT_COL, TYPE_COL
-from scripts._measure_common import render, resolve_work_dir
+from scripts._measure_common import emit, emit_check, render, resolve_work_dir
 from scripts.measure_roads_access import stage_artifacts
 
 REPORTED_TYPES = ("Planned", "UAC", "RUAC", "JJC", "JJR", "UV", "SDA")
@@ -376,22 +376,40 @@ def main(argv=None):
                              "block re-runs preprocess and costs minutes; "
                              "the overlap block stages the proven artifact "
                              "and runs compute alone)")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--out", default=None,
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY; REFUSES (exit 1) to overwrite a "
+                             "target that already holds hand-written prose, "
+                             "since that would delete every caption and "
+                             "Finding — use --splice to refresh such a "
+                             "document in place instead")
+    target.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding (DEL-59); with --only, refreshes "
+                             "only the named block and leaves the other run "
+                             "untouched")
     args = parser.parse_args(argv)
+
+    emit_check(out=args.out, splice=args.splice)
 
     cfg = load_config(args.config, data_dir=args.data_dir)
     work_dir = resolve_work_dir(args.work_dir, data_dir=cfg.paths.data_dir,
                                 prefix="delhi_psi_rules_")
     verify_dir = Path(args.verify_dir).expanduser()
 
-    print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}")
-    print(f"verify-dir: {verify_dir}")
-    print(f"work-dir: {work_dir}")
+    print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}",
+          file=sys.stderr)
+    print(f"verify-dir: {verify_dir}", file=sys.stderr)
+    print(f"work-dir: {work_dir}", file=sys.stderr)
     wanted = BLOCKS if args.only is None else (args.only,)
     measures = {"partial_barriers": measure_partial_barriers,
                 "overlap_lending": measure_overlap_lending}
-    for name in wanted:
-        print(render(measures[name](cfg, work_dir, base=args.config,
-                                    verify_dir=verify_dir), name=name))
+    text = "\n".join(render(measures[name](cfg, work_dir, base=args.config,
+                                           verify_dir=verify_dir), name=name)
+                     for name in wanted)
+    emit(text, out=args.out, splice=args.splice)
     return 0
 
 

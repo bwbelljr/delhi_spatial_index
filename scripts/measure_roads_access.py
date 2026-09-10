@@ -36,7 +36,8 @@ import yaml
 from delhi_psi import geometry, io, neighbors, pipeline
 from delhi_psi.config import PROFILES_DIR, load_config
 from delhi_psi.pipeline import ID_COL, NBRS_COL, TYPE_COL
-from scripts._measure_common import load_settlements, render, resolve_work_dir
+from scripts._measure_common import (emit, emit_check, load_settlements,
+                                     render, resolve_work_dir)
 
 # The 28 Aug 2026 decisions: seven reported types, three dropped.
 REPORTED_TYPES = ("Planned", "UAC", "RUAC", "JJC", "JJR", "UV", "SDA")
@@ -337,20 +338,37 @@ def main(argv=None):
                         help="an existing, complete code-2025 run "
                              "(colonies_neighbors.joblib + both output CSVs), "
                              "opened READ-ONLY")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--out", default=None,
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY; REFUSES (exit 1) to overwrite a "
+                             "target that already holds hand-written prose, "
+                             "since that would delete every caption and "
+                             "Finding — use --splice to refresh such a "
+                             "document in place instead")
+    target.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding (DEL-59)")
     args = parser.parse_args(argv)
+
+    emit_check(out=args.out, splice=args.splice)
 
     cfg = load_config(args.config, data_dir=args.data_dir)
     work_dir = resolve_work_dir(args.work_dir, data_dir=cfg.paths.data_dir,
                                 prefix="delhi_psi_roads_")
     verify_dir = Path(args.verify_dir).expanduser()
 
-    print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}")
-    print(f"roads: {cfg.paths.data_dir / cfg.services.line[ROAD_SERVICE]}")
-    print(f"verify-dir: {verify_dir}")
-    print(f"work-dir: {work_dir}")
+    print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}",
+          file=sys.stderr)
+    print(f"roads: {cfg.paths.data_dir / cfg.services.line[ROAD_SERVICE]}",
+          file=sys.stderr)
+    print(f"verify-dir: {verify_dir}", file=sys.stderr)
+    print(f"work-dir: {work_dir}", file=sys.stderr)
     blocks = measure(cfg, work_dir, base=args.config, verify_dir=verify_dir)
-    for name, report in blocks.items():
-        print(render(report, name=name))
+    text = "\n".join(render(report, name=name)
+                     for name, report in blocks.items())
+    emit(text, out=args.out, splice=args.splice)
     return 0
 
 
