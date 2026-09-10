@@ -112,23 +112,52 @@ lanes=6: road_idx = {A: 1.0, E: 1.0, …}   ← identical
 cycle 4** (the `ration_idx` case, where a uniform rescale was mistaken for a
 moving column). Measured first this time.
 
-**The messy city carries the proof.** Two road features with different lane
-counts break the uniformity:
+**The messy city carries the proof** — but the first draft of this section
+got its numbers badly wrong, and the correction is worth stating plainly.
 
-| road0 lanes | road1 lanes | H | L | M |
-|---|---|---|---|---|
-| 1 | 1 | 0.6 | 0.3 | 1.0 |
-| 2 | 6 | 0.2 | 0.1 | 1.0 |
-| **6** | **2** | **1.0** | 0.5 | **0.5556** |
-| 4 | 1 | 1.0 | 0.5 | 0.4167 |
+**What the draft did.** It took the raw clipped road lengths (H 1200 m,
+L 600 m, M 2000 m), min-maxed them by hand, and published the result as
+`road_idx`. That produced H=0.6, L=0.3, M=1.0 and the conclusion that M
+leads at baseline.
 
-At (6, 2) the **ordering flips** — H overtakes M. A variant that can reorder
-settlements is a variant worth pinning.
+**Every part of that is wrong.** `road_idx` is the min-max of *PCEN*, not of
+length — PCEN divides by the settlement's population (or population density),
+and under `methodology.roads: decayed` it also carries a neighbour term. The
+committed fixture says so directly:
 
-**Chosen fixture values: road0 = 6 lanes, road1 = 2 lanes.** That is the row
-that reorders, so the expected values encode a real behavioural difference
-rather than a rescaling. Oraculum's single road gets `lanes: 2`, and the
-variant is **degenerate there by construction** — recorded, not hidden.
+```
+ideal,nopop_only,pop,H,road_idx,1
+ideal,nopop_only,pop,L,road_idx,0.27500000000000002
+ideal,nopop_only,pop,M,road_idx,0.45833333333333337
+```
+
+**H is already the maximum at baseline**, not M. The spec review reproduced
+the real path — patching only the two amount functions and leaving adjacency,
+decay, min-max and exclusion untouched — and recovered these committed values
+exactly, 6/6, which is what makes its lane sweep trustworthy.
+
+**Its sweep also inverts the draft's choice.** Across both `roads` formulas
+and both denominators:
+
+- **`road0=6, road1=2` — the draft's pick — never reorders anything.** H stays
+  the maximum throughout (code/pop: H=1.0, L=0.432, M=0.124).
+- **`road0=2, road1=6` reorders under all four combinations** — M overtakes H
+  (code/pop: H=0.112, L=0.049, **M=0.125**).
+
+**Chosen fixture values: road0 = 2 lanes, road1 = 6 lanes.** Oraculum's single
+road gets `lanes: 2`, and the variant is **degenerate there by
+construction** — recorded, not hidden.
+
+**The lesson, stated once and kept.** This section previously claimed the
+cycle-4 affine-invariance trap had been "measured first this time". It had
+not: measuring the *input* to a pipeline stage and presenting it as the
+*output* is the same error wearing different clothes. **A fixture value is
+only measured when it comes out of the real path** — for this repo that means
+`compute_city` or the committed `expected_values.csv`, never hand arithmetic
+on an intermediate. The reviewer's method — patch the two amount functions,
+leave everything else, and check the unweighted case still reproduces the
+committed CSV — is the standard to copy for any future fixture-authority
+decision.
 
 Degeneracy on one city is established practice here: `boundary` and
 `overlap_outside` are degenerate on Oraculum, `partial_5m` is degenerate on
@@ -151,9 +180,44 @@ messy. Each time, the other city carries the pin.
 
 ## 5. Variant coverage
 
-One new row in `tests/variants.py` — `roads_lane_weighted` — scored by both
-implementations on both fixture cities at 1e-12. Degenerate on Oraculum
-(equal to the `code` base there, provably), load-bearing on messy.
+**The variant harness has no channel for this, and that is the largest piece
+of work in the ticket.** The first draft said "one new row in
+`tests/variants.py`". That is not possible today, and the spec review proved
+it by running the shape:
+
+```
+>>> _variant_overrides({'services': {'line': {'road': {'weight_col': 'lanes'}}}})
+ValueError: tests/variants.py: services.line has no reference knob;
+            add one to VARIANT_KNOBS or to IGNORED_VARIANT_KEYS
+```
+
+**`VARIANTS` is methodology-only by construction**, and three separate pieces
+enforce it: `_variant_overrides` walks `(block, key)` pairs against
+`VARIANT_KNOBS`; `oracle_profile_path`'s `methodology_overrides` only ever
+writes `raw["methodology"][block]`; and `test_variants_match_reference`
+calls `compute_frames(...)` directly with a `MethodologyConfig`, never
+building a `Config`, so there is no `ServicesConfig` in that path to carry a
+`line_weights` at all.
+
+**So DEL-43 must build the channel before it can add the row:**
+
+1. a `services` key in a `VARIANTS` entry, written verbatim into
+   `raw["services"]` by `oracle_profile_path` — **beside**
+   `methodology_overrides`, not through it, since `VARIANT_KNOBS` is a
+   methodology vocabulary and forcing a services key through it would corrupt
+   the one guard that keeps that table honest;
+2. a `road_weight_col=None` keyword on `compute_city`, wired by name rather
+   than through `VARIANT_KNOBS`;
+3. whatever `test_variants_match_reference.produced()` needs to thread the
+   weight from the variant spec into `compute_frames`.
+
+This is the shape of the work, and it is why the ticket is bigger than "a
+config value like DEL-40/41/42". § 2's framing of *what* is being changed
+stands; the *cost* does not.
+
+Then one row — `roads_lane_weighted` — scored by both implementations on both
+fixture cities at 1e-12. Degenerate on Oraculum (equal to the `code` base
+there, provably), load-bearing on messy.
 
 The reference implementation multiplies each road's clipped length by that
 road's `lanes` before summing, written independently of the production path.
@@ -184,6 +248,40 @@ weighting.**
 - **No point-service capacity.** The data does not support it, and the DEL-43
   comment thread records the measurement so nobody re-opens it on a hunch.
 - No licence file (DEL-56, pending Raj).
+
+## 6.1 Three details the spec review pinned down
+
+**The arithmetic order is canonical, not incidental.** Multiply each road's
+clipped length by its integer lane count **first**, accumulate, and divide the
+total by 1000 **once** — mirroring today's structure with one inserted
+per-row multiply. The two orders are not bit-identical:
+
+```
+messy H, road0, lanes=6:  (L/1000)*6 = 7.199999999999999
+                          (L*6)/1000 = 7.2            diff ≈ -8.9e-16
+```
+
+This repo already treats that class of drift as consequential — the
+reference's own note on non-associative float summation, and DEL-61's
+overlap-lending guard, which is strict to a fault. All four sites
+(`index.road_lengths`, `index.shared_amounts`, and the reference's two)
+use the same order.
+
+**A third call site exists and is deliberately left unweighted.**
+`scripts/measure_rule_effects.py`'s `shared_pair_counts()` calls
+`index.road_lengths` independently of `index_frames`, with layers built from
+plain paths. It is harmless today — it reports only `len(table)`, a pair
+*count*, and a positive lane multiplier cannot turn a nonzero length into
+zero. It must carry a comment saying so, so nobody later "fixes" it on the
+assumption it was missed, and nobody rediscovers it as a bug.
+
+**The new mapping form needs its own validation**, following
+`layers.population`'s precedent: require `path`, reject unknown keys (a
+typo'd `weigth_col` must fail loudly), and reject a mapping value under
+`services.point`, which this design does not support. `_services` today
+validates only the top-level `point`/`line` keys, so
+`{'point': {'health': {'path': ..., 'weight_col': 'bogus'}}}` parses
+silently and fails much later with `Path / dict`.
 
 ## 7. Definition of done
 
