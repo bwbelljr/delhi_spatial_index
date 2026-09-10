@@ -7,6 +7,63 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **Every `docs/data/` generator now has a `--splice` path** (DEL-59). DEL-58
+  gave `summarize_sweep.py` and `rank_report.py` a
+  `--splice` mode and an `--out` that refuses to overwrite prose — the two
+  CLIs where the accident had actually happened. The other five documents
+  were still updated by hand-pasting stdout, which is the same failure mode
+  performed by a person instead of a flag. All five generators now have
+  `--out` and `--splice`, routed through the same shared `emit`.
+  - **The work was separating two streams, not adding two flags.** Unlike
+    the DEL-58 pair, these five interleaved provenance lines with their
+    rendered blocks on stdout — `layer:`, `work-dir:`, `verify-dir:`,
+    `baseline-dir:`, `cache:`, and in one case a multi-line `WARNING:`
+    printed *after* the block. Diagnostics now go to stderr so `--splice`
+    has a clean stream; stdout carries blocks and nothing else.
+  - **The existing drift tests could not have caught a mistake here**, which
+    is the interesting part: they read output with `parse_block(proc.stdout)`,
+    and the block scanner skips every line outside a fence. A diagnostic left
+    on stdout would have been invisible to the whole suite and would have
+    landed *inside* a spliced document. The new behavioural tests assert
+    `not holds_prose(proc.stdout)` — true of any non-blank line outside a
+    fence — so they do not depend on anyone having enumerated the
+    diagnostics correctly.
+  - **Which mattered, because the enumeration was wrong twice.** A plan
+    review caught the first draft asserting on a single named diagnostic per
+    script when each prints several; then an implementer found a fourth
+    unconditional diagnostic (`roads:`) that the corrected table still
+    missed. The whole-stream check would have failed on it either way.
+  - **`emit_check` runs before the measurement**, not after: these scripts do
+    real geospatial work and several take minutes, so a mistyped flag now
+    fails in well under a second instead of at the end of a full run.
+  - **A guard so a sixth document cannot appear without a splice path.** The
+    document→generator mapping is pinned as a **literal**, never a
+    `scripts/measure_*.py` glob — `barriers.md`'s generator is
+    `inventory_barriers.py`, with no `measure_` prefix, so a glob silently
+    drops it. This ticket's own description made exactly that mistake before
+    any code was written.
+  - **Proven end to end, not just in unit tests.** The branch review copied
+    each committed document, ran its real generator with `--splice` against
+    `~/delhi_data`, and compared bytes. Four of five came back
+    **byte-identical**; every refusal path returned in **0.37–0.44 s**,
+    confirming the pre-flight fires before any layer is loaded. It also
+    forced both conditional diagnostics — a missing `--all-candidates` layer
+    and a sub-`MATCH_FLOOR` baseline — and confirmed stdout stayed empty.
+  - **Two things this does NOT achieve, found by that same review and split
+    into their own tickets rather than papered over.** `rule_effects.md`
+    still cannot be refreshed cleanly: its block carries
+    `preprocess_seconds`, a wall-clock timing the hand-written prose quotes,
+    so a splice leaves the document failing the repo's own
+    prose-numbers guard (DEL-60). And that document's `overlap_lending`
+    block cannot be regenerated **at all** on this machine — a strict
+    overlap-lending guard trips on float noise of `-2.3e-13`, a bug that
+    reproduces identically on `main` and is invisible to a default run
+    because the test is behind a real-data gate (DEL-61).
+  - **Nothing moved.** Every committed `docs/data/*.md` is byte-identical, no
+    measured value changed, no new dependency, and
+    `scripts/_measure_common.py` was used rather than modified — apart from
+    one docstring that had come to assert the opposite of the truth.
+
 - **`methodology.aggregation.rule`** — a new required switch: what Eq. 2
   *is*, as opposed to `transform`, which chooses a function applied to a
   value. `mean_minmax` (today) min-maxes each service's PCEN across
