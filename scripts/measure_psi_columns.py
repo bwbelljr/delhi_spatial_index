@@ -28,7 +28,7 @@ import pandas as pd
 
 from delhi_psi.config import load_config
 from delhi_psi.pipeline import TYPE_COL
-from scripts._measure_common import render, resolve_work_dir
+from scripts._measure_common import emit, emit_check, render, resolve_work_dir
 
 # Read off Figure 4 ("Mean public service index by settlement", p. 40 of the
 # April 2026 draft PDF) on 5 Sep 2026. Eight bars: no RV, no Other. These are
@@ -164,7 +164,21 @@ def main(argv=None):
                              f"<data-dir>/{BASELINE_SUBDIR}")
     parser.add_argument("--verify-dir", default=None,
                         help="a complete code-2025 run, for the cross-check")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--out", default=None,
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY; REFUSES (exit 1) to overwrite a "
+                             "target that already holds hand-written prose, "
+                             "since that would delete every caption and "
+                             "Finding — use --splice to refresh such a "
+                             "document in place instead")
+    target.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding (DEL-59)")
     args = parser.parse_args(argv)
+
+    emit_check(out=args.out, splice=args.splice)
 
     cfg = load_config(args.config, data_dir=args.data_dir)
     work_dir = resolve_work_dir(args.work_dir, data_dir=cfg.paths.data_dir,
@@ -173,17 +187,17 @@ def main(argv=None):
                     else cfg.paths.data_dir / BASELINE_SUBDIR)
     verify_dir = Path(args.verify_dir).expanduser() if args.verify_dir else None
 
-    print(f"baseline-dir: {baseline_dir}")
-    print(f"verify-dir: {verify_dir}")
-    print(f"work-dir: {work_dir}")
+    print(f"baseline-dir: {baseline_dir}", file=sys.stderr)
+    print(f"verify-dir: {verify_dir}", file=sys.stderr)
+    print(f"work-dir: {work_dir}", file=sys.stderr)
     report = measure(baseline_dir, verify_dir=verify_dir)
-    print(render(report))
+    emit(render(report), out=args.out, splice=args.splice)
     best = report["best_candidate"]
     if report[f"matched_{best}"] < MATCH_FLOOR:
         print(f"WARNING: the best candidate ({best}) matches only "
               f"{report[f'matched_{best}']} of {len(FIGURE_4_BARS)} bars — "
               "the figure was not produced from these columns as-is "
-              "(spec § 2.4: escalate, do not guess)")
+              "(spec § 2.4: escalate, do not guess)", file=sys.stderr)
     return 0
 
 

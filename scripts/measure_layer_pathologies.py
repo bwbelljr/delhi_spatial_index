@@ -27,8 +27,8 @@ import geopandas as gpd
 
 from delhi_psi import geometry, io, neighbors, pipeline
 from delhi_psi.config import load_config
-from scripts._measure_common import (load_settlements, parse_block, render,
-                                     resolve_work_dir)
+from scripts._measure_common import (emit, emit_check, load_settlements,
+                                     parse_block, render, resolve_work_dir)
 
 
 def count_rectangles(gdf, *, rtol=1e-9):
@@ -175,15 +175,30 @@ def main(argv=None):
     parser.add_argument("--cache-dir", default=None,
                         help="where the dedup cache goes; default a fresh "
                              "temporary directory. Never under --data-dir.")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--out", default=None,
+                        help="write the blocks here instead of stdout — "
+                             "BLOCKS ONLY; REFUSES (exit 1) to overwrite a "
+                             "target that already holds hand-written prose, "
+                             "since that would delete every caption and "
+                             "Finding — use --splice to refresh such a "
+                             "document in place instead")
+    target.add_argument("--splice", default=None,
+                        help="refresh the blocks INSIDE this committed "
+                             "document in place, preserving every caption "
+                             "and Finding (DEL-59)")
     args = parser.parse_args(argv)
+
+    emit_check(out=args.out, splice=args.splice)
 
     cfg = load_config(args.config, data_dir=args.data_dir)
     cache_dir = resolve_work_dir(args.cache_dir, data_dir=cfg.paths.data_dir,
                                  prefix="delhi_psi_pathologies_")
 
-    print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}")
-    print(f"cache: {cache_dir}")
-    print(render(measure(cfg, cache_dir)))
+    print(f"layer: {cfg.paths.data_dir / cfg.layers.settlements.path}",
+          file=sys.stderr)
+    print(f"cache: {cache_dir}", file=sys.stderr)
+    emit(render(measure(cfg, cache_dir)), out=args.out, splice=args.splice)
     return 0
 
 

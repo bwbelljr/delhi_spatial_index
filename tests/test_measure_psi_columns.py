@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from scripts._measure_common import FENCE, parse_block
+from scripts._measure_common import FENCE, holds_prose, parse_block
 from scripts.measure_psi_columns import (FIGURE_4_BARS, FIGURE_TOLERANCE,
                                          cross_check, main, score_candidate,
                                          score_candidates, type_means)
@@ -172,3 +172,57 @@ def test_main_prints_its_usage_and_exits_zero(capsys):
         main(["--help"])
     assert exc.value.code == 0
     assert "--baseline-dir" in capsys.readouterr().out
+
+
+# --- DEL-59: --out / --splice ------------------------------------------
+def test_out_and_splice_appear_in_help(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+    assert exc.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--out" in help_text
+    assert "--splice" in help_text
+
+
+def test_out_and_splice_together_are_refused_by_argparse():
+    with pytest.raises(SystemExit):
+        main(["--out", "dump.md", "--splice", "doc.md"])
+
+
+def test_out_refuses_to_overwrite_a_target_that_holds_prose(tmp_path):
+    """--out writes blocks only; a target already holding hand-written prose
+    must be refused (exit 1) rather than clobbered, and left untouched."""
+    target = tmp_path / "prose.md"
+    before = "# PSI columns\n\nA hand-written caption.\n"
+    target.write_text(before)
+    with pytest.raises(SystemExit):
+        main(["--out", str(target)])
+    assert target.read_text() == before
+
+
+@needs_data
+def test_stdout_carries_blocks_and_nothing_else(tmp_path):
+    """DEL-59: the provenance lines move to stderr so --out and --splice
+    have a clean stream to work with. `parse_block` always ignored those
+    lines, so this is the first test that would notice one coming back.
+
+    `holds_prose` is the whole-stream check, and it is the assertion that
+    matters: it is true of ANY non-blank line outside a fenced block, so it
+    catches every missed diagnostic rather than one named one.
+
+    The `WARNING:` line is not asserted unconditionally here: against this
+    machine's real baseline/verify data the best candidate matches all 8
+    bars (well above MATCH_FLOOR), so the warning never prints at all —
+    `not holds_prose(proc.stdout)` still catches it if it ever leaked to
+    stdout.
+    """
+    proc = subprocess.run(
+        [sys.executable, "scripts/measure_psi_columns.py",
+         "--baseline-dir", str(BASELINE_DIR), "--verify-dir", str(VERIFY_DIR),
+         "--data-dir", str(DATA_DIR), "--work-dir", str(tmp_path / "work")],
+        cwd=REPO, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    assert not holds_prose(proc.stdout)
+    assert "baseline-dir:" in proc.stderr
+    assert "verify-dir:" in proc.stderr
+    assert "work-dir:" in proc.stderr
