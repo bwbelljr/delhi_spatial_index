@@ -670,6 +670,32 @@ def test_the_tolerance_boundary_is_pinned_on_both_sides():
         _lend_with_shared(outside)
 
 
+def test_the_measured_del61_noise_is_inside_the_band_and_clamped():
+    """DEL-61: regenerating the overlap_lending block on this machine
+    aborted with `4770 would lend -2.3284152383951096e-13 of 'road_length'
+    to 5169`. The pre-DEL-61 band (64 eps ~ 1.4e-14) read that as a
+    cross-run mismatch; it is GEOS clip noise — the deficit is 2.33e-10 m,
+    exactly 2.0 ulps of EPSG:7760's ~1e6 m projected coordinates (measured
+    on the real layer, 25 Oct 2026), which two independent clips of the
+    same road round differently.
+
+    Pinned deterministically: the exact ticket deficit, through the real
+    guard path. The failing pair's own road_length is unknown, so the
+    calibration contract is asserted both at the band floor (the
+    standalone first assert, own <= 1.0) and through the real code path
+    (own = 2.0).
+    """
+    observed = 2.3284152383951096e-13
+    # Calibration contract: the band's FLOOR (own <= 1.0) covers the noise.
+    assert observed < index._SHARED_TOLERANCE
+    # The exact deficit through the real code path: clamp, not raise.
+    own = 2.0  # X's clinic_count in the shared-clinic city
+    shared = own + observed
+    assert shared > own, "the perturbation must survive rounding"
+    assert own - shared < 0.0, "must be a real over-subtraction"
+    assert _lend_with_shared(shared) == pytest.approx(1 / 200, abs=1e-15)
+
+
 def test_the_tolerance_is_a_derived_multiple_of_machine_epsilon():
     """Not an arbitrary round number: it is sized to a few dozen rounding
     steps of a double, which is what two GEOS clip orders can differ by.
