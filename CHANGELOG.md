@@ -7,6 +7,40 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **The overlap-lending guard tolerates the real layer's clip noise (DEL-61).**
+  The guard exists to catch an amounts frame and a shared structure from
+  different runs — a real mismatch is off by a length. It was instead
+  aborting real-data regeneration over a deficit of
+  `-2.3284152383951096e-13` km, which made `rule_effects.md`'s
+  `overlap_lending` block the one block that could not be regenerated or
+  spliced on this machine at all.
+  - **The 64-eps constant priced the wrong quantity.** Its derivation
+    ("a few dozen rounding steps of the length") and its only measurement
+    — the 1.1e-16 km pair of 6 Sep — assumed the noise scales with the
+    computed length. Two GEOS clips of the same road actually differ at
+    COORDINATE magnitude: EPSG:7760 runs to 1.033e6 m (bounds measured
+    25 Oct 2026), and the observed deficit is exactly 2.0 ulps of that —
+    2.33e-13 km, ~16,400× the old band. Measured, not modelled: the
+    ticket's exact deficit is pinned by a unit test through the real
+    guard path, watched red on the old constant before the fix.
+  - **16384 × eps (3.6e-12)** — 16× the measured noise, covering a couple
+    dozen vertex-ulps of accumulation, and still ~275,000× below a
+    millimetre, the smallest difference a real cross-run mismatch could
+    show. The guard's discriminating power is intact: the unchanged
+    boundary test proves a deficit just outside the band still raises.
+    The pins were re-derived from the measurement in the same commit —
+    the constant and its pins are one unit.
+  - **No fixture, oracle value, config key or reference rule moved.** The
+    pre-change green suite proves no fixture deficit even reaches the old
+    band (it would have raised), so widening it cannot alter any fixture
+    computation; the reference propagates clip noise unguarded and the
+    clamp delta (~2.4e-13) sits far inside the 1e-12 fixture compare.
+  - **Both real-data gates pass**: with the warm measure cache,
+    `test_a_fresh_overlap_run_reproduces_the_committed_block` and
+    `test_stdout_carries_blocks_and_nothing_else` regenerate the
+    committed block byte-identically — the DEL-61 acceptance, and the
+    DEL-60 splice work is unblocked.
+
 - **Every `docs/data/` generator now has a `--splice` path** (DEL-59). DEL-58
   gave `summarize_sweep.py` and `rank_report.py` a
   `--splice` mode and an `--out` that refuses to overwrite prose — the two
