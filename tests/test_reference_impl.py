@@ -17,8 +17,8 @@ from tests.oraculum_fixtures import (
     load_settlements, load_barriers, load_services,
 )
 from tests.reference_impl import (
-    RULESETS, adjacency, apply_barrier, compute_city, emit_expected_values,
-    emit_variant_expected_values,
+    RULESETS, _apply_transform, adjacency, apply_barrier, compute_city,
+    emit_expected_values, emit_variant_expected_values,
 )
 from tests.variants import BAND_RADII_KM, VARIANTS
 
@@ -315,6 +315,17 @@ def test_emit_expected_values_takes_a_city_and_defaults_to_oraculum(tmp_path):
     emit_expected_values(implicit)
     emit_expected_values(explicit, ORACULUM)
     assert implicit.read_bytes() == explicit.read_bytes() == CSV.read_bytes()
+
+
+@pytest.mark.parametrize("value", [0.02914213562373095,
+                                   0.00909090909090909])
+def test_the_reference_cbrt_transform_is_the_pow_formula(value):
+    """DEL-64, reference side: same incident, same formula — the reference
+    feeds the variants byte-identity regen, so its cbrt must be the same
+    byte-stable pow form (glibc's single fixed pow algorithm), not
+    environment-dependent libm."""
+    assert _apply_transform(value, "cbrt") == (
+        math.copysign(abs(value) ** (1.0 / 3.0), value))
 
 
 # --- 3D: the variants fixture (spec § 3, § 4.4) ------------------------
