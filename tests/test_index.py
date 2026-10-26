@@ -688,15 +688,47 @@ def test_the_tolerance_boundary_is_pinned_on_both_sides():
         _lend_with_shared(outside)
 
 
+def test_the_measured_del61_noise_is_inside_the_band_and_clamped():
+    """DEL-61: regenerating the overlap_lending block on this machine
+    aborted with `4770 would lend -2.3284152383951096e-13 of 'road_length'
+    to 5169`. The pre-DEL-61 band (64 eps ~ 1.4e-14) read that as a
+    cross-run mismatch; it is GEOS clip noise — the deficit is 2.33e-10 m,
+    exactly 2.0 ulps of EPSG:7760's ~1e6 m projected coordinates (measured
+    on the real layer, 25 Oct 2026), which two independent clips of the
+    same road round differently.
+
+    Pinned deterministically: the exact ticket deficit, through the real
+    guard path. The failing pair's own road_length is unknown, so the
+    calibration contract is asserted both at the band floor (the
+    standalone first assert, own <= 1.0) and through the real code path
+    (own = 2.0).
+    """
+    observed = 2.3284152383951096e-13
+    # Calibration contract: the band's FLOOR (own <= 1.0) covers the noise.
+    assert observed < index._SHARED_TOLERANCE
+    # The exact deficit through the real code path: clamp, not raise.
+    own = 2.0  # X's clinic_count in the shared-clinic city
+    shared = own + observed
+    assert shared > own, "the perturbation must survive rounding"
+    assert own - shared < 0.0, "must be a real over-subtraction"
+    assert _lend_with_shared(shared) == pytest.approx(1 / 200, abs=1e-15)
+
+
 def test_the_tolerance_is_a_derived_multiple_of_machine_epsilon():
-    """Not an arbitrary round number: it is sized to a few dozen rounding
-    steps of a double, which is what two GEOS clip orders can differ by.
-    An arbitrary 1e-9 — the first value shipped — would have absorbed a
-    nanometre-scale REAL error without a word."""
-    assert index._SHARED_TOLERANCE == 64 * sys.float_info.epsilon
-    assert index._SHARED_TOLERANCE < 1e-13
-    # comfortably above the 1.1e-16 the real layer actually produced
-    assert index._SHARED_TOLERANCE > 1.1e-16 * 10
+    """Not an arbitrary round number: DEL-61 measured the real layer's
+    clip noise at -2.3284152383951096e-13 km (4770 lending road_length to
+    5169) — exactly 2.0 ulps of EPSG:7760's ~1e6 m projected coordinates,
+    not the 'few dozen rounding steps of the length' the 64-eps constant
+    assumed (that priced the benign 1.1e-16 pair of 6 Sep, not the tail).
+    16384 eps is 3.6e-12: 16x the measurement (measured 15.6x), and still
+    five-plus orders of magnitude below a millimetre — the smallest
+    difference a real cross-run mismatch could show. An arbitrary 1e-9 —
+    the first value shipped — would have absorbed a nanometre-scale REAL
+    error without a word."""
+    assert index._SHARED_TOLERANCE == 16384 * sys.float_info.epsilon
+    # comfortably above the 2.33e-13 the real layer actually produced
+    assert index._SHARED_TOLERANCE > 2.3284152383951096e-13 * 8
+    assert index._SHARED_TOLERANCE < 1e-11
 
 
 def test_service_index_forwards_the_shared_structure():
