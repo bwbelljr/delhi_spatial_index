@@ -333,7 +333,13 @@ def _apply_transform(value, transform_form):
         return value
     if transform_form == "log1p":
         return math.log1p(value)
-    return math.cbrt(value)
+    # DEL-64: copysign(|x|**(1/3), x), not math.cbrt — libm cbrt is not
+    # correctly rounded (it broke the byte-identity regen on the rotated
+    # CI runners); x**(1/3) rides glibc's single fixed pow algorithm,
+    # byte-stable across glibc builds to date — CI reproduction is the
+    # ongoing guard. This module must never import delhi_psi.index, and
+    # the two formulas must stay identical.
+    return math.copysign(abs(value) ** (1.0 / 3.0), value)
 
 
 def compute_city(settlements, services, barriers, *, adjacency_rule,
