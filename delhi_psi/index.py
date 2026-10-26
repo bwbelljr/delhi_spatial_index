@@ -222,7 +222,15 @@ def _apply_transform(value, transform_form):
     if transform_form == "log1p":
         return math.log1p(value)
     if transform_form == "cbrt":
-        return math.cbrt(value)
+        # DEL-64: NOT math.cbrt — libm's cbrt is not correctly rounded, and
+        # the CI runner rotation of 25 Oct 2026 made it return a 1-ulp-
+        # different cube root, breaking the variants byte-identity on every
+        # PR (a re-run of unchanged main failed identically). x**(1/3) rides
+        # glibc's single fixed pow algorithm, byte-stable across glibc
+        # builds to date — CI reproduction is the ongoing guard. pow yields
+        # complex for negative float bases with non-integer exponents, so
+        # the real cube root is sign(x) * |x|**(1/3).
+        return math.copysign(abs(value) ** (1.0 / 3.0), value)
     raise ValueError(
         f"unknown transform form {transform_form!r}; allowed values: "
         f"{list(TRANSFORM_FORMS)}")

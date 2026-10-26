@@ -291,6 +291,24 @@ def test_apply_transform_matches_the_named_function(form, value, expected):
         expected, abs=1e-15)
 
 
+@pytest.mark.parametrize("value", [0.02914213562373095,
+                                   0.00909090909090909])
+def test_the_cbrt_transform_is_the_deterministic_pow_formula(value):
+    """DEL-64: math.cbrt is libm and NOT correctly rounded — the CI runner
+    rotation of 25 Oct 2026 made it return a 1-ulp-different cube root and
+    broke the variants byte-identity on every PR (including a re-run of
+    unchanged, previously-green main). The pow form x**(1/3) rides glibc's
+    single fixed pow algorithm, byte-stable across glibc builds to date
+    (CI reproduction is the ongoing guard, not a mathematical guarantee).
+    Both inputs are the real fixture values whose rows were the first to
+    differ. pow yields complex for negative float bases with non-integer
+    exponents, so the real cube root is sign(x) * |x|**(1/3) — the negative
+    contract lives in test_apply_transform_matches_the_named_function and
+    is preserved."""
+    assert index._apply_transform(value, "cbrt") == (
+        math.copysign(abs(value) ** (1.0 / 3.0), value))
+
+
 @pytest.mark.parametrize("kwargs,match", [
     (dict(transform_form="sideways"), "sideways"),
     (dict(transform_form="log1p"), "transform_stage"),

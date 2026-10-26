@@ -7,6 +7,34 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **The cbrt transform is computed from glibc's fixed `pow`, not libm's
+  `cbrt` (DEL-64).** A GitHub runner rotation between 23 and 25 Oct 2026
+  broke the oracle's byte-identity contract on *every* PR — a re-run of
+  unchanged, previously-green code failed identically, proving the
+  environment had moved and the code had not. `math.cbrt` calls libm's
+  `cbrt`, which is not correctly rounded: the rotated runner returned a
+  1-ulp-different cube root on two real fixture inputs, and the two
+  `variants_expected_values.csv` regen tests failed on those rows alone.
+  - **The replacement is `sign(x) · |x|**(1/3)`** — glibc's `pow` (≥ 2.28)
+    is one fixed, documented algorithm that has been byte-stable across
+    glibc builds to date, so the formula reproduces byte-identically
+    everywhere the suite has run. That empirical stability, not a
+    mathematical guarantee, is what the contract stands on — a future
+    change to glibc's pow would re-break it identically, and the CI
+    reproduction on every PR is the guard. `pow` yields complex for
+    negative float bases with non-integer exponents, so the sign split
+    preserves the existing `-8.0 → -2.0` contract.
+  - **Both implementations changed in one commit** (production
+    `delhi_psi/index.py` and the oracle `tests/reference_impl.py`), the two
+    variants CSVs were regenerated (only rows whose rule name contains
+    `cbrt` shift, by 1–2 ulp in the last rendered digit), and the TDD pins
+    use the actual incident inputs — watched red against `math.cbrt`
+    before the swap.
+  - **Residual risk, recorded:** `math.log1p` (the other DEL-34 transform)
+    and `math.exp` (the exponential decay variant) are libm calls of
+    the same class. Today only cbrt broke. The reproducibility appendix
+    (DEL-46) should state: pure-arithmetic rows are byte-stable everywhere;
+    libm-dependent transforms are pinned to the byte-stable formulas.
 - **The overlap-lending guard tolerates the real layer's clip noise (DEL-61).**
   The guard exists to catch an amounts frame and a shared structure from
   different runs — a real mismatch is off by a length. It was instead
