@@ -7,6 +7,21 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **The ratified rules now ship as one profile (DEL-31).** `ratified-2026`
+  — a copy of `code-2025` with the decided values: `touch` adjacency,
+  `partial_weighted` barrier at the configurable `5 m`, `outside_receiver`
+  overlap lending, `eq4_own_only` roads, `planned_relative` second
+  normalization (the reported scale, 1 = the average planned colony), and
+  the `[RV, Industrial, Other]` exclusion at `post_neighbors` with
+  `contributes`.
+  - **No shipped number moves.** `code-2025.yaml`, `manuscript.yaml` and
+    every existing fixture are byte-identical; the profile is pinned by its
+    two new production fixtures, and its profile-named `neighbors_artifact`
+    default means a fresh `preprocess` writes
+    `colonies_neighbors_ratified-2026.joblib` beside the historic artifact.
+  - **Still open — `transform.form` and `aggregation.rule`** — the profile
+    carries the `code-2025` values by default; a later decision is a
+    one-line profile edit.
 - **The reported PSI can now be the planned-relative scale (DEL-63).**
   `methodology.second_normalization` is a three-value enum instead of a
   boolean: `minmax` (today's `true`, emits `norm_psi`), `none` (today's
