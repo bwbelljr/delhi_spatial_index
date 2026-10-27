@@ -58,7 +58,10 @@ def reference_block(expected, rule, scenario, denom):
 
 def metrics_for(profile):
     cfg = load_config(profile)
-    skip = set() if cfg.methodology.second_normalization else {"norm_psi"}
+    second = cfg.methodology.second_normalization
+    skip = set() if second != "none" else {"norm_psi", "rel_psi"}
+    if second != "planned_relative":
+        skip.add("rel_psi")
     return {k: v for k, v in METRIC_MAP.items() if k not in skip}
 
 

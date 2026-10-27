@@ -51,7 +51,9 @@ REFERENCE_KNOBS = {
     "methodology.aggregation.rule": {"mean_minmax": "mean_minmax",
                                      "mean_rank": "mean_rank"},
     "methodology.roads": {"decayed": "decayed", "eq4_own_only": "eq4"},
-    "methodology.second_normalization": {True: True, False: False},
+    "methodology.second_normalization": {"none": "none",
+                                         "minmax": "minmax",
+                                         "planned_relative": "planned_relative"},
     "methodology.exclusion.stage": {"post_neighbors": False,
                                     "pre_neighbors": True},
     "methodology.exclusion.absent_neighbor": {"swallowed": "swallowed",
@@ -59,8 +61,8 @@ REFERENCE_KNOBS = {
     "outputs.denominators[]": {"pop": "pop", "popdensity": "popdensity"},
 }
 
-# `second_normalization` is a bool, not an enum; every other reference-pinned
-# key gets a str-valued Enum generated from the table above.
+# `second_normalization` is a str-valued Enum like every other
+# reference-pinned key, generated from the table above.
 ENUM_KEYS = (
     "methodology.adjacency.rule",
     "methodology.barrier.rule",
@@ -71,6 +73,7 @@ ENUM_KEYS = (
     "methodology.transform.stage",
     "methodology.aggregation.rule",
     "methodology.roads",
+    "methodology.second_normalization",
     "methodology.exclusion.stage",
     "methodology.exclusion.absent_neighbor",
     "outputs.denominators[]",
@@ -94,6 +97,8 @@ TransformForm = _make_enum("TransformForm", "methodology.transform.form")
 TransformStage = _make_enum("TransformStage", "methodology.transform.stage")
 AggregationRule = _make_enum("AggregationRule", "methodology.aggregation.rule")
 RoadsFormula = _make_enum("RoadsFormula", "methodology.roads")
+SecondNormalization = _make_enum(
+    "SecondNormalization", "methodology.second_normalization")
 ExclusionStage = _make_enum("ExclusionStage", "methodology.exclusion.stage")
 AbsentNeighbor = _make_enum("AbsentNeighbor",
                             "methodology.exclusion.absent_neighbor")
@@ -109,6 +114,7 @@ ENUMS = {
     "methodology.transform.stage": TransformStage,
     "methodology.aggregation.rule": AggregationRule,
     "methodology.roads": RoadsFormula,
+    "methodology.second_normalization": SecondNormalization,
     "methodology.exclusion.stage": ExclusionStage,
     "methodology.exclusion.absent_neighbor": AbsentNeighbor,
     "outputs.denominators[]": Denominator,
@@ -116,6 +122,11 @@ ENUMS = {
 
 # --- reserved values and keys (spec §§ 3, 4, 9) ------------------------
 RESERVED_VALUES = {
+    "methodology.second_normalization": {
+        True:
+            "no longer allowed — it used to mean min-max. Write `minmax` "
+            "(or `planned_relative`) instead.",
+    },
     "outputs.denominators[]": {
         "one":
             "reserved: production supports denom='one' but the reference does "
@@ -274,7 +285,7 @@ class MethodologyConfig:
     transform: TransformConfig
     aggregation: AggregationConfig
     roads: RoadsFormula
-    second_normalization: bool
+    second_normalization: SecondNormalization
     exclusion: ExclusionConfig
 
 
@@ -373,13 +384,6 @@ def _coerce_enum(key, value):
         raise ConfigError(
             f"{key}: {value!r} is not allowed; allowed values: "
             f"{allowed}{note}") from None
-
-
-def _bool(key, value):
-    if not isinstance(value, bool):
-        raise ConfigError(f"{key}: {value!r} is not allowed; "
-                          "allowed values: [True, False]")
-    return value
 
 
 def _conditional_number(mapping, key, prefix, *, used_by, applies, minimum,
@@ -588,6 +592,14 @@ def _methodology(raw, *, allowed_categories):
             _require(exclusion_raw, "absent_neighbor",
                      "methodology.exclusion")))
 
+    second_norm = _require(raw, "second_normalization", "methodology")
+    # DEL-63: YAML `false` keeps meaning "off" (the exclusion.stage
+    # precedent). Every other value is matched as an exact string, and a
+    # bare `true` is refused by RESERVED_VALUES so an anonymous boolean
+    # can never silently pick one of the two new meanings.
+    if second_norm is False:
+        second_norm = "none"
+
     return MethodologyConfig(
         adjacency=adjacency,
         barrier=barrier,
@@ -597,9 +609,8 @@ def _methodology(raw, *, allowed_categories):
         aggregation=aggregation,
         roads=_coerce_enum("methodology.roads",
                            _require(raw, "roads", "methodology")),
-        second_normalization=_bool(
-            "methodology.second_normalization",
-            _require(raw, "second_normalization", "methodology")),
+        second_normalization=_coerce_enum(
+            "methodology.second_normalization", second_norm),
         exclusion=exclusion)
 
 

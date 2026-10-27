@@ -39,7 +39,7 @@ MINIMAL = """profile: minimal
   transform: {form: none}
   aggregation: {rule: mean_minmax}
   roads: decayed
-  second_normalization: true
+  second_normalization: minmax
   exclusion: {types: [RV], stage: post_neighbors, absent_neighbor: swallowed}
 """
 
@@ -754,3 +754,44 @@ def test_aggregation_is_required_like_every_methodology_block(tmp_path):
     with pytest.raises(ConfigError) as exc:
         load_config(write(tmp_path, without))
     assert "methodology.aggregation" in str(exc.value)
+
+
+# --- DEL-63: second_normalization is a three-value enum -----------------
+def test_second_normalization_loads_its_three_strings(tmp_path):
+    for value in ("none", "minmax", "planned_relative"):
+        text = MINIMAL.replace("second_normalization: minmax",
+                               f"second_normalization: {value}")
+        cfg = load_config(write(tmp_path, text, name=f"{value}.yaml"),
+                          data_dir=str(tmp_path))
+        assert cfg.methodology.second_normalization == value, value
+
+
+def test_second_normalization_false_still_means_none(tmp_path):
+    """The exclusion.stage precedent: a YAML boolean stays acceptable at
+    the one value it can mean without ambiguity."""
+    text = MINIMAL.replace("second_normalization: minmax",
+                           "second_normalization: false")
+    cfg = load_config(write(tmp_path, text, name="none.yaml"),
+                      data_dir=str(tmp_path))
+    assert cfg.methodology.second_normalization == "none"
+
+
+def test_bare_true_second_normalization_is_refused_with_the_migration(
+        tmp_path):
+    """An anonymous boolean is the ambiguity this change removes: `true`
+    used to mean min-max, so it must name minmax loudly rather than drift
+    into one of two new meanings."""
+    text = MINIMAL.replace("second_normalization: minmax",
+                           "second_normalization: true")
+    with pytest.raises(ConfigError) as exc:
+        load_config(write(tmp_path, text, name="bare-true.yaml"))
+    message = str(exc.value)
+    assert "minmax" in message and "planned_relative" in message
+
+
+def test_an_unknown_second_normalization_is_refused(tmp_path):
+    text = MINIMAL.replace("second_normalization: minmax",
+                           "second_normalization: min_max")
+    with pytest.raises(ConfigError, match="not allowed"):
+        load_config(write(tmp_path, text, name="typo.yaml"),
+                    data_dir=str(tmp_path))

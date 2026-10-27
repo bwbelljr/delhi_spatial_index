@@ -86,7 +86,7 @@ methodology:
                                     # uniform by construction, so no mass
                                     # point at zero can form. Not adopted.
   roads: decayed                    # decayed | eq4_own_only
-  second_normalization: true        # norm_psi = minmax(unnorm_psi); column absent when false
+  second_normalization: minmax      # minmax | none | planned_relative — norm_psi under the first two, plus rel_psi under planned_relative
   exclusion:
     types: [RV]                     # CATEGORY names (values of categories.mapping)
     stage: post_neighbors           # post_neighbors | pre_neighbors

@@ -48,7 +48,7 @@ methodology:
                                     # uniform by construction, so no mass
                                     # point at zero can form. Not adopted.
   roads: decayed
-  second_normalization: true
+  second_normalization: minmax
   exclusion:
     types: [RV]
     stage: post_neighbors

@@ -601,7 +601,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
         DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
         MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
-        TransformConfig, TransformForm,
+        SecondNormalization, TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -617,7 +617,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         transform=TransformConfig(form=TransformForm.NONE),
         aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
-        second_normalization=True,
+        second_normalization=SecondNormalization.MINMAX,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
                                   absent_neighbor=AbsentNeighbor.SWALLOWED))
 
@@ -630,7 +630,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
             settlements, services, barriers, adjacency_rule="bbox",
             barrier_rule="partial_weighted", barrier_buffer_m=5.0,
             roads_formula="decayed", scenario="none", denom=denom,
-            second_norm=True, absent_neighbor_contribution="swallowed",
+            second_norm="minmax", absent_neighbor_contribution="swallowed",
             scenarios={"none": (frozenset(), False)})
         assert set(got.index) == set(exp.index)
         # Every METRIC_MAP column exists on both sides: the city carries all
@@ -693,7 +693,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
         DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
         MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
-        TransformConfig, TransformForm,
+        SecondNormalization, TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -709,7 +709,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         transform=TransformConfig(form=TransformForm.NONE),
         aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
-        second_normalization=True,
+        second_normalization=SecondNormalization.MINMAX,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
                                   absent_neighbor=AbsentNeighbor.SWALLOWED))
 
@@ -723,7 +723,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
             barrier_rule="partial_weighted", barrier_buffer_m=5.0,
             overlap_lending="outside_receiver",
             roads_formula="decayed", scenario="none", denom=denom,
-            second_norm=True, absent_neighbor_contribution="swallowed",
+            second_norm="minmax", absent_neighbor_contribution="swallowed",
             scenarios={"none": (frozenset(), False)})
         assert set(got.index) == set(exp.index)
         for prod_col, metric in METRIC_MAP.items():

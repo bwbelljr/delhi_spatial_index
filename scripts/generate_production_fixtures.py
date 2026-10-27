@@ -65,8 +65,10 @@ def metric_columns(*, second_normalization, point_services=POINT_SERVICES,
         columns.append(f"{svc}_pcen")
         columns.append(f"{svc}_idx")
     columns.append("unnorm_psi")
-    if second_normalization:
+    if second_normalization != "none":
         columns.append("norm_psi")
+    if second_normalization == "planned_relative":
+        columns.append("rel_psi")
     columns.append("population")
     columns.append("area_km2")
     return columns
