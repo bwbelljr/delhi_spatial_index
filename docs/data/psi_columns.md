@@ -162,3 +162,8 @@ denominators; the ratified profile (DEL-31) sets `second_normalization` and
 `outputs.denominators` from Raj's answer to the two choices above, and the
 methods text gains a sentence for each. The escalation branch of the spec
 ("no candidate matches at least 6 of 8") did not fire.
+
+The reported scale itself is now measured separately:
+`docs/data/planned_relative.md` gives the per-type means under
+`second_normalization: planned_relative`, where 1 is the average Planned
+colony (DEL-63).

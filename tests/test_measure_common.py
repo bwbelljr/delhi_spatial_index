@@ -428,6 +428,7 @@ DOCUMENT_GENERATORS = {
     "roads_access.md": "scripts/measure_roads_access.py",
     "rule_effects.md": "scripts/measure_rule_effects.py",
     "psi_columns.md": "scripts/measure_psi_columns.py",
+    "planned_relative.md": "scripts/measure_planned_relative.py",
     "layer_pathologies.md": "scripts/measure_layer_pathologies.py",
     "phase6_sweep.md": "scripts/summarize_sweep.py",
 }
