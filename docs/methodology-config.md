@@ -9,37 +9,40 @@ The design rationale lives in
 
 ## 1. The switches
 
-Profiles live in `delhi_psi/profiles/`. Two ship:
+Profiles live in `delhi_psi/profiles/`. Three ship:
 
 | profile | meaning |
 |---|---|
 | `code-2025` | **Today's behaviour** — the rules that produced the July 2025 numbers. The production default. Treat it as a frozen record. |
 | `manuscript` | The paper's ideal rules (Eq. 1–4 as written). Proven against the independent reference implementation and the hand-ratified worksheet. |
+| `ratified-2026` | **The ratified rules** — every decided switch from the table below, in one profile: the profile the Phase 4 recalculation (DEL-32) runs. Mixed profile: no single reference rule-set matches all of its values, so it is absent from `tests/test_profiles_match_reference.PROFILE_RULES` and pinned by its production fixtures alone. Its `neighbors_artifact` default is profile-named, so a fresh `preprocess` writes `colonies_neighbors_ratified-2026.joblib` beside `code-2025`'s. |
 
 The `methodology:` block of `code-2025.yaml` lists every switch with its
 allowed values as an inline comment. The ones that were on the table with
-Raj, and what he decided on 28 Aug 2026
-(`docs/decisions/2026-08-28-raj-methodology-decisions.md`; the "ratified"
-column is what the Phase 4 profile, DEL-31, will carry):
+Raj, and what he decided through 26 Oct 2026
+(`docs/decisions/2026-08-28-raj-methodology-decisions.md`,
+`docs/decisions/2026-10-19-raj-methodology-decisions.md`,
+`docs/decisions/2026-10-22-raj-call-decisions.md`; the "ratified" column is
+what `ratified-2026.yaml` carries):
 
-| switch | today (`code-2025`) | paper (`manuscript`) | **ratified (28 Aug 2026)** | context |
+| switch | today (`code-2025`) | paper (`manuscript`) | **ratified (decisions to 26 Oct 2026)** | context |
 |---|---|---|---|---|
 | `adjacency.rule` | `bbox` | `touch` | **`touch`** — shared border; corner-only pairs being counted (DEL-50) | memo § 1 (DEL-19) — bbox adjacency invents neighbours. A third value, `within_distance`, is the Phase 6 distance band (§ 6, DEL-36/39) |
 | `barrier.rule` | `global_asymmetric` | `pairwise` | **`partial_weighted`** — a barrier covering part of a shared boundary discounts that neighbour by the covered share, w_ij = 1 − L_blocked/L_shared, instead of severing it. Landed in cycle 3E (DEL-48) | memo § 2 (DEL-22) — `pairwise` severs the crossing pair only; `partial_weighted` generalises it |
-| `barrier.buffer_m` | — (unused) | — (unused) | `5` m, pending ratification | DEL-48 — how close a barrier has to be to block a boundary point, in metres (EPSG:7760 is metric). **Required** iff `barrier.rule: partial_weighted`, **rejected** otherwise, and strictly **> 0**: `LineString.buffer(0)` is EMPTY in shapely, so a 0 m buffer would silently make every weight 1. It is a DISTANCE with round caps, so the blocked span extends `buffer_m` past each end of the barrier *where the shared boundary continues past it* — on the oracle city that makes w_AD 0.08, not the memo's buffer-free 0.1 |
-| `overlap.lending` | `whole` | `whole` | **Raj to answer** — Bob's addition of 5 Sep 2026; `outside_receiver` is implemented and proven, `whole` is what both profiles carry until he confirms | DEL-20 — what a NEIGHBOUR lends. `whole` is today's rule, the neighbour's whole amount S_j. `outside_receiver` lends \|S_j \ S_i\|: the amount minus whatever of the same service already lies inside the receiver, so a service in the overlap of two colonies is not counted twice for one of them. Clean pairs are unaffected — for every pair whose polygons do not overlap, \|S_j \ S_i\| == \|S_j\| exactly |
+| `barrier.buffer_m` | — (unused) | — (unused) | **`5` m** — ratified 26 Oct 2026; kept a profile value, so a different buffer is a one-line edit | DEL-48 — how close a barrier has to be to block a boundary point, in metres (EPSG:7760 is metric). **Required** iff `barrier.rule: partial_weighted`, **rejected** otherwise, and strictly **> 0**: `LineString.buffer(0)` is EMPTY in shapely, so a 0 m buffer would silently make every weight 1. It is a DISTANCE with round caps, so the blocked span extends `buffer_m` past each end of the barrier *where the shared boundary continues past it* — on the oracle city that makes w_AD 0.08, not the memo's buffer-free 0.1 |
+| `overlap.lending` | `whole` | `whole` | **`outside_receiver`** — ratified 19 Oct 2026 (DEL-20); measured price in `docs/data/rule_effects.md` | DEL-20 — what a NEIGHBOUR lends. `whole` is today's rule, the neighbour's whole amount S_j. `outside_receiver` lends \|S_j \ S_i\|: the amount minus whatever of the same service already lies inside the receiver, so a service in the overlap of two colonies is not counted twice for one of them. Clean pairs are unaffected — for every pair whose polygons do not overlap, \|S_j \ S_i\| == \|S_j\| exactly |
 | `roads` | `decayed` | `eq4_own_only` | **`eq4_own_only`** — each colony counts only its own roads. NB a change from the published numbers; effect measured first (DEL-49) | memo § 3 (DEL-22) — Eq. 4 has no neighbour term |
-| `second_normalization` | `minmax` | `none` | **Raj to choose** — measured 5 Sep 2026 (DEL-52, `docs/data/psi_columns.md`): the paper's Figure 4 reports `norm_psi`, so `minmax` unless Raj switches the figures to Eq. 1 as written; Bob's earlier `none` recommendation withdrawn | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1. Values: `none`, `minmax` (today's `true`), `planned_relative` (emits `norm_psi` **and** `rel_psi`; Raj's 22 Oct answer, DEL-63). |
-| `outputs.denominators` | `[pop, popdensity]` | `[pop]` | **Raj to choose** — measured 5 Sep 2026 (DEL-52): Figure 4 uses the popdensity denominator, so it stays reported unless Raj switches to per-population Eq. 3; Bob's earlier `[pop]` default withdrawn | memo "Popdensity denominator" (DEL-22) |
+| `second_normalization` | `minmax` | `none` | **`planned_relative`** — 22 Oct 2026 (4a, DEL-63): the reported scale; min-max stays in the appendix | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1. Values: `none`, `minmax` (today's `true`), `planned_relative` (emits `norm_psi` **and** `rel_psi`; Raj's 22 Oct answer, DEL-63). |
+| `outputs.denominators` | `[pop, popdensity]` | `[pop]` | **`[pop, popdensity]`** — 19 Oct 2026: popdensity ratified; both stay reported | memo "Popdensity denominator" (DEL-22) |
 | `exclusion.absent_neighbor` | `swallowed` | `contributes` | **`contributes`** — dropped settlements still lend services; they get no PSI and no output row | memo § 5 / Open Decision A (DEL-13, DEL-21) |
 | `exclusion.types` | `[RV]` | `[RV]` | **`[RV, Industrial, Other]`** — identity mapping kept; no category collapse (DEL-28/29) | § 2 below |
 | `decay.distance_unit` | `km` | (manuscript silent) | `km` — FYI for the methods text | memo § 7 |
 | `adjacency.max_distance_km` | — (unused) | — (unused) | — | DEL-36 — the band's radius in km, polygon-to-polygon. **Required** iff `adjacency.rule: within_distance`, and **rejected** otherwise; `>= 0`, where 0 means "every polygon that intersects i" (§ 6) |
 | `decay.form` | `inverse_linear` | `inverse_linear` | `inverse_linear` — sweep later (DEL-37; Raj wants weights spread away from zero) | the decay weight w(D): `inverse_linear` = 1/(1+D), `none` = 1, `inverse_power` = 1/(1+D)^`exponent`, `exponential` = e^(−D/`scale_km`). `exponent` / `scale_km` are required by, and only by, their own form |
 | `decay.distance` | `centroid` | `centroid` | `centroid` | DEL-37 — what D means: `centroid` (centroid-to-centroid, as every run so far) or `boundary` (polygon-to-polygon, so every touching or overlapping neighbour is at 0 and lends its services undecayed) |
-| `transform.form` | `none` | `none` | **Raj to choose** — measurable since DEL-34, adopted by neither profile | DEL-34 — a function applied to a value, to spread the compressed 0–1 scores: `none`, `log1p` = log(1+x), `cbrt` = x^(1/3). Yeo-Johnson and sigmoid were excluded with reasons (a scikit-learn dependency and a fitted λ; an arbitrary scale parameter) |
+| `transform.form` | `none` | `none` | **Raj to choose** — measurable since DEL-34, adopted by neither profile; `ratified-2026` carries `none` until then | DEL-34 — a function applied to a value, to spread the compressed 0–1 scores: `none`, `log1p` = log(1+x), `cbrt` = x^(1/3). Yeo-Johnson and sigmoid were excluded with reasons (a scikit-learn dependency and a fitted λ; an arbitrary scale parameter) |
 | `transform.stage` | — (unused) | — (unused) | — | DEL-34 — WHERE the transform applies: `pcen` (each service's PCEN, before Eq. 2 — attacks the skew at its source) or `psi` (the composite, before the second normalisation — what the 2021 notebook did). **Required** iff `transform.form` is not `none`, **rejected** otherwise |
-| `aggregation.rule` | `mean_minmax` | `mean_minmax` | **Raj to choose, with `transform.form`** — measurable since DEL-57, adopted by neither profile | DEL-57 — what Eq. 2 IS, as opposed to `transform`, which chooses a function applied to a value. `mean_minmax` min-maxes each service's PCEN then averages; `mean_rank` replaces the min-max with a percentile rank (ties averaged, rescaled so min → 0 and max → 1). See § 1.1 |
+| `aggregation.rule` | `mean_minmax` | `mean_minmax` | **Raj to choose, with `transform.form`** — measurable since DEL-57, adopted by neither profile; `ratified-2026` carries `mean_minmax` until then | DEL-57 — what Eq. 2 IS, as opposed to `transform`, which chooses a function applied to a value. `mean_minmax` min-maxes each service's PCEN then averages; `mean_rank` replaces the min-max with a percentile rank (ties averaged, rescaled so min → 0 and max → 1). See § 1.1 |
 
 Also in the block: `exclusion.stage` (`post_neighbors` = today and
 ratified: neighbours are built on the full universe, exclusion happens at
@@ -51,11 +54,9 @@ Two things Raj ratified need **no switch**: the min-max in Eq. 2 runs over
 the reported settlements only (today's behaviour), and a service inside
 overlapping colony polygons counts directly for each of them (today's
 behaviour). The other half of that second ruling — what such a service is
-worth when it is *lent* — is now the switch `overlap.lending`, landed in
-cycle 3E (DEL-20), and it stays at `whole` until Raj confirms: he agreed
-that an overlap service counts for each owner, but the lending half is
-Bob's proposal of 5 Sep 2026 and is still out for his answer. DEL-31
-decides what the ratified profile carries.
+worth when it is *lent* — is the switch `overlap.lending`, landed in
+cycle 3E (DEL-20): Raj ratified `outside_receiver` on 19 Oct 2026, and
+`ratified-2026` carries it.
 
 `second_normalization` is now a **three-valued enum, not a boolean**
 (DEL-63): `minmax` is today's `true` (emits `norm_psi`), `none` is today's
@@ -208,7 +209,10 @@ methodology:
     types: [RV, Industrial, Other]   # the 28 Aug 2026 decision; UV and SDA stay in
 ```
 
-The example below is the recipe **if** a reviewer asks for the collapse.
+That identity-mapping plus exclusion snippet is exactly what the shipped
+ratified profile carries — see `delhi_psi/profiles/ratified-2026.yaml`. The
+recipe below is the different, parked question — **if** a reviewer asks for
+the collapse.
 The workshop's working candidate (WORKPLAN DEL-29): planned /
 unauthorized / regularized-unauthorized / resettlement / JJC, with the
 non-urban types dropped. In YAML, `regularized` is the token for WORKPLAN's
@@ -295,7 +299,9 @@ Work on a branch; `main` requires the CI check.
    reference implementation, add it to `PROFILE_RULES` in
    `tests/test_profiles_match_reference.py` mapped to `"code"` or `"ideal"`
    — only if *all* its reference-pinned switches match that rule-set;
-   a mixed profile is pinned by its production fixture alone.
+   a mixed profile is pinned by its production fixture alone. (That is why
+   `ratified-2026` is not in `PROFILE_RULES`: `partial_weighted`,
+   `planned_relative` and `outside_receiver` match no rule-set row.)
    Add the name to `SHIPPED` in `tests/test_config.py` as well — it asserts
    the exact set of shipped YAMLs, and a new profile turns it red.
 3. **Regenerate the fixtures:** `uv run python scripts/generate_production_fixtures.py`.

@@ -122,10 +122,12 @@ uv run python scripts/verify_against_baseline.py --config code-2025 \
     --data-dir ~/delhi_data --verify-dir ~/delhi_data/run
 ```
 
-`--config` takes a shipped profile name or a path to a YAML file. Two profiles
-ship: `code-2025` reproduces the July 2025 production behaviour exactly, and
-`manuscript` implements the paper's equations as written. To change a
-methodology choice, or turn a decision into a new profile, follow
+`--config` takes a shipped profile name or a path to a YAML file. Three
+profiles ship: `code-2025` reproduces the July 2025 production behaviour
+exactly, `manuscript` implements the paper's equations as written, and
+`ratified-2026` carries Raj's ratified rules (the profile the Phase 4
+recalculation runs). To change a methodology choice, or turn a decision into
+a new profile, follow
 [`docs/methodology-config.md`](docs/methodology-config.md).
 
 ## Repository layout
