@@ -169,16 +169,17 @@ def test_service_index_adds_pcen_and_idx():
 def test_overall_psi_averages_idx_columns():
     frame = pd.DataFrame({"a_idx": [0.0, 1.0], "b_idx": [1.0, 1.0],
                           "other": [9.0, 9.0]})
-    got = index.overall_psi(frame, second_normalization=True)
+    got = index.overall_psi(frame, second_normalization="minmax")
     assert list(got["unnorm_psi"]) == pytest.approx([0.5, 1.0], abs=1e-12)
     assert list(got["norm_psi"]) == pytest.approx([0.0, 1.0], abs=1e-12)
 
 
-def test_overall_psi_omits_norm_psi_when_second_normalization_is_false():
+def test_overall_psi_omits_norm_psi_when_second_normalization_is_none():
     frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
-    got = index.overall_psi(frame, second_normalization=False)
+    got = index.overall_psi(frame, second_normalization="none")
     assert "unnorm_psi" in got.columns
     assert "norm_psi" not in got.columns
+    assert "rel_psi" not in got.columns
 
 
 def test_service_index_propagates_the_guard():
@@ -197,15 +198,71 @@ def test_service_index_propagates_the_guard():
 def test_overall_psi_second_normalization_propagates_the_guard():
     """The second min-max is the other caller: a frame whose per-service
     indices average to the same value everywhere now names unnorm_psi. Also
-    proves the guard does NOT fire when second_normalization=False."""
+    proves the guard does NOT fire when second_normalization='none'."""
     frame = gpd.GeoDataFrame(
         {"USO_AREA_U": ["A", "B"], "bank_idx": [0.5, 0.5]},
         geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:7760")
     with pytest.raises(ValueError, match="'unnorm_psi'"):
-        index.overall_psi(frame, second_normalization=True)
+        index.overall_psi(frame, second_normalization="minmax")
 
-    got = index.overall_psi(frame, second_normalization=False)
+    got = index.overall_psi(frame, second_normalization="none")
     assert list(got["unnorm_psi"]) == pytest.approx([0.5, 0.5], abs=1e-12)
+
+
+# --- DEL-63: planned_relative ------------------------------------------
+def test_overall_psi_rejects_a_bare_bool_second_normalization():
+    """StrEnum members are truthy AND equal their strings, and `False`
+    would compare equal to neither "none" nor "planned_relative" — a
+    silent fall-through to min-max. Both booleans must fail loudly."""
+    frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
+    for value in (True, False):
+        with pytest.raises(ValueError, match="unknown second_normalization"):
+            index.overall_psi(frame, second_normalization=value)
+
+
+def test_planned_relative_rescales_norm_psi_by_the_planned_mean():
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B", "C"],
+         "category": ["Planned", "Planned", "UAC"],
+         "a_idx": [0.0, 1.0, 0.5]},
+        geometry=[Point(0, 0), Point(1, 0), Point(2, 0)],
+        crs="EPSG:7760")
+    got = index.overall_psi(frame, second_normalization="planned_relative")
+
+    # norm_psi is unchanged from `minmax` — the rel scale divides it.
+    minmax_only = index.overall_psi(frame, second_normalization="minmax")
+    assert list(got["norm_psi"]) == list(minmax_only["norm_psi"])
+
+    planned = got.loc[got["category"] == "Planned", "norm_psi"]
+    assert planned.mean() == pytest.approx(0.5, abs=1e-12)
+    assert list(got["rel_psi"]) == pytest.approx([0.0, 2.0, 1.0],
+                                                 abs=1e-12)
+    # The category mean is 1 by construction; individual Planned rows
+    # are not (A is 0 and B is 2 here).
+    assert got.loc[got["category"] == "Planned", "rel_psi"].mean() == (
+        pytest.approx(1.0, abs=1e-12))
+
+
+def test_planned_relative_refuses_a_frame_with_no_planned_rows():
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "category": ["UAC", "JJC"],
+         "a_idx": [0.0, 1.0]},
+        geometry=[Point(0, 0), Point(1, 0)], crs="EPSG:7760")
+    with pytest.raises(ValueError, match="'Planned'"):
+        index.overall_psi(frame, second_normalization="planned_relative")
+
+
+def test_planned_relative_refuses_a_zero_planned_mean():
+    """A degenerate universe: both Planned rows sit at the global minimum
+    of unnorm_psi, so the divisor is exactly 0.0."""
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B", "C"],
+         "category": ["Planned", "Planned", "UAC"],
+         "a_idx": [0.0, 0.0, 1.0]},
+        geometry=[Point(0, 0), Point(1, 0), Point(2, 0)],
+        crs="EPSG:7760")
+    with pytest.raises(ValueError, match="mean is 0.0"):
+        index.overall_psi(frame, second_normalization="planned_relative")
 
 
 # --- 3D: the four decay forms (spec § 2.2) -----------------------------
@@ -291,6 +348,24 @@ def test_apply_transform_matches_the_named_function(form, value, expected):
         expected, abs=1e-15)
 
 
+@pytest.mark.parametrize("value", [0.02914213562373095,
+                                   0.00909090909090909])
+def test_the_cbrt_transform_is_the_deterministic_pow_formula(value):
+    """DEL-64: math.cbrt is libm and NOT correctly rounded — the CI runner
+    rotation of 25 Oct 2026 made it return a 1-ulp-different cube root and
+    broke the variants byte-identity on every PR (including a re-run of
+    unchanged, previously-green main). The pow form x**(1/3) rides glibc's
+    single fixed pow algorithm, byte-stable across glibc builds to date
+    (CI reproduction is the ongoing guard, not a mathematical guarantee).
+    Both inputs are the real fixture values whose rows were the first to
+    differ. pow yields complex for negative float bases with non-integer
+    exponents, so the real cube root is sign(x) * |x|**(1/3) — the negative
+    contract lives in test_apply_transform_matches_the_named_function and
+    is preserved."""
+    assert index._apply_transform(value, "cbrt") == (
+        math.copysign(abs(value) ** (1.0 / 3.0), value))
+
+
 @pytest.mark.parametrize("kwargs,match", [
     (dict(transform_form="sideways"), "sideways"),
     (dict(transform_form="log1p"), "transform_stage"),
@@ -310,7 +385,7 @@ def test_service_index_rejects_bad_transform_combinations(kwargs, match):
 def test_overall_psi_rejects_bad_transform_combinations(kwargs, match):
     frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
     with pytest.raises(ValueError, match=match):
-        index.overall_psi(frame, second_normalization=True, **kwargs)
+        index.overall_psi(frame, second_normalization="minmax", **kwargs)
 
 
 @pytest.mark.parametrize("transform_form", ["log1p", "cbrt"])
@@ -352,7 +427,7 @@ def test_overall_psi_transform_psi_stage_transforms_before_second_minmax(
     """stage='psi': `unnorm_psi` is transformed before the second
     normalization (the 2021 notebook's log(unnorm_psi + 1) — spec § 3)."""
     frame = pd.DataFrame({"a_idx": [0.0, 1.0], "b_idx": [1.0, 1.0]})
-    got = index.overall_psi(frame, second_normalization=True,
+    got = index.overall_psi(frame, second_normalization="minmax",
                             transform_form=transform_form,
                             transform_stage="psi")
     assert list(got["unnorm_psi"]) == pytest.approx(
@@ -670,15 +745,47 @@ def test_the_tolerance_boundary_is_pinned_on_both_sides():
         _lend_with_shared(outside)
 
 
+def test_the_measured_del61_noise_is_inside_the_band_and_clamped():
+    """DEL-61: regenerating the overlap_lending block on this machine
+    aborted with `4770 would lend -2.3284152383951096e-13 of 'road_length'
+    to 5169`. The pre-DEL-61 band (64 eps ~ 1.4e-14) read that as a
+    cross-run mismatch; it is GEOS clip noise — the deficit is 2.33e-10 m,
+    exactly 2.0 ulps of EPSG:7760's ~1e6 m projected coordinates (measured
+    on the real layer, 25 Oct 2026), which two independent clips of the
+    same road round differently.
+
+    Pinned deterministically: the exact ticket deficit, through the real
+    guard path. The failing pair's own road_length is unknown, so the
+    calibration contract is asserted both at the band floor (the
+    standalone first assert, own <= 1.0) and through the real code path
+    (own = 2.0).
+    """
+    observed = 2.3284152383951096e-13
+    # Calibration contract: the band's FLOOR (own <= 1.0) covers the noise.
+    assert observed < index._SHARED_TOLERANCE
+    # The exact deficit through the real code path: clamp, not raise.
+    own = 2.0  # X's clinic_count in the shared-clinic city
+    shared = own + observed
+    assert shared > own, "the perturbation must survive rounding"
+    assert own - shared < 0.0, "must be a real over-subtraction"
+    assert _lend_with_shared(shared) == pytest.approx(1 / 200, abs=1e-15)
+
+
 def test_the_tolerance_is_a_derived_multiple_of_machine_epsilon():
-    """Not an arbitrary round number: it is sized to a few dozen rounding
-    steps of a double, which is what two GEOS clip orders can differ by.
-    An arbitrary 1e-9 — the first value shipped — would have absorbed a
-    nanometre-scale REAL error without a word."""
-    assert index._SHARED_TOLERANCE == 64 * sys.float_info.epsilon
-    assert index._SHARED_TOLERANCE < 1e-13
-    # comfortably above the 1.1e-16 the real layer actually produced
-    assert index._SHARED_TOLERANCE > 1.1e-16 * 10
+    """Not an arbitrary round number: DEL-61 measured the real layer's
+    clip noise at -2.3284152383951096e-13 km (4770 lending road_length to
+    5169) — exactly 2.0 ulps of EPSG:7760's ~1e6 m projected coordinates,
+    not the 'few dozen rounding steps of the length' the 64-eps constant
+    assumed (that priced the benign 1.1e-16 pair of 6 Sep, not the tail).
+    16384 eps is 3.6e-12: 16x the measurement (measured 15.6x), and still
+    five-plus orders of magnitude below a millimetre — the smallest
+    difference a real cross-run mismatch could show. An arbitrary 1e-9 —
+    the first value shipped — would have absorbed a nanometre-scale REAL
+    error without a word."""
+    assert index._SHARED_TOLERANCE == 16384 * sys.float_info.epsilon
+    # comfortably above the 2.33e-13 the real layer actually produced
+    assert index._SHARED_TOLERANCE > 2.3284152383951096e-13 * 8
+    assert index._SHARED_TOLERANCE < 1e-11
 
 
 def test_service_index_forwards_the_shared_structure():

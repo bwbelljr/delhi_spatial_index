@@ -106,7 +106,9 @@ def oracle_profile_path(base, directory, city=ORACULUM, *,
     (`adjacency`, `decay`, `exclusion`) that REPLACE `raw["methodology"]
     [<block>]` wholesale — never a deep merge. A variant therefore always
     states its full block and no key is ever inherited from the base
-    profile, which is what `tests/variants.py` is written for.
+    profile, which is what `tests/variants.py` is written for. An override
+    value is either such a full block mapping OR a scalar for a single
+    top-level methodology key (DEL-63's `second_normalization`).
 
     `name` distinguishes two derived profiles written into ONE directory;
     without it the filename is the historic `<base>.oracle.yaml`.
@@ -126,7 +128,8 @@ def oracle_profile_path(base, directory, city=ORACULUM, *,
     raw = yaml.safe_load((PROFILES_DIR / f"{base}.yaml").read_text())
     raw["categories"] = {"scheme": city.scheme, "mapping": city.mapping()}
     for block, values in (methodology_overrides or {}).items():
-        raw["methodology"][block] = dict(values)
+        raw["methodology"][block] = (values if isinstance(values, str)
+                                     else dict(values))
     stem = base if name is None else f"{base}.{name}"
     path = Path(directory) / f"{stem}.oracle.yaml"
     path.write_text(yaml.safe_dump(raw, sort_keys=False))
@@ -172,7 +175,8 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
     from delhi_psi.config import (
         AdjacencyConfig, AdjacencyRule, AggregationConfig, AggregationRule,
         BarrierConfig, BarrierRule, DecayConfig, DecayDistance, DecayForm,
-        OverlapConfig, OverlapLending, TransformConfig, TransformForm,
+        OverlapConfig, OverlapLending, SecondNormalization,
+        TransformConfig, TransformForm,
         TransformStage,
     )
     from tests.variants import VARIANTS
@@ -212,6 +216,12 @@ def variant_methodology(base, variant, *, city=ORACULUM, types=None,
         block = spec["aggregation"]
         methodology = replace(methodology, aggregation=AggregationConfig(
             rule=AggregationRule(block["rule"])))
+    # DEL-63: the scalar shape — one top-level key, no sub-block.
+    if "second_normalization" in spec:
+        methodology = replace(
+            methodology,
+            second_normalization=SecondNormalization(
+                spec["second_normalization"]))
     return methodology
 
 

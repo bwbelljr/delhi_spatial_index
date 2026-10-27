@@ -38,7 +38,7 @@ records what each merged phase changed. Work is tracked in Jira project
 **DEL** (bob-bell.atlassian.net) — one epic per phase, `[DEL-nn]` tags below
 name each item's ticket; keep the two in sync when either changes.
 
-### Status at a glance (5 Sep 2026)
+### Status at a glance (24 Oct 2026)
 
 | Phase | State | Evidence |
 |---|---|---|
@@ -46,7 +46,7 @@ name each item's ticket; keep the two in sync when either changes.
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
 | 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
 | 3 Refactor & bug audit | **done** — cycles 3A–3E all merged (PRs #10, #13, #14, #15, #18, #19, #20) | delhi_psi package, 923 tests; every methodology choice is a profile value; code-2025 still reproduces July 2025 at zero deviation |
-| 4 Categorization | **blocked on Raj** — his 28 Aug decisions are recorded and the four pre-recalculation measurements are done (PR #17); the ratified profile [DEL-31] needs his remaining answers | `docs/decisions/2026-08-28-raj-methodology-decisions.md`; open items listed below |
+| 4 Categorization | **unblocked** — 4a answered 22 Oct on the Bob/Raj call: the main figure goes planned-relative (type mean ÷ Planned mean = 1) [DEL-63]; the ratified profile [DEL-31] waits only on that variant landing | `docs/decisions/2026-10-22-raj-call-decisions.md` |
 | 6 Robustness sweeps | **harness done, numbers pending** — the eleven-point sweep and its dry run merged (PR #21, DEL-55). The reported variants (DEL-36/37/39) re-run against the ratified profile once Phase 4 unblocks | `docs/data/phase6_sweep.md` — every table labelled a dry run on the superseded rule set |
 | 7 Release | **in progress** — repo cleanup and the oracle as a documented release artefact (PR #22, DEL-45/46). Licence not chosen; Delhi layers not released | `README.md`, `docs/oracle/README.md` |
 | 5 Shippable minimum | superseded in practice — phases 6 and 7 progressed ahead of it while Phase 4 is blocked | — |
@@ -62,10 +62,13 @@ Open items by owner:
   [DEL-42/40/41/35/34], building their durable half only — profiles, variant
   rows proven against the reference implementation, fixtures — with no
   real-data run until DEL-31 exists.
-- **Raj:** confirm UV/SDA stay in, the overlap neighbour rule, popdensity,
-  `norm_psi` (after Bob's check), Decision B; send the students'
-  reclassification list [DEL-53]; the methods footnotes on his own list
-  (roads, partial barriers, min-max universe, d in km).
+- **Raj:** ~~confirm UV/SDA stay in, the overlap neighbour rule,
+  popdensity, `norm_psi`~~ — all answered (19 Oct reply + 22 Oct call:
+  the main figure goes planned-relative [DEL-63]);
+  ~~reclassification list~~ arrived and validated [DEL-53]; still his:
+  Decision B and the methods footnotes on his own list (roads, partial
+  barriers, min-max universe, d in km). Barrier provenance parked with
+  Bijoy/Shubhada [DEL-51 ✓].
 - **Deferred by decision:** Dependabot alerts (absorbed into Phase 3's
   dependency work; the four Dependabot PRs #1–#4 were closed as superseded
   by Phase 1's modernization); `pandas<3` uncap (Phase 3, now that the
@@ -425,7 +428,7 @@ Epic DEL-5. All decisions: `docs/decisions/2026-08-28-raj-methodology-decisions.
       figures and calculations; move their mention to footnotes. It's an
       urban project. [DEL-28] — **decided 28 Aug 2026: drop RV, Industrial
       and Other** (three types, not two). UV (138) and SDA (86) stay in as
-      reported types — implied, to be confirmed in the batched reply.
+      reported types — implied, **confirmed by Raj 19 Oct 2026**.
       Excluded settlements still lend services to neighbours (Open
       Decision A → semantics (a)); they get no PSI and no output row.
 - [ ] **Raj:** decide the collapsed categories — working candidate from the
@@ -466,10 +469,13 @@ Epic DEL-5. All decisions: `docs/decisions/2026-08-28-raj-methodology-decisions.
       written; `outputs.denominators` — the figures use popdensity (DEL-52),
       so it stays reported unless Raj switches to per-population Eq. 3;
       identity mapping. Procedure: `docs/methodology-config.md` § 3.
-      DEL-48 and DEL-20 are no longer blockers (both merged); still blocked
-      by Raj's two DEL-52 answers and his answer on `overlap.lending` — the
-      counting half is ratified, but whether `outside_receiver` becomes the
-      ratified profile's value awaits him.
+      DEL-48 and DEL-20 are no longer blockers (both merged). **19 Oct:
+      `overlap.lending: outside_receiver` and popdensity ratified; 22 Oct:
+      4a answered — the reported headline becomes the planned-relative
+      scale** [DEL-63], with the min-max columns kept for the appendix
+      (`docs/decisions/2026-10-22-raj-call-decisions.md`). The profile
+      waits only on DEL-63 landing. Open micro-item: `barrier.buffer_m` —
+      5 m proposed (the Oraculum anchor), still formally Raj's to ratify.
 - [ ] **Bob:** recalculate all indexes with the ratified profile
       (supersedes the current "no RV" run) — gated on cycle 3E, the
       measurements above, and the ratified profile [DEL-32]. Hand
@@ -506,7 +512,9 @@ Index formulation:
 
 Distance / reachability:
 - [ ] Distance-threshold sweep: 1 km / 5 km / 10 km; show index stability
-      [DEL-36]
+      [DEL-63] **Confirmed 22 Oct** (call item 2): the appendix table is
+      the point — "here's the table, we think what we present is
+      reasonable."
       — profile only since 3D: `adjacency: {rule: within_distance,
       max_distance_km: X}`, one YAML per point; see
       `docs/methodology-config.md` § 6 (a complete `band-1km.yaml`, and the
@@ -545,9 +553,15 @@ Service-set / measurement variants (from the workshop triage):
 - [ ] **Media-based reclassification** as an appendix robustness check
       (Raj, 28 Aug 2026): two students reclassified settlements from media
       articles (~80% of changes are RV → UV); rerun with the reclassified
-      types and report next to the state-category results. **Waiting on
-      Raj's list** (IDs, old type, new type). One profile pointing at the
-      reclassified type column; no code if it joins on `USO_AREA_U`.
+      types and report next to the state-category results. **List arrived
+      19 Oct 2026** — joins on `USO_AREA_U` (validated 20 Oct: 4,342/4,342
+      IDs match the layer, 105 changed, 69 ambiguous, 81 of the changes
+      RV → UV; handling rule in
+      `docs/decisions/2026-10-19-raj-methodology-decisions.md` § 6). One
+      profile pointing at the reclassified type column; no production code.
+      **Confirmed and prioritized 22 Oct** (call item 3): appendix table +
+      the one-sentence "nothing changes" verdict Raj expects the numbers
+      to support.
       [DEL-53]
 - Rejected in triage (do not pursue; no ticket): roads as area instead of
   length
@@ -673,12 +687,15 @@ Census data collaborations; process-tracing / media-accounts supplements.
 1. ~~Phase 0~~ → ~~Phase 1~~ (runnable pipeline) → ~~Phase 2~~ (oracle) — done
 2. ~~Raj answers the oracle memo and settles categories~~ — done 28 Aug 2026
    (no collapse; decision log)
-3. **Phase 3, cycle 3E** — partial barriers + overlap neighbour rule +
-   min-max guard (DEL-48/20): the last code before the numbers; in
-   parallel the measurements (DEL-49/50/51/52) and the batched reply to Raj
-4. **Phase 4** ratified profile (DEL-31) → recalculation (DEL-32) → figures
-   (DEL-33) → shippable minimum (Phase 5); **Phase 6** sweeps fill the
-   appendix (DEL-53 once Raj's list arrives)
+3. ~~Phase 3, cycle 3E~~ done 6 Sep (PRs #18/#19/#20); the measurements
+   (DEL-49/50/51/52) done 5 Sep; the batched reply sent 6 Sep — **Raj
+   answered 19 Oct**, everything ratified except `norm_psi`
+   (`docs/decisions/2026-10-19-raj-methodology-decisions.md`)
+4. **Phase 4** planned-relative variant (DEL-63) → ratified profile
+   (DEL-31) → recalculation (DEL-32) → figures (DEL-33, relative scale
+   in the main figure) → shippable minimum (Phase 5); **Phase 6** fills
+   the appendix (DEL-36's distance table + DEL-53's media run, both
+   confirmed 22 Oct)
 5. **Phase 7** ship, with the reproducibility appendix (DEL-46)
 
 Standing discipline (from the call): interrogate the design before letting

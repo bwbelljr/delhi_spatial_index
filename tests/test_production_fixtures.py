@@ -61,7 +61,7 @@ def test_production_dir_is_per_city():
 
 
 def test_metric_set_is_explicit():
-    cols = metric_columns(second_normalization=True)
+    cols = metric_columns(second_normalization="minmax")
     assert cols == [
         "clinic_count", "school_count", "bank_count", "police_count",
         "ration_count", "transport_count", "road_length",
@@ -71,7 +71,8 @@ def test_metric_set_is_explicit():
         "road_pcen", "road_idx",
         "unnorm_psi", "norm_psi", "population", "area_km2",
     ]
-    assert "norm_psi" not in metric_columns(second_normalization=False)
+    assert "norm_psi" not in metric_columns(second_normalization="none")
+    assert "rel_psi" not in metric_columns(second_normalization="none")
     # geometry / centroid / neighbor-list columns are never serialized
     for banned in ("geometry", "centroid", "nbrs_bbox", "nbrs_dist_bbox"):
         assert banned not in cols
@@ -113,7 +114,7 @@ def test_metric_columns_can_take_an_explicit_service_subset():
     """DEL-40 Task 1/3: a profile that subsets services must get a metric
     set with NO columns at all for the dropped service — not a zeroed
     column — so the generator emits a fixture that proves it."""
-    cols = metric_columns(second_normalization=True,
+    cols = metric_columns(second_normalization="minmax",
                           point_services=("clinic", "school"),
                           line_services=())
     assert cols == ["clinic_count", "school_count",

@@ -21,27 +21,38 @@ import sys
 import geopandas as gpd
 from shapely import STRtree
 
+from delhi_psi.categories import CATEGORY_COLUMN
+
 log = logging.getLogger(__name__)
 
 DENOMINATORS = ("pop", "popdensity", "one")
 ABSENT_NEIGHBOR = ("swallowed", "contributes")
+SECOND_NORMALIZATIONS = ("none", "minmax", "planned_relative")
 
 # `overlap.lending: outside_receiver` subtracts the part of a neighbour's
 # amount that lies inside the receiver. For a POINT service both sides are
 # integer counts and the subtraction is exact. For a LINE service they are
 # two independent GEOS clips of the same road — length(road n j) and
 # length(road n j n i) — so the shared part can come back larger than the
-# whole by an ulp: measured at 1.1e-16 km (a tenth of a picometre) on the
-# real layer, for one pair out of 4,069 overlapping ones. Below this
-# tolerance the difference is clamped to zero; above it, it is a real
-# mismatch between the amounts frame and the shared structure and raises.
+# whole by a couple of coordinate ulps: measured at -2.33e-13 km (exactly
+# 2 ulps of the ~1e6 m EPSG:7760 coordinates) on the real layer (DEL-61),
+# after the earlier 1.1e-16 km pair proved to be one benign case, not the
+# tail. Below this tolerance the difference is clamped to zero; above it,
+# it is a real mismatch between the amounts frame and the shared structure
+# and raises.
 #
-# The bound is DERIVED, not picked: a length computed by two different GEOS
-# clip orders differs by a handful of rounding steps, so a few dozen machine
-# epsilons is the right order. 64 * eps is 1.4e-14 — a hundred times the
-# 1.1e-16 actually observed, and eleven orders TIGHTER than an arbitrary
-# 1e-9, which would have silently absorbed a nanometre-scale real error.
-_SHARED_TOLERANCE = 64 * sys.float_info.epsilon
+# The bound is DERIVED, not picked. Two GEOS clips of the same road (one
+# against the settlement, one against the pair's intersection) round
+# intermediate vertices at COORDINATE magnitude — EPSG:7760 runs to
+# 1.033e6 m (bounds measured 25 Oct 2026), and 2 ulps of that is
+# 2.33e-10 m = 2.33e-13 km — not at the length's magnitude, which is what
+# the pre-DEL-61 64-eps story assumed. The real layer measured exactly
+# that: -2.3284152383951096e-13 km on the 4770->5169 road_length pair
+# (DEL-61), ~16,400x the old band. 16384 * eps is 3.6e-12: 16x the
+# measured noise (measured 15.6x), enough for a couple dozen vertex-ulps
+# of accumulation, and still ~275,000x TIGHTER than a millimetre — the
+# smallest difference a real cross-run mismatch could show.
+_SHARED_TOLERANCE = 16384 * sys.float_info.epsilon
 
 
 def point_counts(polygon_gdf, point_gdf, *, count_col, id_col="USO_AREA_U"):
@@ -214,7 +225,15 @@ def _apply_transform(value, transform_form):
     if transform_form == "log1p":
         return math.log1p(value)
     if transform_form == "cbrt":
-        return math.cbrt(value)
+        # DEL-64: NOT math.cbrt — libm's cbrt is not correctly rounded, and
+        # the CI runner rotation of 25 Oct 2026 made it return a 1-ulp-
+        # different cube root, breaking the variants byte-identity on every
+        # PR (a re-run of unchanged main failed identically). x**(1/3) rides
+        # glibc's single fixed pow algorithm, byte-stable across glibc
+        # builds to date — CI reproduction is the ongoing guard. pow yields
+        # complex for negative float bases with non-integer exponents, so
+        # the real cube root is sign(x) * |x|**(1/3).
+        return math.copysign(abs(value) ** (1.0 / 3.0), value)
     raise ValueError(
         f"unknown transform form {transform_form!r}; allowed values: "
         f"{list(TRANSFORM_FORMS)}")
@@ -387,11 +406,13 @@ def pcen(polygon_gdf, *, amount_col, pcen_col, denominator,
                             "from different runs.")
                     # A LINE service's own amount and its shared part are two
                     # independent GEOS clips of the same road, so the shared
-                    # part can exceed the whole by an ulp — 1.1e-16 km on the
-                    # real layer, i.e. a tenth of a picometre. That is float
-                    # noise, not a mismatch: clamp it. The guard above still
-                    # catches a real mismatch, which is off by a length, not
-                    # by an ulp.
+                    # part can exceed the whole by up to ~2.3e-13 km — two
+                    # ulps of EPSG:7760's ~1e6 m coordinates (DEL-61, measured
+                    # on the 4770->5169 road_length pair; the earlier 1.1e-16
+                    # estimate was one benign pair, not the tail). That is
+                    # float noise, not a mismatch: clamp it. The guard above
+                    # still catches a real mismatch, which is off by a length,
+                    # not by an ulp.
                     if lent < 0.0:
                         # Never silent: a run where this fires more than the
                         # handful of times GEOS noise explains, or at a
@@ -554,13 +575,30 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
 def overall_psi(polygon_gdf, *, second_normalization, transform_form="none",
                 transform_stage=None):
     """Eq. 1: the mean of every `*_idx` column, plus the optional second
-    normalization (`norm_psi`); the column is absent when it is off.
+    normalization (`norm_psi`) and, under `planned_relative`, the reported
+    `rel_psi`; each column is absent when the value that names it is off.
 
     transform_stage="psi" (DEL-34): the composite `unnorm_psi` is
     transformed BEFORE the second normalization — the 2021 notebook's
     `log(unnorm_psi + 1)`. It re-spreads the final score but cannot undo
     per-service compression that has already happened (spec § 3).
+
+    DEL-63: `planned_relative` emits BOTH columns. `rel_psi` is a pure
+    per-row rescale of `norm_psi` by one constant — the mean of `norm_psi`
+    over the `Planned` rows of THIS frame — so the reported per-category
+    mean of `rel_psi` IS the type ratio Raj asked for (linearity; no
+    second aggregation step to get wrong). Because `norm_psi` is an affine
+    transform of `unnorm_psi`, the relative scale inherits the min-max
+    denominator; that is a property of the reported number, not a bug.
+
+    A StrEnum member is truthy AND == its literal string, so the dispatch
+    compares values, never truthiness; a bare bool is rejected rather than
+    falling through to `minmax`.
     """
+    if second_normalization not in SECOND_NORMALIZATIONS:
+        raise ValueError(
+            f"unknown second_normalization {second_normalization!r}; "
+            f"allowed values: {list(SECOND_NORMALIZATIONS)}")
     _check_transform(transform_form, transform_stage)
     out = polygon_gdf.copy()
     idx_columns = [column for column in out.columns
@@ -569,6 +607,23 @@ def overall_psi(polygon_gdf, *, second_normalization, transform_form="none",
     if transform_stage == "psi":
         out["unnorm_psi"] = out["unnorm_psi"].map(
             lambda value: _apply_transform(value, transform_form))
-    if second_normalization:
-        out = minmax(out, source_col="unnorm_psi", target_col="norm_psi")
+    if second_normalization == "none":
+        return out
+    out = minmax(out, source_col="unnorm_psi", target_col="norm_psi")
+    if second_normalization == "planned_relative":
+        planned = out.loc[out[CATEGORY_COLUMN] == "Planned", "norm_psi"]
+        if planned.empty:
+            raise ValueError(
+                f"planned_relative needs at least one row whose "
+                f"{CATEGORY_COLUMN!r} is 'Planned': this frame has "
+                f"{len(out)} rows and none of them is, so there is no "
+                "denominator to divide by")
+        planned_mean = float(planned.mean())
+        if planned_mean == 0.0:
+            raise ValueError(
+                "planned_relative divides by the mean norm_psi of the "
+                f"{len(planned)} Planned rows, and that mean is 0.0 — "
+                "every Planned settlement has the minimum unnormalized "
+                "PSI, so the relative scale is undefined")
+        out["rel_psi"] = out["norm_psi"] / planned_mean
     return out
