@@ -428,10 +428,10 @@ kept configurable).
   is a stop-and-report, not a fixture hand-edit): oraculum **1508** rows
   (29 frame keys × 26 metrics incl. `rel_psi`), **58** keys only in
   `ratified-2026` (all `rel_psi`), **0** keys only in `code-2025`, and the
-  per-(scenario, denom) settlement counts `7/5/5/6/6` (baseline,
-  excl_contributing, excl_ind_removed, excl_removed, excl_rv_only). Messy:
-  **1456** rows, **56** `rel_psi` keys, **0** lost, per-scenario settlements
-  `10/9/9` per denom.
+  per-(scenario, denom) settlement counts
+  `baseline 7, excl_contributing 5, excl_removed 5, excl_ind_removed 6,
+  excl_rv_only 6`. Messy: **1456** rows, **56** `rel_psi` keys, **0** lost,
+  per-scenario settlements `nopop_only 10, excl_rv_post 9, excl_rv_pre 9`.
 
   Read the output and write the digest: which (scenario, denom, settlement,
   metric) rows move, and in which direction — expected signatures: `touch`
@@ -488,9 +488,9 @@ kept configurable).
   identity-mapping + `[RV, Industrial, Other]` exclusion snippet is the
   shipped profile's shape; the surrounding text documents the parked DEL-29
   urban-5 collapse, which this profile is NOT) gains a pointer to the shipped
-  `delhi_psi/profiles/ratified-2026.yaml`; § 3 step 2 (registration) gains the
-  mixed-profile determination as a one-line note (a profile whose values
-  span reference rule-sets is pinned by its fixtures only).
+  `delhi_psi/profiles/ratified-2026.yaml`; § 3 step 2 (registration) already
+  states the mixed-profile rule (~lines 297–298) — extend that sentence with
+  the `ratified-2026` example rather than restating it.
 
 - [ ] **Step 4: README's profile count.** `README.md` (the `--config`
   paragraph, ~line 125) says "Two profiles ship: `code-2025` … and
@@ -615,6 +615,22 @@ kept configurable).
   rule, one fix pass (above) is made and round 2 re-checks the Important
   selector change plus the touched sections; Minors are batched without
   re-review.
+- **Round 2 (focused re-check, `glm-5.3-flash`):** the selector was verified
+  EMPIRICALLY (`--collect-only` selects exactly the two
+  `test_fixture_is_regenerable` params; `-k` is case-insensitive substring
+  matching), the 17 → 18 counts confirmed, the mixed-profile bullet and the
+  drop wording confirmed against `RULESETS`/`cities.py`, and the Step 6
+  script executed verbatim against `code-2025.csv` vs `manuscript.csv`
+  (asserts, arithmetic and sorted diff all sound; the pinned 1508/1456 rows,
+  58/56 keys, 0 lost hold). One NEW Important: the five oraculum settlement
+  counts were numerically right but paired with the wrong scenario order in
+  the parenthetical (`excl_removed` and `excl_ind_removed` swapped). Fixed as
+  a label → count map.
+- **Round 2 verdict:** 0 Critical, 1 Important — and that Important was
+  **introduced by round 1's own fix** (the pinned-count sentence was added
+  there). Per ship.md's churn detector this is churn, not convergence: the
+  loop STOPS here (2 of 3 rounds used) and the plan proceeds to
+  implementation, where the tests are the stronger gate.
 
 ## Self-review
 
