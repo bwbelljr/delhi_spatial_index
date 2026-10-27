@@ -364,6 +364,17 @@ def test_variants_csv_has_one_scenario_and_every_variant(city):
 
 
 @pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_the_planned_relative_variant_carries_both_columns(city):
+    """DEL-63: the variant's block holds BOTH second columns, and no other
+    block does — `rel_psi` exists only under `planned_relative`."""
+    frame = pd.read_csv(city.fixtures / "variants_expected_values.csv")
+    block = frame[frame["rule"] == "planned_relative"]
+    assert {"norm_psi", "rel_psi"} <= set(block["metric"])
+    assert "rel_psi" not in set(
+        frame.loc[frame["rule"] != "planned_relative", "metric"])
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
 def test_band_guard_passes_for_both_cities(city):
     from scripts.check_oraculum_invariants import check_bands
 
@@ -601,7 +612,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
         DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
         MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
-        TransformConfig, TransformForm,
+        SecondNormalization, TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -617,7 +628,7 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         transform=TransformConfig(form=TransformForm.NONE),
         aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
-        second_normalization=True,
+        second_normalization=SecondNormalization.MINMAX,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
                                   absent_neighbor=AbsentNeighbor.SWALLOWED))
 
@@ -630,13 +641,18 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
             settlements, services, barriers, adjacency_rule="bbox",
             barrier_rule="partial_weighted", barrier_buffer_m=5.0,
             roads_formula="decayed", scenario="none", denom=denom,
-            second_norm=True, absent_neighbor_contribution="swallowed",
+            second_norm="minmax", absent_neighbor_contribution="swallowed",
             scenarios={"none": (frozenset(), False)})
         assert set(got.index) == set(exp.index)
-        # Every METRIC_MAP column exists on both sides: the city carries all
-        # six point services plus road, and second_norm is on, so nothing is
-        # skipped and the comparison cannot pass by omission.
+        # `norm_psi` is on and `rel_psi` is off (it exists only under
+        # `planned_relative`); the loop below asserts the two frames agree
+        # on every column's PRESENCE as well as its values, so the
+        # comparison cannot pass by omission.
         for prod_col, metric in METRIC_MAP.items():
+            assert (prod_col in got.columns) == (metric in exp.columns), (
+                prod_col, metric)
+            if prod_col not in got.columns:
+                continue
             for sid in exp.index:
                 assert got.loc[sid, prod_col] == pytest.approx(
                     exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)
@@ -693,7 +709,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         AggregationRule, BarrierConfig, BarrierRule, DecayConfig,
         DecayDistance, DecayForm, ExclusionConfig, ExclusionStage,
         MethodologyConfig, OverlapConfig, OverlapLending, RoadsFormula,
-        TransformConfig, TransformForm,
+        SecondNormalization, TransformConfig, TransformForm,
     )
     from delhi_psi.pipeline import compute_frames
     from tests.test_profiles_match_reference import METRIC_MAP
@@ -709,7 +725,7 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
         transform=TransformConfig(form=TransformForm.NONE),
         aggregation=AggregationConfig(rule=AggregationRule.MEAN_MINMAX),
         roads=RoadsFormula.DECAYED,
-        second_normalization=True,
+        second_normalization=SecondNormalization.MINMAX,
         exclusion=ExclusionConfig(types=(), stage=ExclusionStage.POST_NEIGHBORS,
                                   absent_neighbor=AbsentNeighbor.SWALLOWED))
 
@@ -723,10 +739,14 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
             barrier_rule="partial_weighted", barrier_buffer_m=5.0,
             overlap_lending="outside_receiver",
             roads_formula="decayed", scenario="none", denom=denom,
-            second_norm=True, absent_neighbor_contribution="swallowed",
+            second_norm="minmax", absent_neighbor_contribution="swallowed",
             scenarios={"none": (frozenset(), False)})
         assert set(got.index) == set(exp.index)
         for prod_col, metric in METRIC_MAP.items():
+            assert (prod_col in got.columns) == (metric in exp.columns), (
+                prod_col, metric)
+            if prod_col not in got.columns:
+                continue
             for sid in exp.index:
                 assert got.loc[sid, prod_col] == pytest.approx(
                     exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)
@@ -746,6 +766,112 @@ def test_the_synthetic_city_really_shares_a_point_and_a_road():
     assert got["road"][("P", "Q")] == pytest.approx(0.1, abs=1e-12)
     assert got["road"][("Q", "P")] == got["road"][("P", "Q")]
     assert got["school"] == {}          # every other service is clean
+
+
+# --- DEL-63: the reference's planned_relative ----------------------
+def _planned_ids(settlements, index):
+    types = settlements.set_index("USO_AREA_U")["USO_FINAL"]
+    return index[types.loc[index] == "Planned"]
+
+
+def test_reference_planned_relative_divides_norm_psi_by_the_planned_mean(
+        settlements, barriers, services):
+    df = compute_city(settlements, services, barriers,
+                      **dict(RULESETS["code"], scenario="baseline",
+                             denom="pop",
+                             second_norm="planned_relative"))
+    planned = df.loc[_planned_ids(settlements, df.index), "norm_psi"]
+    # The measured oracle value this pin argues from (A and D are Planned).
+    assert planned.mean() == pytest.approx(0.6076369267499986, abs=1e-12)
+    assert list(df["rel_psi"]) == pytest.approx(
+        list(df["norm_psi"] / planned.mean()), abs=1e-15)
+    assert df.loc[planned.index, "rel_psi"].mean() == pytest.approx(
+        1.0, abs=1e-12)
+
+
+def test_reference_none_emits_neither_second_column(settlements, barriers,
+                                                    services):
+    df = compute_city(settlements, services, barriers,
+                      **dict(RULESETS["code"], scenario="baseline",
+                             denom="pop", second_norm=False))
+    assert "norm_psi" not in df.columns
+    assert "rel_psi" not in df.columns
+
+
+def test_reference_rejects_a_bare_true_second_norm(settlements, barriers,
+                                                   services):
+    with pytest.raises(ValueError, match="minmax"):
+        compute_city(settlements, services, barriers,
+                     **dict(RULESETS["code"], scenario="baseline",
+                            denom="pop", second_norm=True))
+
+
+def test_reference_rejects_an_unknown_second_norm(settlements, barriers,
+                                                  services):
+    with pytest.raises(ValueError, match="unknown second normalization"):
+        compute_city(settlements, services, barriers,
+                     **dict(RULESETS["code"], scenario="baseline",
+                            denom="pop", second_norm="sideways"))
+
+
+def test_reference_planned_relative_refuses_a_city_with_no_planned_rows(
+        settlements, barriers, services):
+    """A and D are the only Planned settlements, and `False` means the
+    POST-neighbour stage — they are scored out, but their links remain in
+    other settlements' neighbour lists. Every Planned row is gone from the
+    frame the normalisation divides, which is all the guard needs.
+
+    `RULESETS["ideal"]` on purpose: the code rule-set's GLOBAL barrier
+    severs every link of A (Oraculum's only bank owner), so a frame without
+    A and D would be all-zero on `bank_pcen` and the min-max guard would
+    fire first. The ideal rule-set's `pair` barrier keeps A's links and its
+    `contributes` lets the excluded settlements lend, so every service
+    stays non-degenerate and the frame reaches the division."""
+    with pytest.raises(ValueError, match="'Planned'"):
+        compute_city(settlements, services, barriers,
+                     **dict(RULESETS["ideal"], scenario="no_planned",
+                            denom="pop",
+                            second_norm="planned_relative"),
+                     scenarios={"no_planned":
+                                (frozenset({"A", "D"}), False)})
+
+
+def test_reference_planned_relative_refuses_a_zero_planned_mean():
+    """Three ISOLATED settlements (disjoint boxes, so no neighbour term):
+    the two Planned ones own nothing at all, the UC one owns one of every
+    point service plus a road. Every Planned value is the global minimum,
+    so the min-max makes their norm_psi exactly 0 and the divisor is 0.0.
+    """
+    import geopandas as gpd
+    from shapely.geometry import LineString, Point, box
+
+    from tests.reference_impl import POINT_SERVICES
+
+    settlements = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["P1", "P2", "U"],
+         "USO_FINAL": ["Planned", "Planned", "UC"],
+         "population": [100.0, 100.0, 100.0],
+         "area_km2": [1.0, 1.0, 1.0]},
+        geometry=[box(0, 0, 100, 100), box(10_000, 0, 10_100, 100),
+                  box(20_000, 0, 20_100, 100)],
+        crs="EPSG:7760")
+    services = {
+        name: gpd.GeoDataFrame({"service": [name]},
+                               geometry=[Point(20_050, 50)],
+                               crs="EPSG:7760")
+        for name in POINT_SERVICES}
+    services["road"] = gpd.GeoDataFrame(
+        {"service": ["road"]},
+        geometry=[LineString([(20_000, 50), (20_100, 50)])],
+        crs="EPSG:7760")
+
+    with pytest.raises(ValueError, match="mean is 0.0"):
+        compute_city(settlements, services, None,
+                     adjacency_rule="bbox", barrier_rule="global",
+                     roads_formula="decayed", scenario="none", denom="pop",
+                     second_norm="planned_relative",
+                     absent_neighbor_contribution="swallowed",
+                     scenarios={"none": (frozenset(), False)})
 
 
 def test_reference_mean_rank_ranks_each_service_independently(

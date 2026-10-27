@@ -55,6 +55,14 @@ def test_production_matches_the_reference_on_each_variant(expected, case,
     exp = block.pivot(index="settlement", columns="metric", values="value")
     assert set(got.index) == set(exp.index)
     for prod_col, metric in METRIC_MAP.items():
+        # The two frames must agree about every column's PRESENCE as well as
+        # its values: a `rel_psi` missing on one side and not the other
+        # fails here, while the min-max-only rows legitimately skip it on
+        # both.
+        assert (prod_col in got.columns) == (metric in exp.columns), (
+            prod_col, metric)
+        if prod_col not in got.columns:
+            continue
         for sid in exp.index:
             assert got.loc[sid, prod_col] == pytest.approx(
                 exp.loc[sid, metric], abs=1e-12), (city.name, variant, denom,
@@ -171,3 +179,22 @@ def test_compute_refuses_an_artifact_built_at_another_band(data_dir,  # noqa: F8
                      "--data-dir", str(data_dir), "--out-dir", str(out)]) == 1
     err = capsys.readouterr().err
     assert "max_distance_km" in err and "0.25" in err and "0.75" in err
+
+
+# --- DEL-63: the reported relative scale -------------------------------
+def test_the_planned_relative_variant_reads_one_for_the_planned_type():
+    """1 = the average Planned colony, by construction; and the oracle's
+    ordering survives the rescale. The per-settlement values are compared
+    against the reference by
+    test_production_matches_the_reference_on_each_variant (METRIC_MAP now
+    carries rel_psi). Oraculum's vocabulary is
+    ("Planned", "UC", "JJC", "RV", "RUAC", "IND") — the Delhi UV≈0.86 pin
+    lives in the real-data block test (Task 4), never here."""
+    got = produced(ORACULUM, "planned_relative", "popdensity")
+    assert {"norm_psi", "rel_psi"} <= set(got.columns)
+    means = got.groupby("category")["rel_psi"].mean()
+    assert means["Planned"] == pytest.approx(1.0, abs=1e-12)
+    assert means["IND"] > means["Planned"] > means["UC"]
+    assert means["UC"] > means["RUAC"] > means["RV"] > means["JJC"]
+    # The min-max floor stays the floor: JJC's norm_psi is 0.
+    assert means["JJC"] == pytest.approx(0.0, abs=1e-12)

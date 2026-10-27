@@ -169,16 +169,17 @@ def test_service_index_adds_pcen_and_idx():
 def test_overall_psi_averages_idx_columns():
     frame = pd.DataFrame({"a_idx": [0.0, 1.0], "b_idx": [1.0, 1.0],
                           "other": [9.0, 9.0]})
-    got = index.overall_psi(frame, second_normalization=True)
+    got = index.overall_psi(frame, second_normalization="minmax")
     assert list(got["unnorm_psi"]) == pytest.approx([0.5, 1.0], abs=1e-12)
     assert list(got["norm_psi"]) == pytest.approx([0.0, 1.0], abs=1e-12)
 
 
-def test_overall_psi_omits_norm_psi_when_second_normalization_is_false():
+def test_overall_psi_omits_norm_psi_when_second_normalization_is_none():
     frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
-    got = index.overall_psi(frame, second_normalization=False)
+    got = index.overall_psi(frame, second_normalization="none")
     assert "unnorm_psi" in got.columns
     assert "norm_psi" not in got.columns
+    assert "rel_psi" not in got.columns
 
 
 def test_service_index_propagates_the_guard():
@@ -197,15 +198,71 @@ def test_service_index_propagates_the_guard():
 def test_overall_psi_second_normalization_propagates_the_guard():
     """The second min-max is the other caller: a frame whose per-service
     indices average to the same value everywhere now names unnorm_psi. Also
-    proves the guard does NOT fire when second_normalization=False."""
+    proves the guard does NOT fire when second_normalization='none'."""
     frame = gpd.GeoDataFrame(
         {"USO_AREA_U": ["A", "B"], "bank_idx": [0.5, 0.5]},
         geometry=[Point(0, 0), Point(1, 1)], crs="EPSG:7760")
     with pytest.raises(ValueError, match="'unnorm_psi'"):
-        index.overall_psi(frame, second_normalization=True)
+        index.overall_psi(frame, second_normalization="minmax")
 
-    got = index.overall_psi(frame, second_normalization=False)
+    got = index.overall_psi(frame, second_normalization="none")
     assert list(got["unnorm_psi"]) == pytest.approx([0.5, 0.5], abs=1e-12)
+
+
+# --- DEL-63: planned_relative ------------------------------------------
+def test_overall_psi_rejects_a_bare_bool_second_normalization():
+    """StrEnum members are truthy AND equal their strings, and `False`
+    would compare equal to neither "none" nor "planned_relative" — a
+    silent fall-through to min-max. Both booleans must fail loudly."""
+    frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
+    for value in (True, False):
+        with pytest.raises(ValueError, match="unknown second_normalization"):
+            index.overall_psi(frame, second_normalization=value)
+
+
+def test_planned_relative_rescales_norm_psi_by_the_planned_mean():
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B", "C"],
+         "category": ["Planned", "Planned", "UAC"],
+         "a_idx": [0.0, 1.0, 0.5]},
+        geometry=[Point(0, 0), Point(1, 0), Point(2, 0)],
+        crs="EPSG:7760")
+    got = index.overall_psi(frame, second_normalization="planned_relative")
+
+    # norm_psi is unchanged from `minmax` — the rel scale divides it.
+    minmax_only = index.overall_psi(frame, second_normalization="minmax")
+    assert list(got["norm_psi"]) == list(minmax_only["norm_psi"])
+
+    planned = got.loc[got["category"] == "Planned", "norm_psi"]
+    assert planned.mean() == pytest.approx(0.5, abs=1e-12)
+    assert list(got["rel_psi"]) == pytest.approx([0.0, 2.0, 1.0],
+                                                 abs=1e-12)
+    # The category mean is 1 by construction; individual Planned rows
+    # are not (A is 0 and B is 2 here).
+    assert got.loc[got["category"] == "Planned", "rel_psi"].mean() == (
+        pytest.approx(1.0, abs=1e-12))
+
+
+def test_planned_relative_refuses_a_frame_with_no_planned_rows():
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B"], "category": ["UAC", "JJC"],
+         "a_idx": [0.0, 1.0]},
+        geometry=[Point(0, 0), Point(1, 0)], crs="EPSG:7760")
+    with pytest.raises(ValueError, match="'Planned'"):
+        index.overall_psi(frame, second_normalization="planned_relative")
+
+
+def test_planned_relative_refuses_a_zero_planned_mean():
+    """A degenerate universe: both Planned rows sit at the global minimum
+    of unnorm_psi, so the divisor is exactly 0.0."""
+    frame = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A", "B", "C"],
+         "category": ["Planned", "Planned", "UAC"],
+         "a_idx": [0.0, 0.0, 1.0]},
+        geometry=[Point(0, 0), Point(1, 0), Point(2, 0)],
+        crs="EPSG:7760")
+    with pytest.raises(ValueError, match="mean is 0.0"):
+        index.overall_psi(frame, second_normalization="planned_relative")
 
 
 # --- 3D: the four decay forms (spec § 2.2) -----------------------------
@@ -328,7 +385,7 @@ def test_service_index_rejects_bad_transform_combinations(kwargs, match):
 def test_overall_psi_rejects_bad_transform_combinations(kwargs, match):
     frame = pd.DataFrame({"a_idx": [0.0, 1.0]})
     with pytest.raises(ValueError, match=match):
-        index.overall_psi(frame, second_normalization=True, **kwargs)
+        index.overall_psi(frame, second_normalization="minmax", **kwargs)
 
 
 @pytest.mark.parametrize("transform_form", ["log1p", "cbrt"])
@@ -370,7 +427,7 @@ def test_overall_psi_transform_psi_stage_transforms_before_second_minmax(
     """stage='psi': `unnorm_psi` is transformed before the second
     normalization (the 2021 notebook's log(unnorm_psi + 1) — spec § 3)."""
     frame = pd.DataFrame({"a_idx": [0.0, 1.0], "b_idx": [1.0, 1.0]})
-    got = index.overall_psi(frame, second_normalization=True,
+    got = index.overall_psi(frame, second_normalization="minmax",
                             transform_form=transform_form,
                             transform_stage="psi")
     assert list(got["unnorm_psi"]) == pytest.approx(

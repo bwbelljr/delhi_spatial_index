@@ -11,7 +11,9 @@ variant that one day needs `touch`/`bbox` will add one then.
 A variant states each block it overrides IN FULL, because the CLI round trip
 replaces `methodology.<block>` wholesale: no key is ever inherited. A
 variant that does not override `adjacency` at all keeps the `code` base's
-`bbox`.
+`bbox`. A value is either such a full block mapping or (DEL-63) a scalar
+for a single top-level methodology key — `second_normalization` is one
+key, not a sub-block.
 
 The band constants live here for the same reason the table does: the fixture
 generators' guard (scripts/check_oraculum_invariants.check_bands) and the
@@ -187,6 +189,11 @@ VARIANTS = {
         "aggregation": {"rule": "mean_rank"},
         "transform": {"form": "log1p", "stage": "psi"},
     },
+    # DEL-63: the reported scale Raj asked for. `rel_psi` = `norm_psi` /
+    # the mean over the Planned rows, so Planned's category mean is 1.
+    # Unlike every row above, this states a SCALAR under its block name:
+    # `second_normalization` is one methodology key, not a sub-block.
+    "planned_relative": {"second_normalization": "planned_relative"},
 }
 
 BAND_RADII_KM = (0.0, 0.25, 0.75, 1.0, 5.0, 10.0)

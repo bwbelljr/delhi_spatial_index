@@ -21,10 +21,13 @@ import sys
 import geopandas as gpd
 from shapely import STRtree
 
+from delhi_psi.categories import CATEGORY_COLUMN
+
 log = logging.getLogger(__name__)
 
 DENOMINATORS = ("pop", "popdensity", "one")
 ABSENT_NEIGHBOR = ("swallowed", "contributes")
+SECOND_NORMALIZATIONS = ("none", "minmax", "planned_relative")
 
 # `overlap.lending: outside_receiver` subtracts the part of a neighbour's
 # amount that lies inside the receiver. For a POINT service both sides are
@@ -572,13 +575,30 @@ def service_index(polygon_gdf, amount_col, *, service, denominator,
 def overall_psi(polygon_gdf, *, second_normalization, transform_form="none",
                 transform_stage=None):
     """Eq. 1: the mean of every `*_idx` column, plus the optional second
-    normalization (`norm_psi`); the column is absent when it is off.
+    normalization (`norm_psi`) and, under `planned_relative`, the reported
+    `rel_psi`; each column is absent when the value that names it is off.
 
     transform_stage="psi" (DEL-34): the composite `unnorm_psi` is
     transformed BEFORE the second normalization — the 2021 notebook's
     `log(unnorm_psi + 1)`. It re-spreads the final score but cannot undo
     per-service compression that has already happened (spec § 3).
+
+    DEL-63: `planned_relative` emits BOTH columns. `rel_psi` is a pure
+    per-row rescale of `norm_psi` by one constant — the mean of `norm_psi`
+    over the `Planned` rows of THIS frame — so the reported per-category
+    mean of `rel_psi` IS the type ratio Raj asked for (linearity; no
+    second aggregation step to get wrong). Because `norm_psi` is an affine
+    transform of `unnorm_psi`, the relative scale inherits the min-max
+    denominator; that is a property of the reported number, not a bug.
+
+    A StrEnum member is truthy AND == its literal string, so the dispatch
+    compares values, never truthiness; a bare bool is rejected rather than
+    falling through to `minmax`.
     """
+    if second_normalization not in SECOND_NORMALIZATIONS:
+        raise ValueError(
+            f"unknown second_normalization {second_normalization!r}; "
+            f"allowed values: {list(SECOND_NORMALIZATIONS)}")
     _check_transform(transform_form, transform_stage)
     out = polygon_gdf.copy()
     idx_columns = [column for column in out.columns
@@ -587,6 +607,23 @@ def overall_psi(polygon_gdf, *, second_normalization, transform_form="none",
     if transform_stage == "psi":
         out["unnorm_psi"] = out["unnorm_psi"].map(
             lambda value: _apply_transform(value, transform_form))
-    if second_normalization:
-        out = minmax(out, source_col="unnorm_psi", target_col="norm_psi")
+    if second_normalization == "none":
+        return out
+    out = minmax(out, source_col="unnorm_psi", target_col="norm_psi")
+    if second_normalization == "planned_relative":
+        planned = out.loc[out[CATEGORY_COLUMN] == "Planned", "norm_psi"]
+        if planned.empty:
+            raise ValueError(
+                f"planned_relative needs at least one row whose "
+                f"{CATEGORY_COLUMN!r} is 'Planned': this frame has "
+                f"{len(out)} rows and none of them is, so there is no "
+                "denominator to divide by")
+        planned_mean = float(planned.mean())
+        if planned_mean == 0.0:
+            raise ValueError(
+                "planned_relative divides by the mean norm_psi of the "
+                f"{len(planned)} Planned rows, and that mean is 0.0 — "
+                "every Planned settlement has the minimum unnormalized "
+                "PSI, so the relative scale is undefined")
+        out["rel_psi"] = out["norm_psi"] / planned_mean
     return out

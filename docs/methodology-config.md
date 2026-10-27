@@ -29,7 +29,7 @@ column is what the Phase 4 profile, DEL-31, will carry):
 | `barrier.buffer_m` | — (unused) | — (unused) | `5` m, pending ratification | DEL-48 — how close a barrier has to be to block a boundary point, in metres (EPSG:7760 is metric). **Required** iff `barrier.rule: partial_weighted`, **rejected** otherwise, and strictly **> 0**: `LineString.buffer(0)` is EMPTY in shapely, so a 0 m buffer would silently make every weight 1. It is a DISTANCE with round caps, so the blocked span extends `buffer_m` past each end of the barrier *where the shared boundary continues past it* — on the oracle city that makes w_AD 0.08, not the memo's buffer-free 0.1 |
 | `overlap.lending` | `whole` | `whole` | **Raj to answer** — Bob's addition of 5 Sep 2026; `outside_receiver` is implemented and proven, `whole` is what both profiles carry until he confirms | DEL-20 — what a NEIGHBOUR lends. `whole` is today's rule, the neighbour's whole amount S_j. `outside_receiver` lends \|S_j \ S_i\|: the amount minus whatever of the same service already lies inside the receiver, so a service in the overlap of two colonies is not counted twice for one of them. Clean pairs are unaffected — for every pair whose polygons do not overlap, \|S_j \ S_i\| == \|S_j\| exactly |
 | `roads` | `decayed` | `eq4_own_only` | **`eq4_own_only`** — each colony counts only its own roads. NB a change from the published numbers; effect measured first (DEL-49) | memo § 3 (DEL-22) — Eq. 4 has no neighbour term |
-| `second_normalization` | `true` | `false` | **Raj to choose** — measured 5 Sep 2026 (DEL-52, `docs/data/psi_columns.md`): the paper's Figure 4 reports `norm_psi`, so `true` unless Raj switches the figures to Eq. 1 as written; Bob's earlier `false` recommendation withdrawn | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1 |
+| `second_normalization` | `minmax` | `none` | **Raj to choose** — measured 5 Sep 2026 (DEL-52, `docs/data/psi_columns.md`): the paper's Figure 4 reports `norm_psi`, so `minmax` unless Raj switches the figures to Eq. 1 as written; Bob's earlier `none` recommendation withdrawn | memo § 4 (DEL-22) — `norm_psi` is not in Eq. 1. Values: `none`, `minmax` (today's `true`), `planned_relative` (emits `norm_psi` **and** `rel_psi`; Raj's 22 Oct answer, DEL-63). |
 | `outputs.denominators` | `[pop, popdensity]` | `[pop]` | **Raj to choose** — measured 5 Sep 2026 (DEL-52): Figure 4 uses the popdensity denominator, so it stays reported unless Raj switches to per-population Eq. 3; Bob's earlier `[pop]` default withdrawn | memo "Popdensity denominator" (DEL-22) |
 | `exclusion.absent_neighbor` | `swallowed` | `contributes` | **`contributes`** — dropped settlements still lend services; they get no PSI and no output row | memo § 5 / Open Decision A (DEL-13, DEL-21) |
 | `exclusion.types` | `[RV]` | `[RV]` | **`[RV, Industrial, Other]`** — identity mapping kept; no category collapse (DEL-28/29) | § 2 below |
@@ -56,6 +56,15 @@ cycle 3E (DEL-20), and it stays at `whole` until Raj confirms: he agreed
 that an overlap service counts for each owner, but the lending half is
 Bob's proposal of 5 Sep 2026 and is still out for his answer. DEL-31
 decides what the ratified profile carries.
+
+`second_normalization` is now a **three-valued enum, not a boolean**
+(DEL-63): `minmax` is today's `true` (emits `norm_psi`), `none` is today's
+`false` (no second column), and `planned_relative` emits `norm_psi` **and**
+`rel_psi` = `norm_psi` / the mean `norm_psi` over the Planned rows, so the
+average Planned colony reads 1 (`docs/data/planned_relative.md`). YAML
+`false` is still accepted and means `none`; a bare `true` is **refused**
+with a message pointing at `minmax`, because an anonymous boolean is the
+ambiguity this change removes.
 
 **Reserved — the loader refuses these and tells you why:**
 `outputs.denominators: one` (reference does not model it), and the keys
@@ -464,7 +473,7 @@ methodology:
     distance: centroid
     distance_unit: km
   roads: decayed
-  second_normalization: true
+  second_normalization: minmax
   exclusion:
     types: [RV]
     stage: post_neighbors
