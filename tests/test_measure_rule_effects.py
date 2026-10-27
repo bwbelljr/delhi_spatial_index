@@ -134,7 +134,7 @@ def test_the_doc_block_has_every_required_key():
     block = committed_block()
     for key in (*WEIGHT_CLASSES, "median_fractional_w",
                 "settlements_list_changed", "links_kept_code_2025",
-                "links_kept_partial", "preprocess_seconds"):
+                "links_kept_partial"):
         assert key in block, key
 
 
@@ -327,3 +327,11 @@ def test_only_plus_splice_refreshes_one_run_and_leaves_the_other(tmp_path):
     assert "y: 2" in out
     assert "### Finding" in out
     assert "Another caption." in out
+
+
+def test_the_committed_block_carries_no_wall_clock_fields():
+    """DEL-60: a run-to-run field inside the fenced block makes the
+    committed bytes unreproducible. Wall-clock cost is logged instead."""
+    block = parse_block(DOC.read_text(), name="partial_barriers")
+    assert "preprocess_seconds" not in block
+    assert not [k for k in block if k.endswith("_seconds")]
