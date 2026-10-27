@@ -7,6 +7,7 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **Media reclassification is an appendix variant (DEL-53).** The students' 105 single-type changes (81 RV → UV, 4,342/4,342 IDs matched) run through `reclass-media`, the ratified profile pointing at a `USO_RECLAS` layer copy. The category ordering is identical on both denominators; only UV's own level moves on density. Table and verdict in `docs/data/media_reclass.md`. No production code.
 - **The distance-band sweep runs on the ratified rules (DEL-36).**
   `band-1km`, `band-5km` and `band-10km` are now the ratified profile with
   only the adjacency pair moved; `summarize_sweep` gained

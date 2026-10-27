@@ -60,7 +60,7 @@ def write(tmp_path, text, name="p.yaml"):
 # says so.
 SHIPPED = [
     "adj-touch", "band-0km", "band-10km", "band-1km", "band-5km", "code-2025",
-    "manuscript", "ratified-2026",
+    "manuscript", "ratified-2026", "reclass-media",
     "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
     "decay-exp5km", "decay-boundary",
     "services-no-ration", "services-no-bank",

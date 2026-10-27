@@ -22,7 +22,7 @@ PROFILES = ["code-2025", "manuscript",
             "decay-exp5km", "decay-boundary",
             "services-no-ration", "services-no-bank",
             "services-uncontested", "services-contested",
-            "ratified-2026"]
+            "ratified-2026", "reclass-media"]
 
 
 @pytest.mark.parametrize("profile", PROFILES)
