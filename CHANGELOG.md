@@ -7,6 +7,14 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **The distance-band sweep runs on the ratified rules (DEL-36).**
+  `band-1km`, `band-5km` and `band-10km` are now the ratified profile with
+  only the adjacency pair moved; `summarize_sweep` gained
+  `--baseline-profile`, so the comparison run can be `ratified-2026` (its
+  own profile-named artifact) instead of `code-2025`. The appendix table
+  lives in `docs/data/distance_bands.md`: rank stability only, never level
+  comparisons — Spearman 0.795 at 1 km, 0.738 at 5 and 10 km, top-decile
+  overlap 0.42/0.32/0.31 against the touch baseline.
 - **Paper figures render from the ratified run (DEL-33).**
   `scripts/render_paper_figures.py` turns the DEL-32 CSVs into the five
   paper figures: the planned-relative headline (bars by type and the
