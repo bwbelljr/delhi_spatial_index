@@ -7,6 +7,17 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **Paper figures render from the ratified run (DEL-33).**
+  `scripts/render_paper_figures.py` turns the DEL-32 CSVs into the five
+  paper figures: the planned-relative headline (bars by type and the
+  full-Delhi map), the JJC-vs-Planned juxtaposition, and min-max appendix
+  versions of the first two. Committed under `docs/figures/ratified-2026/`
+  with a manifest (row counts, per-type means, ramp clip, commit).
+  - Only the seven reported types appear as a category; settlements with
+    no PSI row (295: RV, Industrial, Other, and 15 without population) are
+    drawn grey.
+  - Two renders on one machine are byte-identical — the determinism the
+    integration test asserts.
 - **The ratified rules now ship as one profile (DEL-31).** `ratified-2026`
   — a copy of `code-2025` with the decided values: `touch` adjacency,
   `partial_weighted` barrier at the configurable `5 m`, `outside_receiver`
