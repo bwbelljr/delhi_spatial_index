@@ -833,3 +833,18 @@ def test_swapping_the_two_denominator_frames_flips_the_agreement_fields():
         "swing_max": "26.0",
         "swing_max_category": "JJC",
     }
+
+
+# --- DEL-36: the summariser's baseline is a profile, not a constant ------
+def test_baseline_paths_uses_the_profiles_own_artifact_name(tmp_path):
+    """code-2025 pins the legacy artifact name; every other profile is
+    profile-named by the loader's template (DEL-36)."""
+    from scripts.summarize_sweep import baseline_paths
+
+    csv, artifact = baseline_paths("code-2025", tmp_path)
+    assert csv == tmp_path / "delhi_psi_code-2025_popdensity_2020.csv"
+    assert artifact == tmp_path / "colonies_neighbors.joblib"
+
+    csv, artifact = baseline_paths("ratified-2026", tmp_path)
+    assert csv == tmp_path / "delhi_psi_ratified-2026_popdensity_2020.csv"
+    assert artifact == tmp_path / "colonies_neighbors_ratified-2026.joblib"

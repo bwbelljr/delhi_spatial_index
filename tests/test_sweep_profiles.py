@@ -1,9 +1,13 @@
-"""Every sweep profile is `code-2025` with exactly the keys it claims moved.
+"""Every sweep profile is its baseline with exactly the keys it claims moved.
 
 A Phase 6 sweep point is only interpretable if its diff against the baseline
 is ONE factor. A profile that quietly also changed, say, `roads` would produce
 a number nobody could attribute, and no other test in this repo would notice:
 the production fixtures pin what the profile DOES, not what it differs from.
+
+Since DEL-36 the three distance bands are the RATIFIED profile plus one
+factor, not `code-2025` plus one factor: the band table is read against the
+ratified run, so `code-2025` would be the wrong comparison base for them.
 """
 import dataclasses
 
@@ -12,6 +16,13 @@ import pytest
 from delhi_psi.config import load_config
 
 BASE = "code-2025"
+
+# DEL-36: these three sweep points moved their base to the ratified profile.
+RATIFIED_BASE = {"band-1km", "band-5km", "band-10km"}
+
+
+def stack_base(profile):
+    return "ratified-2026" if profile in RATIFIED_BASE else BASE
 
 # profile -> the dotted methodology keys it moves, and their values.
 # Task 2 appends the six decay profiles here.
@@ -79,13 +90,9 @@ def flatten(obj, prefix=""):
     return {key: str(obj) if not isinstance(obj, bool) else obj}
 
 
-@pytest.fixture(scope="module")
-def base_methodology():
-    return flatten(load_config(BASE).methodology)
-
-
 @pytest.mark.parametrize("profile", ALL_ONE_FACTOR_PROFILES)
-def test_the_profile_moves_exactly_the_keys_it_claims(profile, base_methodology):
+def test_the_profile_moves_exactly_the_keys_it_claims(profile):
+    base_methodology = flatten(load_config(stack_base(profile)).methodology)
     got = flatten(load_config(profile).methodology)
     moved = {k: v for k, v in got.items() if base_methodology.get(k) != v}
     expected = {k: (str(v) if not isinstance(v, bool) else v)
@@ -132,7 +139,7 @@ def test_the_profile_copies_the_baseline_categories_verbatim(profile):
     the one-factor guard above only inspects `methodology`. A typo in a
     category name would change which settlements are excluded — a second
     factor, invisible to every other test in the repo."""
-    base = load_config(BASE).categories
+    base = load_config(stack_base(profile)).categories
     got = load_config(profile).categories
     assert got.mapping == base.mapping
     assert got.scheme == base.scheme

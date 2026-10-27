@@ -52,3 +52,26 @@
   the stability table, the fixture blast radius, smoke tail), CI green,
   squash-merge, sync `main`, Jira DEL-36 In Progress → In Review → Done
   with a plain one-paragraph comment.
+
+## Review record (plan phase, round 1 — 27 Oct 2026)
+
+- **Model:** `opencode-go/glm-5.3-flash`, one finder + judge round.
+- **Findings (2 Important, 0 Critical), both fixed in this revision:**
+  1. `gather_points` hard-wires the baseline's IDENTITY and manifest
+     profile string in addition to the two paths (summarize_sweep.py
+     ~1004–1006); threading only the paths would render a row labelled
+     `code-2025` that actually holds ratified numbers. Fixed: the profile
+     argument feeds `baseline_paths`, `_identity_fields(load_config(...))`
+     and the manifest profile string.
+  2. `tests/test_sweep_profiles.py` pins every sweep profile to
+     `BASE = "code-2025"` with exactly the adjacency pair moved — the
+     ratified rewrite moves ~9 keys. Fixed: `RATIFIED_BASE` makes the three
+     band profiles compare against `ratified-2026`, and the categories test
+     uses the same base.
+- **Verified sound:** the loader accepts every ratified value in the band
+  profiles; `--baseline-profile` is additive; `--out`/`--splice`/`--block`
+  behave as the plan assumes; `BANDS` is exactly 1/5/10 km; a new
+  block-bearing doc only needs the `DOCUMENT_GENERATORS` entry.
+- **Verdict:** not clean on round 1 (2 Important), both fixed; the fixes
+  are mechanical and the review budget rule stops the loop here (one
+  scaled round).

@@ -963,7 +963,20 @@ def _structure_fields(manifest, *, is_baseline=False, is_own_only=False,
     }
 
 
-def gather_points(work_dir, baseline_dir):
+def baseline_paths(profile, baseline_dir):
+    """The CSV and neighbours artifact of the comparison run (DEL-36).
+
+    `code-2025` pins the legacy artifact name; every profile-named run gets
+    `colonies_neighbors_<profile>.joblib` from the loader's template. The
+    CSV is the popdensity one, which is what the sweep reports.
+    """
+    baseline_dir = Path(baseline_dir).expanduser()
+    cfg = load_config(profile, data_dir=str(baseline_dir))
+    return (baseline_dir / f"delhi_psi_{profile}_popdensity_2020.csv",
+            baseline_dir / cfg.paths.neighbors_artifact)
+
+
+def gather_points(work_dir, baseline_dir, baseline_profile="code-2025"):
     """Every point block `points`/`ordering`/`gap` iterate over, in order:
     `("baseline", "own-only", *the profiles with a manifest present)`.
     Returns `(order, frames, stats, structures, manifests)`, all keyed by
@@ -972,12 +985,12 @@ def gather_points(work_dir, baseline_dir):
     work_dir = Path(work_dir).expanduser()
     baseline_dir = Path(baseline_dir).expanduser()
 
-    bbox_csv = baseline_dir / "delhi_psi_code-2025_popdensity_2020.csv"
+    bbox_csv, baseline_artifact_path = baseline_paths(
+        baseline_profile, baseline_dir)
     bbox_frame = load_output_frame(bbox_csv)
     own_frame_ = own_only_frame(bbox_frame)
 
-    baseline_artifact = psi_io.read_neighbors(
-        baseline_dir / "colonies_neighbors.joblib")
+    baseline_artifact = psi_io.read_neighbors(baseline_artifact_path)
     baseline_degree = degree_report(baseline_artifact, ID_COL)
     baseline_manifest = {"n_reported": len(bbox_frame)}
 
@@ -988,9 +1001,9 @@ def gather_points(work_dir, baseline_dir):
         "own-only": _structure_fields(
             {"n_reported": len(own_frame_)}, is_own_only=True),
     }
-    manifests = {"baseline": {"status": "OK", "profile": "code-2025"},
+    manifests = {"baseline": {"status": "OK", "profile": baseline_profile},
                 "own-only": {"status": "OK", "profile": None}}
-    identities = {"baseline": _identity_fields(load_config("code-2025")),
+    identities = {"baseline": _identity_fields(load_config(baseline_profile)),
                  "own-only": dict(_OWN_ONLY_IDENTITY)}
 
     order = ["baseline", "own-only"]
@@ -1015,9 +1028,9 @@ def gather_points(work_dir, baseline_dir):
         bbox_frame, own_frame_
 
 
-def render_points_block(work_dir, baseline_dir):
+def render_points_block(work_dir, baseline_dir, baseline_profile="code-2025"):
     (order, frames, stats, structures, manifests, identities, bbox_frame,
-     own_frame_) = gather_points(work_dir, baseline_dir)
+     own_frame_) = gather_points(work_dir, baseline_dir, baseline_profile)
     baseline_isolates = structures["baseline"]["_n_isolates_raw"]
 
     blocks = []
@@ -1035,7 +1048,7 @@ def render_points_block(work_dir, baseline_dir):
 
 
 # --- block `ordering` (spec § 6.4) ---------------------------------------
-def render_ordering_block(work_dir, baseline_dir):
+def render_ordering_block(work_dir, baseline_dir, baseline_profile="code-2025"):
     (order, frames, stats, *_rest) = gather_points(work_dir, baseline_dir)
     blocks = []
     for point in order:
@@ -1138,8 +1151,9 @@ def _finalize_gap_rows(rows):
     return dropped + [note]
 
 
-def render_gap_block(work_dir, baseline_dir):
-    (order, frames, *_rest) = gather_points(work_dir, baseline_dir)
+def render_gap_block(work_dir, baseline_dir, baseline_profile="code-2025"):
+    (order, frames, *_rest) = gather_points(
+        work_dir, baseline_dir, baseline_profile)
     rows = []
     for point in order:
         frame = frames[point]
@@ -1208,7 +1222,7 @@ def denominator_area_swing_fields(pop_frame, density_frame):
 
 
 # --- block `denominator_check` (spec § 4.3) -------------------------------
-def render_denominator_check_block(baseline_dir):
+def render_denominator_check_block(baseline_dir, baseline_profile="code-2025"):
     """The one-off check spec § 4.3 asks for: the baseline's category order
     and Planned-vs-JJC effect size under `pop` beside the same under
     `popdensity` — the only two points sharing the same denominator that
@@ -1216,9 +1230,9 @@ def render_denominator_check_block(baseline_dir):
     sweep point reports `popdensity` alone."""
     baseline_dir = Path(baseline_dir).expanduser()
     pop_frame = load_output_frame(
-        baseline_dir / "delhi_psi_code-2025_pop_2020.csv")
+        baseline_dir / f"delhi_psi_{baseline_profile}_pop_2020.csv")
     density_frame = load_output_frame(
-        baseline_dir / "delhi_psi_code-2025_popdensity_2020.csv")
+        baseline_dir / f"delhi_psi_{baseline_profile}_popdensity_2020.csv")
 
     pop_order = category_order(pop_frame, PSI_COL)
     density_order = category_order(density_frame, PSI_COL)
@@ -1256,8 +1270,12 @@ def build_parser():
                         help="where run_sweep.py wrote its manifests and "
                              "output CSVs (default: ~/psi_sweep)")
     parser.add_argument("--baseline-dir", default="~/delhi_data/phase3_verify",
-                        help="the proven code-2025 run, read-only "
+                        help="the comparison run, read-only "
                              "(default: ~/delhi_data/phase3_verify)")
+    parser.add_argument("--baseline-profile", default="code-2025",
+                        help="the profile whose CSV/artifact the comparison "
+                             "run holds (default: code-2025; DEL-36 passes "
+                             "ratified-2026)")
     out_or_splice = parser.add_mutually_exclusive_group()
     out_or_splice.add_argument(
         "--out", default=None,
@@ -1284,10 +1302,14 @@ def main(argv=None):
     wanted = BLOCKS if args.block is None else (args.block,)
 
     renderers = {
-        "points": lambda: render_points_block(work_dir, baseline_dir),
-        "ordering": lambda: render_ordering_block(work_dir, baseline_dir),
-        "gap": lambda: render_gap_block(work_dir, baseline_dir),
-        "denominator_check": lambda: render_denominator_check_block(baseline_dir),
+        "points": lambda: render_points_block(
+            work_dir, baseline_dir, args.baseline_profile),
+        "ordering": lambda: render_ordering_block(
+            work_dir, baseline_dir, args.baseline_profile),
+        "gap": lambda: render_gap_block(
+            work_dir, baseline_dir, args.baseline_profile),
+        "denominator_check": lambda: render_denominator_check_block(
+            baseline_dir, args.baseline_profile),
     }
     text = "\n".join(renderers[name]() for name in wanted)
 
