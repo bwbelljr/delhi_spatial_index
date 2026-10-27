@@ -632,6 +632,29 @@ kept configurable).
   loop STOPS here (2 of 3 rounds used) and the plan proceeds to
   implementation, where the tests are the stronger gate.
 
+## Execution notes (27 Oct 2026)
+
+- **Digest — oraculum, `ratified-2026` vs `code-2025`** (the § 4 artefact):
+  1508 rows (1450 + 58 `rel_psi`), 0 keys lost, **42 of 58 `norm_psi` keys
+  moved**. Baseline/pop: A 0.8700 → **1.0000**, B 0.3079 → 0.3932, C 0.0000
+  (unchanged), D 0.3452 → 0.3221, E 0.0892 → 0.2595, IND 1.0000 → 0.6893,
+  RV 0.3471 → 0.3322. Baseline/popdensity: E 0.2842 → 0.6116, IND
+  1.0000 → 0.6893. Changed metric families: road 86 rows, school 76, bank
+  60, clinic 60, unnorm_psi 48, norm_psi 42, ration 40. Messy: 1456 rows
+  (1400 + 56 `rel_psi`), 0 lost, 47 of 56 `norm_psi` keys moved.
+- **Pinned expectations all held:** 1508/1456 rows, 58/56 new keys (all
+  `rel_psi`), 0 lost, and the per-scenario settlement counts as the label
+  map above.
+- **Blast radius:** `git status --porcelain -- tests/fixtures/` listed exactly
+  the two new CSVs; `git diff -- tests/fixtures/` had no removed lines;
+  `code-2025.yaml`/`manuscript.yaml` compared to the merge base with zero
+  diff lines.
+- **Audit (spec § 3.3):** outside the two new fixtures, the only
+  `ratified-2026` references are the YAML itself, the three registration
+  lists, the value-pin test, the CHANGELOG, and the docs — no test, script
+  or CLI path hands the un-overridden profile to `compute_frames`,
+  `compute_oracle_frame` or `oracle_profile_path`.
+
 ## Self-review
 
 - **Spec coverage:** § 1 YAML → Task 2; § 2 registration table → Tasks 1 and
