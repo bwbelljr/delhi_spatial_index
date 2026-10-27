@@ -13,9 +13,10 @@ production spatial-index library module. It exists so production code can
 be checked against the equations, not against itself.
 
 Knobs (spec 'two rule-sets'): adjacency_rule, barrier_rule, roads_formula,
-scenario, denom, second_norm, absent_neighbor_contribution,
-max_distance_km, decay_form, exponent, scale_km, decay_distance. RULESETS
-binds the ideal (manuscript) and code (empirical) combinations.
+scenario, denom, second_norm (False/"none"/"minmax"/"planned_relative"),
+absent_neighbor_contribution, max_distance_km, decay_form, exponent,
+scale_km, decay_distance. RULESETS binds the ideal (manuscript) and code
+(empirical) combinations.
 """
 
 import math
@@ -32,7 +33,7 @@ RULESETS = {
                   roads_formula="eq4", second_norm=False,
                   absent_neighbor_contribution="contributes"),
     "code": dict(adjacency_rule="bbox", barrier_rule="global",
-                 roads_formula="decayed", second_norm=True,
+                 roads_formula="decayed", second_norm="minmax",
                  absent_neighbor_contribution="swallowed"),
 }
 
@@ -326,6 +327,7 @@ TRANSFORM_STAGES = ("pcen", "psi")
 
 # DEL-57: the two aggregation rules for Eq. 2.
 AGGREGATION_RULES = ("mean_minmax", "mean_rank")
+SECOND_NORMALIZATIONS = ("none", "minmax", "planned_relative")
 
 
 def _apply_transform(value, transform_form):
@@ -390,6 +392,21 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
         raise ValueError(
             f"unknown aggregation rule {aggregation_rule!r}; allowed "
             f"values: {list(AGGREGATION_RULES)}")
+    # DEL-63: `second_norm` is the reference's name for the config's
+    # `methodology.second_normalization`, and every accepted value is
+    # spelled the same in both vocabularies. `False` still means "off";
+    # a bare `True` used to mean the min-max, and now names it instead.
+    if second_norm is True:
+        raise ValueError(
+            "second_norm=True is no longer allowed — it used to mean the "
+            "min-max second normalization. Pass 'minmax' (or "
+            "'planned_relative'); False still means 'none'.")
+    if second_norm is False:
+        second_norm = "none"
+    if second_norm not in SECOND_NORMALIZATIONS:
+        raise ValueError(
+            f"unknown second normalization {second_norm!r}; allowed values: "
+            f"{list(SECOND_NORMALIZATIONS)} (or False for 'none')")
 
     # `scenarios` defaults to the module table, so every existing call keeps
     # working; a caller may pass its own WITHOUT mutating the global (which
@@ -520,15 +537,34 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
     if transform_stage == "psi":
         df["psi_eq1"] = df["psi_eq1"].map(
             lambda value: _apply_transform(value, transform_form))
-    if second_norm:
-        p = df["psi_eq1"]
-        lo, hi = p.min(), p.max()
-        if hi == lo:
+    if second_norm == "none":
+        return df
+    p = df["psi_eq1"]
+    lo, hi = p.min(), p.max()
+    if hi == lo:
+        raise ValueError(
+            f"min-max of 'psi_eq1' is undefined: all {len(p)} values "
+            f"equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 — every "
+            f"settlement's unnormalized PSI is the same")
+    df["norm_psi"] = (p - lo) / (hi - lo)
+    if second_norm == "planned_relative":
+        # The reference frame has no type column; `meta` is the universe
+        # indexed by settlement id and carries `USO_FINAL`.
+        planned = df.loc[meta.loc[df.index, "USO_FINAL"] == "Planned",
+                         "norm_psi"]
+        if planned.empty:
             raise ValueError(
-                f"min-max of 'psi_eq1' is undefined: all {len(p)} values "
-                f"equal {lo!r} (hi == lo), so Eq. 2 divides 0/0 — every "
-                f"settlement's unnormalized PSI is the same")
-        df["norm_psi"] = (p - lo) / (hi - lo)
+                "planned_relative needs at least one row whose USO_FINAL "
+                f"is 'Planned': this frame has {len(df)} rows and none of "
+                "them is, so there is no denominator to divide by")
+        planned_mean = float(planned.mean())
+        if planned_mean == 0.0:
+            raise ValueError(
+                "planned_relative divides by the mean norm_psi of the "
+                f"{len(planned)} Planned rows, and that mean is 0.0 — "
+                "every Planned settlement has the minimum unnormalized "
+                "PSI, so the relative scale is undefined")
+        df["rel_psi"] = df["norm_psi"] / planned_mean
     return df
 
 

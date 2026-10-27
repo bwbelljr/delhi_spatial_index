@@ -521,10 +521,18 @@
       """A and D are the only Planned settlements, and `False` means the
       POST-neighbour stage — they are scored out, but their links remain in
       other settlements' neighbour lists. Every Planned row is gone from the
-      frame the normalisation divides, which is all the guard needs."""
+      frame the normalisation divides, which is all the guard needs.
+
+      `RULESETS["ideal"]` on purpose: the code rule-set's GLOBAL barrier
+      severs every link of A (Oraculum's only bank owner), so a frame
+      without A and D would be all-zero on `bank_pcen` and the min-max
+      guard would fire first. The ideal rule-set's `pair` barrier keeps
+      A's links and its `contributes` lets the excluded settlements lend,
+      so every service stays non-degenerate and the frame reaches the
+      division."""
       with pytest.raises(ValueError, match="'Planned'"):
           compute_city(settlements, services, barriers,
-                       **dict(RULESETS["code"], scenario="no_planned",
+                       **dict(RULESETS["ideal"], scenario="no_planned",
                               denom="pop",
                               second_norm="planned_relative"),
                        scenarios={"no_planned":
@@ -1576,6 +1584,14 @@
     `second_normalization` row is replaced, since `true` would now raise
     `ConfigError`.
 - **Zero surviving blockers → stopped at round 1.**
+- **Execution fix (26 Oct, Task 2 Step 2, verified against the fixtures):** the
+  no-Planned guard test above used `RULESETS["code"]`, whose GLOBAL barrier
+  severs every link of A (Oraculum's only bank owner); with A and D excluded
+  the remaining five settlements are all-zero on `bank_pcen`, so the min-max
+  guard fires before the planned-empty guard. The test now uses
+  `RULESETS["ideal"]` (`pair` keeps A's links; `contributes` lets the
+  excluded settlements lend), which reaches the division. The guard under
+  test is unchanged.
 
 ## Self-review
 
