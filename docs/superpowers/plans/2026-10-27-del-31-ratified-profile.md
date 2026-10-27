@@ -48,7 +48,10 @@ kept configurable).
 - **`PROFILE_RULES` stays two entries.** `ratified-2026` is a **mixed
   profile**: `touch`, `eq4_own_only`, `contributes` sit on the reference
   `ideal` row, but `partial_weighted` and `planned_relative` sit on neither
-  `code` nor `ideal`, so no single `RULESETS` row can match all of them. Per
+  `code` nor `ideal` — and neither row pins `overlap.lending` at all, so
+  `outside_receiver` sits on neither row either, while the whole `decay`
+  block is carried by defaults and pinned by neither. No single `RULESETS`
+  row can match all of the profile's values. Per
   `docs/methodology-config.md` § 3 step 2 it is pinned by its production
   fixtures only. The determination is recorded in the review record below.
 - **`tests/test_cli.SHIPPED_PROFILES` stays two.** Its `run()` helper swaps a
@@ -94,8 +97,11 @@ kept configurable).
 - **The `planned_relative` guard** (`delhi_psi/index.overall_psi`) needs ≥ 1
   row of category `Planned` with mean `norm_psi` > 0 per reported frame. Both
   fixture cities keep `Planned` settlements in every scenario (oraculum
-  scenarios drop at most `RV`/`IND`, messy at most `U`/`N` + `RV`), so the
-  generator run cannot trip it — the run itself is the proof.
+  scenarios drop at most `{RV, IND}`; messy at most `{U, N}` — `U` is the
+  no-population drop, not an exclusion type; certifiably measured by the
+  finder: Planned rows survive all 16 city × scenario × denom frames, Planned
+  mean `norm_psi` in `0.246…0.744`), so the generator run cannot trip it —
+  the run itself is the proof.
 - **The `planned_relative` fixture shape:** `metric_columns`
   (scripts/generate_production_fixtures.py:70) appends a `rel_psi` metric row
   for every (scenario, denom, settlement) under `planned_relative`, on top of
@@ -173,13 +179,16 @@ kept configurable).
 
   ```bash
   uv run pytest tests/test_config.py::test_the_shipped_profiles_are_exactly_these -q
-  # Expected: FAIL — shipped_profiles() globs 18 YAMLs; SHIPPED now lists 19
+  # Expected: FAIL — shipped_profiles() globs 17 YAMLs; SHIPPED now lists 18
   uv run pytest tests/test_config.py::test_ratified_profile_pins_the_decided_values -q
   # Expected: FAIL — ConfigError: unknown profile 'ratified-2026';
   #   shipped profiles: [...] (config.py _profile_path)
-  uv run pytest tests/test_production_fixtures.py -k ratified -q
+  uv run pytest tests/test_production_fixtures.py -k "ratified and Regenerable" -q
   # Expected: 2 FAILs (one per city) — "missing committed fixture
   #   .../production/ratified-2026.csv"
+  # NB: plain `-k ratified` matches FOUR tests — test_fixture_has_the_spec_shape
+  # also parametrizes over PROFILES and fails here with FileNotFoundError on
+  # read_bytes(). That is EXPECTED in RED; narrow the selector as above.
   ```
 
   Watch all three before moving on: TDD says the Task 2–3 implementation is
@@ -315,7 +324,7 @@ kept configurable).
 
   ```bash
   uv run pytest tests/test_config.py -q
-  # Expected: all pass — the set-equality test (19 == 19), the value-pin
+  # Expected: all pass — the set-equality test (18 == 18), the value-pin
   # test, and every other config test (the all-YAML glob test now sees the
   # new file and passes by construction)
   ```
@@ -365,8 +374,9 @@ kept configurable).
 - [ ] **Step 3: Watch the second watched-red green.**
 
   ```bash
-  uv run pytest tests/test_production_fixtures.py -k ratified -q
+  uv run pytest tests/test_production_fixtures.py -k "ratified and Regenerable" -q
   # Expected: 2 pass (one byte-for-byte regenerability check per city)
+  # (plain `-k ratified` now passes 4, the two spec-shape tests included)
   ```
 
 - [ ] **Step 4: Blast radius.**
@@ -400,17 +410,28 @@ kept configurable).
   b = pd.read_csv("tests/fixtures/oraculum/production/ratified-2026.csv")
   ka = a.set_index(["scenario", "denom", "settlement", "metric"])
   kb = b.set_index(["scenario", "denom", "settlement", "metric"])
+  assert ka.index.is_unique and kb.index.is_unique
   print("rows only in ratified-2026:", kb.index.difference(ka.index).size)
   print("rows only in code-2025:   ", ka.index.difference(kb.index).size)
   common = ka.index.intersection(kb.index)
-  d = (kb.loc[common, "value"] - ka.loc[common, "value"])
+  d = (kb.loc[common, "value"] - ka.loc[common, "value"]).sort_index()
   changed = d[d.abs() > 1e-12]
   print("changed values:", len(changed), "of", len(common))
   for (sc, dn, st, mt), v in changed.items():
       print(f"  {sc:22s} {dn:11s} {st}  {mt:14s} "
-            f"{ka.loc[(sc, dn, st, mt), 'value']:.6g} -> {v + ka.loc[(sc, dn, st, mt), 'value']:.6g}")
+            f"{ka.loc[(sc, dn, st, mt), 'value']:.6g} -> "
+            f"{ka.loc[(sc, dn, st, mt), 'value'] + v:.6g}")
   EOF
   ```
+
+  Pinned expectations (measured on the committed `code-2025.csv`; a mismatch
+  is a stop-and-report, not a fixture hand-edit): oraculum **1508** rows
+  (29 frame keys × 26 metrics incl. `rel_psi`), **58** keys only in
+  `ratified-2026` (all `rel_psi`), **0** keys only in `code-2025`, and the
+  per-(scenario, denom) settlement counts `7/5/5/6/6` (baseline,
+  excl_contributing, excl_ind_removed, excl_removed, excl_rv_only). Messy:
+  **1456** rows, **56** `rel_psi` keys, **0** lost, per-scenario settlements
+  `10/9/9` per denom.
 
   Read the output and write the digest: which (scenario, denom, settlement,
   metric) rows move, and in which direction — expected signatures: `touch`
@@ -418,10 +439,14 @@ kept configurable).
   `partial_weighted` restores discount-weighted links that
   `global_asymmetric` severed, `eq4_own_only` drops borrowed road access,
   `outside_receiver` removes the double-counted overlap share, `contributes`
-  adds lending from the excluded settlements, and the `rel_psi` rows are a
-  constant per-frame rescale of `norm_psi`. Record the digest in the
-  plan's execution notes and paste it into the PR description. Do the same
-  (row-count only) for the messy city and note it is unremarkable or not.
+  adds lending from the excluded settlements. The `rel_psi` rows are **new
+  data**, absent from `code-2025.csv` (`minmax` emits only `norm_psi`); within
+  each (scenario, denom) frame `rel_psi == norm_psi / that frame's ratified
+  Planned-mean norm_psi`, a constant NOT computable from the old fixture
+  (the min-max universe itself moves under the ratified rules). Record the
+  digest in the plan's execution notes and paste it into the PR description.
+  Do the same (row-count only) for the messy city and note it is
+  unremarkable or not.
 
 ---
 
@@ -459,11 +484,19 @@ kept configurable).
   carries") is updated to say the lending half was ratified 19 Oct and
   `ratified-2026` carries `outside_receiver`.
 
-- [ ] **Step 3: Two pointers.** § 2 (worked example 2 — which is exactly the
-  profile's shape) gains a pointer to the shipped
+- [ ] **Step 3: Two pointers.** § 2 (worked example 2 — its opening
+  identity-mapping + `[RV, Industrial, Other]` exclusion snippet is the
+  shipped profile's shape; the surrounding text documents the parked DEL-29
+  urban-5 collapse, which this profile is NOT) gains a pointer to the shipped
   `delhi_psi/profiles/ratified-2026.yaml`; § 3 step 2 (registration) gains the
   mixed-profile determination as a one-line note (a profile whose values
   span reference rule-sets is pinned by its fixtures only).
+
+- [ ] **Step 4: README's profile count.** `README.md` (the `--config`
+  paragraph, ~line 125) says "Two profiles ship: `code-2025` … and
+  `manuscript` …". Update it to three, adding `ratified-2026` — Raj's
+  ratified rules, the profile the Phase 4 recalculation runs — so the README
+  does not contradict § 1's three-row table.
 
 ---
 
@@ -534,14 +567,54 @@ kept configurable).
 
 ## Review record (plan phase, round 1 — 27 Oct 2026)
 
-- **Model substitution (recorded per ship.md):** no hosted models are
-  available in this environment; per the owner's 26 Oct approval every
-  finder and the judge ran on `gpu-router/ornith-1.5-35b` (local).
-- **Finders:** ornith-1.5-35b ×2 — one walked every registration point and
-  the two cross-checks (config.py:581, pipeline.py:287–290) against the plan's
-  claims; the other recomputed the fixture-digest expectations from
-  `code-2025.csv` and the profile values. *(to be filled)*
-- **Judge:** ornith-1.5-35b — *(to be filled)*.
+- **Model substitution (recorded per ship.md):** no hosted models were
+  available when the round started; per the owner's 26 Oct approval the first
+  dispatch used the local `gpu-router/ornith-1.5-35b`, which the owner
+  cancelled when the session appeared stuck (no findings produced). The
+  owner then switched the review lineup to `opencode-go/glm-5.3-flash`, on
+  which both finders and the judge actually ran.
+- **Finders:** `glm-5.3-flash` ×2. Finder A verified every code claim against
+  source (loader cross-checks, the pipeline re-check, the oracle helpers, the
+  registration points, the reference `RULESETS`, the `planned_relative`
+  guard, the YAML against every loader rule) — all CONFIRMED. Finder B
+  measured the fixtures and ran the ratified methodology in memory through
+  `compute_frames` for all 16 city × scenario × denom frames (guard never
+  trips; `rel_psi` identity holds to < 1e-12), and audited the CI drift guard
+  and every other profile enumerator.
+- **Judge:** `glm-5.3-flash`. Dispositions: **KEEP** A1 (Important), A2/B1
+  (Minor), A4/B4 (Minor), B3 (Minor), B5 (Minor); **KILL** A3 (the stale
+  `oracle_config`/`oracle_profile_path` docstrings and methodology-config § 3
+  collapse-procedure line are real but out of scope for this no-new-code
+  ticket — noted, not edited); **AMEND** A5 (the messy drop is `{U, N}`, not
+  "`U`/`N` + `RV`" — no RV in messy), A6 (§ 2's surrounding text is the
+  parked DEL-29 collapse; scope the pointer to its identity+exclusion
+  snippet), B2 (`rel_psi` is new data, not a rescale computable from
+  `code-2025.csv`).
+- **Surviving and fixed in this revision:**
+  - **(Important) `-k ratified` matched four tests, not two.** Both
+    `test_fixture_is_regenerable` and `test_fixture_has_the_spec_shape`
+    parametrize over `PROFILES`; RED is two missing-fixture failures plus two
+    `FileNotFoundError`s. The selectors are now
+    `-k "ratified and Regenerable"` (2 RED / 2 GREEN), with the four-test
+    behaviour noted explicitly so the plan's stop rule cannot misfire.
+  - **(Minor) Counts were off by one.** 17 profiles today, 18 after
+    registration — Task 1's RED comment and Task 2's set-equality note now
+    say 17 → 18 and "(18 == 18)".
+  - **(Minor) Mixed-profile enumeration completed.** `outside_receiver` is
+    pinned by neither `RULESETS` row (no `overlap_lending` key exists) and
+    the `decay` block is carried by defaults; the Global Constraints bullet
+    now says so.
+  - **(Minor) Scenario-drop wording corrected:** oraculum `{RV, IND}`, messy
+    `{U, N}`.
+  - **(Minor) Digest expectations pinned:** 1508/1456 rows, 58/56 new
+    `rel_psi` keys, 0 lost, per-scenario settlement counts, plus an
+    index-uniqueness assert and a sorted diff in the snippet.
+  - **(Minor) README's "Two profiles ship" added to Task 4**, and the § 2
+    pointer scoped away from the parked collapse.
+- **Round 1 verdict: NOT clean — 1 Important, 0 Critical.** Per the stopping
+  rule, one fix pass (above) is made and round 2 re-checks the Important
+  selector change plus the touched sections; Minors are batched without
+  re-review.
 
 ## Self-review
 
