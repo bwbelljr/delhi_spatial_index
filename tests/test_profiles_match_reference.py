@@ -32,6 +32,7 @@ METRIC_MAP = {
     "road_pcen": "road_pcen", "road_idx": "road_idx",
     "road_length": "road_length_km",
     "unnorm_psi": "psi_eq1", "norm_psi": "norm_psi",
+    "rel_psi": "rel_psi",
 }
 
 # (city, scenario) — each city brings its OWN scenario table (spec § 6).

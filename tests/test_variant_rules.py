@@ -282,7 +282,9 @@ def test_variant_rulesets_are_the_code_base_plus_the_table():
         got = VARIANT_RULESETS[name]
         overridden = set()
         for block, mapping in spec.items():
-            for key, value in mapping.items():
+            pairs = ([(block, mapping)] if isinstance(mapping, str)
+                     else mapping.items())
+            for key, value in pairs:
                 if (block, key) not in VARIANT_KNOBS:
                     continue                      # decay.distance_unit
                 knob = VARIANT_KNOBS[(block, key)]

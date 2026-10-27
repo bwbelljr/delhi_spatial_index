@@ -364,6 +364,17 @@ def test_variants_csv_has_one_scenario_and_every_variant(city):
 
 
 @pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
+def test_the_planned_relative_variant_carries_both_columns(city):
+    """DEL-63: the variant's block holds BOTH second columns, and no other
+    block does — `rel_psi` exists only under `planned_relative`."""
+    frame = pd.read_csv(city.fixtures / "variants_expected_values.csv")
+    block = frame[frame["rule"] == "planned_relative"]
+    assert {"norm_psi", "rel_psi"} <= set(block["metric"])
+    assert "rel_psi" not in set(
+        frame.loc[frame["rule"] != "planned_relative", "metric"])
+
+
+@pytest.mark.parametrize("city", CITIES, ids=lambda c: c.name)
 def test_band_guard_passes_for_both_cities(city):
     from scripts.check_oraculum_invariants import check_bands
 
@@ -638,6 +649,10 @@ def test_production_matches_the_reference_on_synthetic_partial_geometry():
         # on every column's PRESENCE as well as its values, so the
         # comparison cannot pass by omission.
         for prod_col, metric in METRIC_MAP.items():
+            assert (prod_col in got.columns) == (metric in exp.columns), (
+                prod_col, metric)
+            if prod_col not in got.columns:
+                continue
             for sid in exp.index:
                 assert got.loc[sid, prod_col] == pytest.approx(
                     exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)
@@ -728,6 +743,10 @@ def test_production_matches_the_reference_with_both_3e_rules_on():
             scenarios={"none": (frozenset(), False)})
         assert set(got.index) == set(exp.index)
         for prod_col, metric in METRIC_MAP.items():
+            assert (prod_col in got.columns) == (metric in exp.columns), (
+                prod_col, metric)
+            if prod_col not in got.columns:
+                continue
             for sid in exp.index:
                 assert got.loc[sid, prod_col] == pytest.approx(
                     exp.loc[sid, metric], abs=1e-12), (denom, sid, prod_col)

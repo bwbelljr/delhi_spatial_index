@@ -54,6 +54,8 @@ VARIANT_KNOBS = {
     ("transform", "form"): "transform_form",
     ("transform", "stage"): "transform_stage",
     ("aggregation", "rule"): "aggregation_rule",
+    # DEL-63: scalar override — one top-level key, not a sub-block.
+    ("second_normalization", "second_normalization"): "second_norm",
 }
 # `barrier.combine` has no reference knob: the reference uses EVERY barrier
 # row, which is what `any` means on a one-layer city, and both fixture cities
@@ -66,7 +68,11 @@ IGNORED_VARIANT_KEYS = frozenset({("decay", "distance_unit"),
 def _variant_overrides(spec):
     out = {}
     for block, mapping in spec.items():
-        for key, value in mapping.items():
+        # DEL-63: a variant value is either a full block mapping or a
+        # scalar for a single top-level key (the key name repeated).
+        pairs = ([(block, mapping)] if isinstance(mapping, str)
+                 else mapping.items())
+        for key, value in pairs:
             if (block, key) in IGNORED_VARIANT_KEYS:
                 continue
             if (block, key) not in VARIANT_KNOBS:

@@ -551,19 +551,29 @@ def test_every_variant_block_is_one_the_loader_accepts(tmp_path, variant):
                 ("decay", "form"): "methodology.decay.form",
                 ("decay", "distance"): "methodology.decay.distance",
                 ("transform", "form"): "methodology.transform.form",
-                ("transform", "stage"): "methodology.transform.stage"}
+                ("transform", "stage"): "methodology.transform.stage",
+                # DEL-63: the scalar variant — the key under its own block
+                # name is the top-level methodology key.
+                ("second_normalization", "second_normalization"):
+                    "methodology.second_normalization"}
     for block, values in VARIANTS[variant].items():
-        for key, value in values.items():
+        pairs = ([(block, values)] if isinstance(values, str)
+                 else values.items())
+        for key, value in pairs:
             if (block, key) in enum_key:
                 assert value in REFERENCE_KNOBS[enum_key[(block, key)]], \
                     (variant, block, key)
 
     raw = yaml.safe_load(MINIMAL)
     for block, values in VARIANTS[variant].items():
-        raw["methodology"][block] = dict(values)
+        raw["methodology"][block] = (values if isinstance(values, str)
+                                     else dict(values))
     path = write(tmp_path, yaml.safe_dump(raw, sort_keys=False))
     cfg = load_config(path, data_dir=str(tmp_path))
     for block, values in VARIANTS[variant].items():
+        if isinstance(values, str):
+            assert getattr(cfg.methodology, block) == values, (variant, block)
+            continue
         loaded = getattr(cfg.methodology, block)
         for key, value in values.items():
             assert getattr(loaded, key) == value, (variant, block, key)
