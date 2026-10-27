@@ -46,9 +46,9 @@ test that renders twice and compares bytes.
 - Run CSVs: `delhi_psi_ratified-2026_{pop,popdensity}_2020.csv`, 4,062 rows
   each; columns include `USO_AREA_U`, `category`, `rel_psi`, `norm_psi`,
   and the per-service `*_pcen`/`*_idx` columns.
-- Settlement layer: 4,357 rows → **295 unscored** (15 missing population +
-  36 Industrial + 33 Other + RV, which has no CSV row either), so the map's
-  grey class is non-trivial and must be tested.
+- Settlement layer: 4,357 rows → **295 unscored**, measured as **15 JJC
+  rows dropped for missing population + 36 Industrial + 33 Other + 211 RV**,
+  so the map's grey class is non-trivial and must be tested.
 - Type means (popdensity, `rel_psi`): UV 1.2737, JJR 1.1796, Planned 1.0000,
   RUAC 0.9229, UAC 0.5287, SDA 0.5169, JJC 0.0602. On pop the order flips
   (JJC 1.7773 first; JJR 0.4005 last) — hence the spec's per-denominator
@@ -103,11 +103,13 @@ test that renders twice and compares bytes.
 - Modify: `scripts/render_paper_figures.py`
 
 - [ ] **Step 1: Reuse the shared style.** Copy the documented palette/rc
-  block from `scripts/render_oracle_maps.py` (`PAGE_BG`, `SURFACE`,
-  `INK_PRIMARY`, `INK_SECONDARY`, `INK_MUTED`, `BASELINE`, the seven
-  categorical hues mapped to the seven reported types, the rcParams update,
-  `PNG_METADATA`), adding a diverging ramp for `rel_psi` (two documented
-  hues with a neutral at 1) and a sequential ramp for `norm_psi`.
+  block from `scripts/render_oracle_maps.py` (`matplotlib.use("Agg")`,
+  `PAGE_BG`, `SURFACE`, `INK_PRIMARY`, `INK_SECONDARY`, `INK_MUTED`,
+  `BASELINE`, the seven categorical hues mapped to the seven reported types,
+  the rcParams update, `PNG_METADATA`), adding a diverging ramp for
+  `rel_psi` (two documented hues with a neutral at 1) and a sequential ramp
+  for `norm_psi`. Copy the block, not an import: the oracle module does not
+  render on import, but it is a script, not a library.
 
 - [ ] **Step 2: Write the five renderers**, each `render_*(data, out_dir) -> Path`:
   - `render_psi_by_type(run, out_dir, *, scale)` — grouped horizontal bars,
@@ -141,10 +143,19 @@ test that renders twice and compares bytes.
 - Modify: `tests/test_render_paper_figures.py`
 
 - [ ] **Step 1: Write `manifest.txt`** next to the PNGs: run dir, profile
-  name, input filenames + row counts, reported/unscored counts, per-type
-  `mean_rel`/`mean_norm` for both denominators (`%.6g`, sorted), ramp clip
-  bounds, and the git commit (`git rev-parse --short HEAD`, `unknown` if
-  unavailable). Written by the CLI, not by a renderer.
+  name, input filenames + row counts, and the counts on **these exact
+  lines** (the integration test asserts the first):
+
+  ```
+  profile: ratified-2026
+  reported: 4062
+  unscored: 295
+  ```
+
+  Then the per-type `mean_rel`/`mean_norm` for both denominators (`%.6g`,
+  sorted), the ramp clip bounds, and the git commit
+  (`git rev-parse --short HEAD`, `unknown` if unavailable). Written by the
+  CLI, not by a renderer.
 
 - [ ] **Step 2: CLI** (`argparse`): `--run-dir` required, `--data-dir`
   default `~/delhi_data`, `--out-dir` default `docs/figures/ratified-2026`;
@@ -207,8 +218,18 @@ test that renders twice and compares bytes.
 
 - **Model:** `opencode-go/glm-5.3-flash` (owner-directed lineup), one finder
   + one judge round — a scaled review for a self-contained new script.
-- **Finder:** *(to be filled)*
-- **Judge:** *(to be filled)*
+- **Finder + judge (same session, sequential):** measured every claim from
+  the DEL-32 run and the settlement layer — both CSVs carry the columns the
+  plan uses; 4,062 rows each; 4,357 settlements; 295 unscored broken down as
+  15 JJC (no population) + 36 Industrial + 33 Other + 211 RV; the popdensity
+  type means match to 4 dp; the title/style block in
+  `scripts/render_oracle_maps.py` is import-safe and copyable; the
+  `tests.test_measure_common` import and subprocess harness work; the
+  settlement ID sets are identical and duplicate-free across the CSVs.
+- **Verdict: CLEAN — zero Critical, zero Important.** Three Minors, all
+  batched into the plan without re-review: pin the manifest's
+  `reported: 4062` line format, correct the unscored breakdown wording, and
+  include `matplotlib.use("Agg")` in the style-copy list.
 
 ## Self-review
 
