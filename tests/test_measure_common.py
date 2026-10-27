@@ -431,6 +431,7 @@ DOCUMENT_GENERATORS = {
     "planned_relative.md": "scripts/measure_planned_relative.py",
     "layer_pathologies.md": "scripts/measure_layer_pathologies.py",
     "phase6_sweep.md": "scripts/summarize_sweep.py",
+    "distance_bands.md": "scripts/summarize_sweep.py",
 }
 
 

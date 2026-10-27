@@ -1049,7 +1049,8 @@ def render_points_block(work_dir, baseline_dir, baseline_profile="code-2025"):
 
 # --- block `ordering` (spec § 6.4) ---------------------------------------
 def render_ordering_block(work_dir, baseline_dir, baseline_profile="code-2025"):
-    (order, frames, stats, *_rest) = gather_points(work_dir, baseline_dir)
+    (order, frames, stats, *_rest) = gather_points(
+        work_dir, baseline_dir, baseline_profile)
     blocks = []
     for point in order:
         if frames[point] is None:
