@@ -214,7 +214,10 @@ def measure_partial_barriers(cfg, work_dir, *, base, verify_dir):
     report = weight_classes(after_frame)
     report.update(compare_link_sets(link_sets(before_frame),
                                     link_sets(after_frame)))
-    report["preprocess_seconds"] = f"{elapsed:.6g}"
+    # DEL-60: wall-clock cost is LOGGED, never written into the fenced
+    # block — a run-to-run field there makes the committed bytes
+    # unreproducible for every later run.
+    print(f"preprocess_seconds: {elapsed:.6g}", file=sys.stderr)
     for denom in DENOMINATORS:
         before = pd.read_csv(
             Path(verify_dir) / f"{pipeline.output_basename(cfg, denom)}.csv")
