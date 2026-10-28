@@ -199,6 +199,7 @@
    },
    "properties": {
     "host": "A+E",
+    "lanes": 2,
     "service": "road"
    },
    "type": "Feature"

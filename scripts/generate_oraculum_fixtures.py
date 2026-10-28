@@ -89,7 +89,7 @@ def main():
                 {"service": service, "host": host}))
     service_feats.append(_feature(
         {"type": "LineString", "coordinates": [_pt(*p) for p in ROAD]},
-        {"service": "road", "host": "A+E"}))
+        {"service": "road", "host": "A+E", "lanes": 2}))
     _dump(OUT / "services.geojson", service_feats)
 
     _dump(OUT / "barriers.geojson", [_feature(

@@ -40,7 +40,8 @@ PROFILES = ("code-2025", "manuscript",
             "services-no-ration", "services-no-bank",
             "services-uncontested", "services-contested",
             "ratified-2026",
-             "reclass-media")
+             "reclass-media",
+             "roads-lane-weighted")
 
 POINT_SERVICES = ("clinic", "school", "bank", "police", "ration", "transport")
 LINE_SERVICES = ("road",)

@@ -325,6 +325,7 @@
    },
    "properties": {
     "host": "H+L",
+    "lanes": 2,
     "service": "road"
    },
    "type": "Feature"
@@ -345,6 +346,7 @@
    },
    "properties": {
     "host": "M",
+    "lanes": 6,
     "service": "road"
    },
    "type": "Feature"
