@@ -1,29 +1,43 @@
 profile: decay-exp5km
-# A Phase 6 sweep point (DEL-37 / DEL-55): `code-2025` with the DECAY FORM
-# and nothing else moved, so the diff against the baseline's outputs is
-# attributable to the decay weight alone. Every block this file omits —
-# layers, services, crs, validate, paths.data_dir — takes the code-2025
-# default from the loader. `adjacency` is restored to code-2025's `bbox`
-# rule: decay does not change who the neighbours are, which is what lets all
-# six decay points share the one `paths.neighbors_artifact` pinned below.
-#
-# DRY RUN ONLY. Its numbers describe the frozen July 2025 rule set, which
-# Raj's 28 Aug decisions supersede. See
-# docs/superpowers/specs/2026-09-06-phase6-sweep-dry-run-design.md.
+# A Phase 6 sweep point (DEL-37): the RATIFIED profile with only the decay
+# block moved, so the diff against the ratified run is attributable to the
+# decay form/distance alone. Replaces the dry run on code-2025 (DEL-55).
+crs: {epsg: 7760}
 paths:
-  neighbors_artifact: colonies_neighbors_sweep-bbox.joblib
-                                    # PINNED, and shared by all six decay
-                                    # points: the methodology stamp covers
-                                    # adjacency and barrier only, so one bbox
-                                    # preprocess serves every decay point, and
-                                    # check_methodology_stamp refuses the file
-                                    # if that ever stops being true. It is a
-                                    # DIFFERENT name from code-2025's
-                                    # colonies_neighbors.joblib, so a sweep run
-                                    # can never overwrite the proven artifact.
-categories:
-  scheme: uso-10
-  mapping:
+  neighbors_artifact: colonies_neighbors_sweep-bbox.joblib  # one shared artifact: decay does not change the neighbourhood
+  data_dir: ~/delhi_data            # overridable: --data-dir, DELHI_DATA_DIR
+                                    # out_dir: omitted on purpose — it defaults
+                                    # to data_dir, as today; overridable with
+                                    # --out-dir. A literal value here would
+                                    # ignore --data-dir.
+                                    # neighbors_artifact: omitted on purpose —
+                                    # the default renders the profile name
+                                    # (colonies_neighbors_ratified-2026.joblib),
+                                    # so a fresh preprocess writes a fresh
+                                    # artifact beside code-2025's, never
+                                    # overwriting it
+layers:
+  settlements: {path: uso_update_sep2021/uso_update_sep2021.shp,
+                id_col: USO_AREA_U, type_col: USO_FINAL}
+  population:  {path: pop_colony_wp_2020_jjc_adjusted.csv,
+                id_col: uso_area_u, value_col: population,
+                missing: drop}      # drop | error  (see below)
+  bounds: delhi_bounds_buffer/delhi_bounds_buffer.shp
+  ndmc_center: ndmc_center7760/ndmc_center7760.shp   # -> ndmc_dist_km column
+  barriers: {canal: Barrier_Clip/Canal/Canal.shp,
+             railway: Barrier_Clip/Railway/Railway_Line.shp,
+             drain: Barrier_Clip/Drain/Major_Drain.shp}
+services:
+  point: {bank: Public Services/Banking/Banking.shp,
+          health: Public Services/Health/Health.shp,
+          police: Public Services/Police/Police Station.shp,
+          ration: Public Services/Ration/Ration.shp,
+          school: Public Services/School/schools7760.shp,
+          transport: Public Services/Transport/Transport.shp}
+  line:  {road: Public Services/Major Road/Road.shp}   # amount column: road_length
+categories:                         # source type -> category (spec 3B 2)
+  scheme: uso-10                    # free-form name; stamped into the joblib output
+  mapping:                          # IDENTITY: the 10 USO_FINAL types, uncollapsed
     Planned: Planned
     UAC: UAC
     JJC: JJC
@@ -36,42 +50,64 @@ categories:
     Other: Other
 methodology:
   adjacency:
-    rule: bbox
+    rule: touch                     # bbox | touch | within_distance — Raj,
+                                    # 28 Aug (DEL-19/50): corner-only pairs
+                                    # stop being neighbours. max_distance_km:
+                                    # required iff rule is within_distance
+                                    # (>= 0 km, polygon-to-polygon)
   barrier:
-    rule: global_asymmetric
-    combine: any
+    rule: partial_weighted          # global_asymmetric | pairwise |
+                                    # partial_weighted — Raj, 28 Aug (DEL-48):
+                                    # a partly-blocked boundary is discounted,
+                                    # w = 1 - L_blocked/L_shared, not severed
+    buffer_m: 5                     # required iff partial_weighted (> 0 m).
+                                    # Raj, 26 Oct: the Oraculum anchor, KEPT
+                                    # CONFIGURABLE — a different buffer is a
+                                    # one-line profile edit (DEL-48)
+    combine: any                    # any | [layer names]; which flags OR into
+                                    # `barrier`; unchanged
   overlap:
-    lending: whole
+    lending: outside_receiver       # whole | outside_receiver — Raj,
+                                    # 19 Oct 2026 (DEL-20): a neighbour lends
+                                    # |S_j \ S_i|, so a service in the overlap
+                                    # of two colonies is not counted a second
+                                    # time through the neighbour term.
+                                    # counting: reserved — a service inside k
+                                    # overlapping colonies counts for each of
+                                    # the k (ratified 28 Aug 2026; no knob)
   decay:
-    form: exponential               # THE CHANGE (1 of 2)
-    scale_km: 5.0                   # THE CHANGE (2 of 2) — slower decay
-    distance: centroid
+    form: exponential               # THE CHANGE — e^(-D/scale_km)
+    scale_km: 5.0
+    distance: centroid              # unchanged
     distance_unit: km
   transform:
-    form: none                      # none | log1p | cbrt (DEL-34); no stage key
-                                    # when form is none
+    form: none                      # none | log1p | cbrt (DEL-34) — STILL
+                                    # OPEN; the code-2025 value stands
   aggregation:
-    rule: mean_minmax               # mean_minmax | mean_rank (DEL-57)
-                                    # mean_minmax is today: Eq. 2 min-maxes
-                                    # each service's PCEN, then Eq. 1
-                                    # averages. mean_rank replaces the
-                                    # min-max with a percentile rank —
-                                    # uniform by construction, so no mass
-                                    # point at zero can form. Not adopted.
-  roads: decayed
-  second_normalization: minmax
+    rule: mean_minmax               # mean_minmax | mean_rank (DEL-57) —
+                                    # STILL OPEN; the code-2025 value stands
+  roads: eq4_own_only               # decayed | eq4_own_only — Raj, 28 Aug
+                                    # (DEL-49 measured the price first: JJC
+                                    # mean PSI -13 % pop / -10 % density, no
+                                    # ordering flip)
+  second_normalization: planned_relative  # minmax | none | planned_relative —
+                                    # Raj, 22 Oct 2026, 4a (DEL-63): the
+                                    # reported scale, 1 = the average planned
+                                    # colony; min-max stays in the appendix
   exclusion:
-    types: [RV]
-    stage: post_neighbors
-    absent_neighbor: swallowed
+    types: [RV, Industrial, Other]  # CATEGORY names — Raj, 5 Sep (DEL-21/13);
+                                    # identity mapping kept, no collapse
+                                    # (DEL-29 parked)
+    stage: post_neighbors           # post_neighbors | pre_neighbors — 28 Aug:
+                                    # neighbours built on the full universe,
+                                    # exclusion at compute
+    absent_neighbor: contributes    # swallowed | contributes — 28 Aug, Open
+                                    # Decision A: dropped settlements still
+                                    # lend; minmax_universe: reserved (spec 9)
+validate:
+  max_missing_population: 15        # today's real-data count; the KNOB (not a
+                                    # code path) if a run exceeds it
 outputs:
-  denominators: [popdensity]        # ONE denominator: `compute` runs the whole
-                                    # per-link pcen loop once per entry, and on
-                                    # the 10 km band that loop walks 4.37M
-                                    # links. Figure 4's denominator is
-                                    # popdensity; the baseline run carries both
-                                    # and the doc's denominator check compares
-                                    # them once. Spec § 4.3.
-  formats: [csv]                    # the summariser reads CSV; shp/joblib
-                                    # would add ~18 MB per point for nothing
+  denominators: [popdensity]        # ONE denominator (DEL-55 § 4.3)
+  formats: [csv]                    # the summariser reads CSV only
   name_template: "delhi_psi_{profile}_{denominator}_2020"

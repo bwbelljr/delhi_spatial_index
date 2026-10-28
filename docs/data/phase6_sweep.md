@@ -84,6 +84,8 @@ what DEL-53 and the UV/SDA question are still open on; the per-category
 regardless (`RV` is excluded upstream by every profile's own
 `methodology.exclusion`, so it never reaches the output CSV at all).
 
+> **Status (27 Oct 2026).** The *numbers* below are the preserved dry-run measurements on the superseded `code-2025` rule set; the identity lines inside the blocks are rendered from today's profile table, which since DEL-36/37/39 carries the ratified rules. The reported variants are now superseded by `distance_bands.md`, `decay_sweep.md` and `adjacency_variants.md`. This page remains as the cost-and-structure record the DEL-55 harness was built to produce.
+
 ## Block `points` — one row per sweep point
 
 **DRY RUN on `code-2025` — superseded by the ratified profile.** The frozen
@@ -168,7 +170,7 @@ flag: pinned
 block: points
 point: adj-touch
 profile: adj-touch
-adjacency: touch
+adjacency: bbox
 radius_km: —
 decay_form: inverse_linear
 decay_param: —
@@ -328,7 +330,7 @@ flag: smoothed,pinned
 block: points
 point: decay-none
 profile: decay-none
-adjacency: bbox
+adjacency: touch
 radius_km: —
 decay_form: none
 decay_param: —
@@ -360,7 +362,7 @@ flag: smoothed,pinned
 block: points
 point: decay-power05
 profile: decay-power05
-adjacency: bbox
+adjacency: touch
 radius_km: —
 decay_form: inverse_power
 decay_param: 0.50
@@ -392,7 +394,7 @@ flag: smoothed,pinned
 block: points
 point: decay-power2
 profile: decay-power2
-adjacency: bbox
+adjacency: touch
 radius_km: —
 decay_form: inverse_power
 decay_param: 2.00
@@ -424,7 +426,7 @@ flag: smoothed,pinned
 block: points
 point: decay-exp2km
 profile: decay-exp2km
-adjacency: bbox
+adjacency: touch
 radius_km: —
 decay_form: exponential
 decay_param: 2.0
@@ -456,7 +458,7 @@ flag: smoothed,pinned
 block: points
 point: decay-exp5km
 profile: decay-exp5km
-adjacency: bbox
+adjacency: touch
 radius_km: —
 decay_form: exponential
 decay_param: 5.0
@@ -488,7 +490,7 @@ flag: smoothed,pinned
 block: points
 point: decay-boundary
 profile: decay-boundary
-adjacency: bbox
+adjacency: touch
 radius_km: —
 decay_form: inverse_linear
 decay_param: —

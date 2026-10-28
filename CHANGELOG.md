@@ -7,6 +7,7 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **The decay and adjacency variants run on the ratified rules (DEL-37, DEL-39).** The six `decay-*` and two adjacency profiles are now the ratified profile with only their one factor moved. Decay is not load-bearing (ρ 0.989–0.999, top-decile overlap 0.69–0.91); the published bbox rule differs materially from the main text's touch (ρ 0.865, 60 % top-decile overlap), while the 0 km band matches it closely (ρ 0.991). Tables: `docs/data/decay_sweep.md`, `docs/data/adjacency_variants.md`. Six compute-only runs plus two preprocesses.
 - **Variants can override services (DEL-62).** A `VARIANTS` entry may carry a `services` block — a per-kind, per-service overlay written verbatim into the derived profile's `services:` by `oracle_profile_path`, beside the methodology overrides. The reference-kwarg walker skips it explicitly, so the methodology vocabulary stays honest. No variant row uses the channel yet; the lane-weighted-roads row (DEL-43) is its first customer.
 - **Media reclassification is an appendix variant (DEL-53).** The students' 105 single-type changes (81 RV → UV, 4,342/4,342 IDs matched) run through `reclass-media`, the ratified profile pointing at a `USO_RECLAS` layer copy. The category ordering is identical on both denominators; only UV's own level moves on density. Table and verdict in `docs/data/media_reclass.md`. No production code.
 - **The distance-band sweep runs on the ratified rules (DEL-36).**

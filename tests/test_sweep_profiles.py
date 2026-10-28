@@ -18,7 +18,9 @@ from delhi_psi.config import load_config
 BASE = "code-2025"
 
 # DEL-36: these three sweep points moved their base to the ratified profile.
-RATIFIED_BASE = {"band-1km", "band-5km", "band-10km"}
+RATIFIED_BASE = {"band-1km", "band-5km", "band-10km", "adj-touch", "band-0km",
+                 "decay-none", "decay-power05", "decay-power2",
+                 "decay-exp2km", "decay-exp5km", "decay-boundary"}
 
 
 def stack_base(profile):
@@ -27,7 +29,7 @@ def stack_base(profile):
 # profile -> the dotted methodology keys it moves, and their values.
 # Task 2 appends the six decay profiles here.
 SWEEP_PROFILES = {
-    "adj-touch": {"adjacency.rule": "touch"},
+    "adj-touch": {"adjacency.rule": "bbox"},
     "band-0km": {"adjacency.rule": "within_distance",
                  "adjacency.max_distance_km": 0.0},
     "band-1km": {"adjacency.rule": "within_distance",
