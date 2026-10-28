@@ -840,3 +840,22 @@ def test_ratified_profile_pins_the_decided_values(tmp_path):
     assert cfg.paths.neighbors_artifact == \
         "colonies_neighbors_ratified-2026.joblib"
     assert cfg.paths.out_dir == tmp_path
+
+
+def test_services_line_accepts_a_path_plus_weight_column(tmp_path):
+    """DEL-43: the mapping form splits into the path map every consumer
+    already uses plus a sibling weight map only the road maths reads."""
+    text = MINIMAL + """services:
+  line: {road: {path: Public Services/Major Road/Road.shp,
+                weight_col: RD_LANES}}
+"""
+    cfg = load_config(write(tmp_path, text, name="weighted.yaml"),
+                      data_dir=str(tmp_path))
+    assert cfg.services.line == {"road": "Public Services/Major Road/Road.shp"}
+    assert cfg.services.line_weights == {"road": "RD_LANES"}
+
+
+def test_services_line_still_accepts_a_bare_path(tmp_path):
+    cfg = load_config("code-2025", data_dir=str(tmp_path))
+    assert cfg.services.line["road"].endswith("Road.shp")
+    assert cfg.services.line_weights == {}

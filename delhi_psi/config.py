@@ -13,7 +13,7 @@ no reference knob cannot be added to a reference-pinned key.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -205,6 +205,9 @@ class LayersConfig:
 class ServicesConfig:
     point: dict
     line: dict
+    # DEL-43: {service: weight column} for line services whose YAML entry
+    # used the mapping form; empty for every bare-string profile.
+    line_weights: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -667,8 +670,22 @@ def _layers(raw):
 def _services(raw):
     merged = {**DEFAULT_SERVICES, **raw}
     _reject_unknown(merged, set(DEFAULT_SERVICES), "services")
-    return ServicesConfig(point=dict(merged["point"]),
-                          line=dict(merged["line"]))
+    line, weights = {}, {}
+    for name, spec in merged["line"].items():
+        if isinstance(spec, dict):
+            _reject_unknown(spec, {"path", "weight_col"},
+                            f"services.line.{name}")
+            if "path" not in spec:
+                raise ConfigError(
+                    f"services.line.{name}: a mapping needs `path` "
+                    "(and optionally `weight_col`)")
+            line[name] = spec["path"]
+            if spec.get("weight_col"):
+                weights[name] = spec["weight_col"]
+        else:
+            line[name] = spec
+    return ServicesConfig(point=dict(merged["point"]), line=line,
+                          line_weights=weights)
 
 
 def _outputs(raw):

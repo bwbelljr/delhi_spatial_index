@@ -838,3 +838,26 @@ def test_an_unknown_aggregation_rule_is_rejected():
     with pytest.raises(ValueError, match="mean_minmax"):
         index._apply_aggregation(frame, source_col="x", target_col="r",
                                  aggregation_rule="median_rank")
+
+
+def test_road_lengths_multiplies_by_the_weight_column():
+    """DEL-43: a road with lanes=2 contributes twice the length of the same
+    road at lanes=1 — the intensive margin, not another count."""
+    import geopandas as gpd
+    from shapely.geometry import LineString, Polygon
+    from delhi_psi.index import road_lengths
+
+    poly = gpd.GeoDataFrame(
+        {"USO_AREA_U": ["A"]},
+        geometry=[Polygon([(0, 0), (1000, 0), (1000, 1000), (0, 1000)])],
+        crs="EPSG:7760")
+    line = gpd.GeoDataFrame(
+        {"RD_LANES": [1, 2]},
+        geometry=[LineString([(0, 100), (1000, 100)]),
+                  LineString([(0, 200), (1000, 200)])],
+        crs="EPSG:7760")
+    plain = road_lengths(poly.copy(), line.copy(), length_col="road_length")
+    weighted = road_lengths(poly.copy(), line.copy(), length_col="road_length",
+                            weight_col="RD_LANES")
+    assert plain.loc[0, "road_length"] == pytest.approx(2.0)
+    assert weighted.loc[0, "road_length"] == pytest.approx(3.0)

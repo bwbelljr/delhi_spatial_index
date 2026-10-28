@@ -162,7 +162,8 @@ def apply_exclusion(neighbor_frame, *, dropped, stage, id_col=ID_COL):
 
 
 def index_frames(neighbor_frame, services, methodology, denominator, *,
-                 dropped=frozenset(), epsg_code=7760, id_col=ID_COL):
+                 dropped=frozenset(), epsg_code=7760, id_col=ID_COL,
+                 line_weights=None):
     """Amounts, PCEN, min-max and the overall PSI for one denominator."""
     exclusion = methodology.exclusion
     universe = apply_exclusion(neighbor_frame, dropped=dropped,
@@ -196,8 +197,10 @@ def index_frames(neighbor_frame, services, methodology, denominator, *,
             amounts = index.point_counts(amounts, projected[service],
                                          count_col=amount_col, id_col=id_col)
         else:
-            amounts = index.road_lengths(amounts, projected[service],
-                                         length_col=amount_col, id_col=id_col)
+            amounts = index.road_lengths(
+                amounts, projected[service], length_col=amount_col,
+                id_col=id_col,
+                weight_col=(line_weights or {}).get(service))
 
     # `outside_receiver`: what a neighbour lends is |S_j \ S_i|, so each
     # service needs its own {(i, j): shared} table. Built HERE — compute
@@ -300,7 +303,7 @@ def compute_frames(settlements, barriers, services, population, methodology,
                    type_col=TYPE_COL, population_id_col="uso_area_u",
                    population_value_col="population",
                    missing_population="drop", max_missing_population=None,
-                   mapping=None, scheme="identity"):
+                   mapping=None, scheme="identity", line_weights=None):
     """The documented in-memory entry point (spec § 2).
 
     settlements: settlement polygons with `area_km2` (and `population` when
@@ -345,7 +348,8 @@ def compute_frames(settlements, barriers, services, population, methodology,
     neighbor_frame = build_neighbors(frame, barriers, methodology,
                                      id_col=id_col)
     result = index_frames(neighbor_frame, services, methodology, denominator,
-                          dropped=dropped, epsg_code=epsg_code, id_col=id_col)
+                          dropped=dropped, epsg_code=epsg_code, id_col=id_col,
+                          line_weights=line_weights)
     # After the last index_frames call, never before: pandas drops `attrs`
     # across the merges inside it (a caller that merges this result further
     # loses the stamp too, as pandas documents).
@@ -591,7 +595,8 @@ def compute(cfg):
     for denominator in cfg.outputs.denominators:
         result = index_frames(frame, services, cfg.methodology,
                               str(denominator), dropped=dropped,
-                              epsg_code=cfg.crs.epsg, id_col=id_col)
+                              epsg_code=cfg.crs.epsg, id_col=id_col,
+                              line_weights=cfg.services.line_weights)
         validate.check_no_negative(result)
         n_reported = len(result)
         # Immediately before the write, mirroring the neighbours stamp:
