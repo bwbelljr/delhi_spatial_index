@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software or its outputs, please cite it as below."
+title: "Delhi Public Services Index (PSI) pipeline"
+abstract: >-
+  A reproducible pipeline for the Delhi Public Services Index: settlement
+  polygons, point and line services, barriers, adjacency, decay, overlap
+  lending, category exclusion and the composite index, driven by YAML
+  methodology profiles with an independent reference implementation and
+  fixture-based pins.
+authors:
+  - family-names: Bell
+    given-names: Bob
+    email: bwbelljr@gmail.com
+version: 0.3.0
+date-released: 2026-10-28
+repository-code: "https://github.com/bwbelljr/delhi_spatial_index"
+keywords:
+  - urban inequality
+  - public services
+  - spatial index
+  - Delhi
+  - reproducibility
+# `license:` is deliberately absent until DEL-56 chooses one — CFF allows the
+# field to be omitted, and a wrong value is worse than none. Add the chosen
+# SPDX identifier here and in pyproject.toml at the same time.

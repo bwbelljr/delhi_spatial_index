@@ -38,7 +38,7 @@ records what each merged phase changed. Work is tracked in Jira project
 **DEL** (bob-bell.atlassian.net) — one epic per phase, `[DEL-nn]` tags below
 name each item's ticket; keep the two in sync when either changes.
 
-### Status at a glance (24 Oct 2026)
+### Status at a glance (28 Oct 2026)
 
 | Phase | State | Evidence |
 |---|---|---|
@@ -46,22 +46,19 @@ name each item's ticket; keep the two in sync when either changes.
 | 1 Runnable pipeline | done | PR #5 — zero deviation from July 2025 baseline |
 | 2 Oracle | done | PR #6 — 65 tests; production == reference == hand anchors at 1e-12; mutation-proven; worksheet hand-ratified 24 Aug |
 | 3 Refactor & bug audit | **done** — cycles 3A–3E all merged (PRs #10, #13, #14, #15, #18, #19, #20) | delhi_psi package, 923 tests; every methodology choice is a profile value; code-2025 still reproduces July 2025 at zero deviation |
-| 4 Categorization | **unblocked** — 4a answered 22 Oct on the Bob/Raj call: the main figure goes planned-relative (type mean ÷ Planned mean = 1) [DEL-63]; the ratified profile [DEL-31] waits only on that variant landing | `docs/decisions/2026-10-22-raj-call-decisions.md` |
-| 6 Robustness sweeps | **harness done, numbers pending** — the eleven-point sweep and its dry run merged (PR #21, DEL-55). The reported variants (DEL-36/37/39) re-run against the ratified profile once Phase 4 unblocks | `docs/data/phase6_sweep.md` — every table labelled a dry run on the superseded rule set |
-| 7 Release | **in progress** — repo cleanup and the oracle as a documented release artefact (PR #22, DEL-45/46). Licence not chosen; Delhi layers not released | `README.md`, `docs/oracle/README.md` |
-| 5 Shippable minimum | superseded in practice — phases 6 and 7 progressed ahead of it while Phase 4 is blocked | — |
+| 4 Categorization | **done** — ratified profile [DEL-31] merged `8470955`; recalculation [DEL-32] ran (4,062 scored, dated delivery copies); figures [DEL-33] merged `160a2fc` (planned-relative headline, min-max appendix) | `docs/figures/ratified-2026/manifest.txt`, Jira DEL-31/32/33 |
+| 6 Robustness sweeps | **done** — bands [DEL-36], decay [DEL-37], adjacency [DEL-39], lane-weighted roads [DEL-43], media reclassification [DEL-53], appendix write-up [DEL-44], all on the ratified rules. One open refinement: per-service decay [DEL-38] needs an empirical anchor | `docs/data/distance_bands.md`, `decay_sweep.md`, `adjacency_variants.md`, `roads_lane_weighted.md`, `media_reclass.md`, `docs/appendix_variants.md` |
+| 7 Release | **in progress** — release-readiness pack landed (`CONTRIBUTING.md`, `SECURITY.md`, `CITATION.cff`, `docs/RELEASING.md`, `docs/licence-options.md`). Licence not chosen (DEL-56, blocks DEL-47); Delhi layers not released | `docs/RELEASING.md`, `docs/licence-options.md` |
+| 5 Shippable minimum | **passed** — the checkpoint's criteria (correct code, verified index, non-urban dropped, new categories) are evidenced by the green suite and the ratified recalculation; see the DEL-6 audit note | `docs/decisions/2026-08-28-raj-methodology-decisions.md`, Jira DEL-6 |
 
 Open items by owner:
 
-- **Bob:** (1) ~~cycle 3E~~ done 6 Sep (PRs #18/#19/#20); (2) ~~the
-  pre-recalculation measurements~~ done 5 Sep (PR #17); (3) ~~the Phase 6
-  sweep harness~~ done 6 Sep (PR #21); (4) ~~release cleanup~~ done 7 Sep
-  (PR #22). **Remaining and blocked:** the ratified profile [DEL-31] and the
-  recalculation [DEL-32], both waiting on Raj below. **Remaining and
-  unblocked:** the service-set and index-formulation variants
-  [DEL-42/40/41/35/34], building their durable half only — profiles, variant
-  rows proven against the reference implementation, fixtures — with no
-  real-data run until DEL-31 exists.
+- **Bob:** all delivery items are closed — 3E (PRs #18/#19/#20), the
+  pre-recalculation measurements (PR #17), the sweep harness (PR #21),
+  release cleanup (PR #22), the ratified profile and recalculation
+  [DEL-31/32], the figures [DEL-33], and the full Phase 6 variant set
+  [DEL-36/37/39/43/44/53]. **Remaining:** DEL-38's design note needs Raj's
+  per-service expectations; the release [DEL-47] waits on the licence.
 - **Raj:** ~~confirm UV/SDA stay in, the overlap neighbour rule,
   popdensity, `norm_psi`~~ — all answered (19 Oct reply + 22 Oct call:
   the main figure goes planned-relative [DEL-63]);
