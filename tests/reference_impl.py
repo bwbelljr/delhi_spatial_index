@@ -249,8 +249,11 @@ def _centroid_km(settlements):
     return {i: cent[i] for i in cent.index}
 
 
-def _service_amounts(settlements, services):
-    """Per-settlement own amounts: counts for point services, km for road."""
+def _service_amounts(settlements, services, *, road_weight_col=None):
+    """Per-settlement own amounts: counts for point services, km for road.
+
+    `road_weight_col` multiplies each road row's clipped length by that
+    row's weight (DEL-43), independently of the production path."""
     idx = settlements.set_index("USO_AREA_U").geometry
     amounts = {}
     for svc in POINT_SERVICES:
@@ -262,9 +265,12 @@ def _service_amounts(settlements, services):
     # EVERY road row, not just the first: a city may carry the road network
     # as several LineStrings (the messy city does), and production's
     # `road_lengths` already sums all of them per settlement.
-    road_geoms = list(services["road"].geometry)
+    road_gdf = services["road"]
+    weights = (list(road_gdf[road_weight_col])
+               if road_weight_col is not None else [1.0] * len(road_gdf))
     amounts["road"] = {
-        i: sum(road.intersection(idx[i]).length for road in road_geoms) / 1000
+        i: sum(road.intersection(idx[i]).length * float(w)
+               for road, w in zip(road_gdf.geometry, weights)) / 1000
         for i in idx.index}
     return amounts
 
@@ -272,7 +278,7 @@ def _service_amounts(settlements, services):
 OVERLAP_LENDINGS = ("whole", "outside_receiver")
 
 
-def shared_amounts(nbrs, settlements, services):
+def shared_amounts(nbrs, settlements, services, *, road_weight_col=None):
     """{svc: {(i, j): amount}} — how much of `svc` lies inside BOTH i and j.
 
     Points: the number of that service's points `within` both, the same
@@ -307,7 +313,11 @@ def shared_amounts(nbrs, settlements, services):
                         if i != j:
                             table[(i, j)] = table.get((i, j), 0) + 1
         out[svc] = table
-    road_geoms = list(services["road"].geometry)
+    road_gdf = services["road"]
+    road_weighted = (
+        list(zip(road_gdf.geometry, road_gdf[road_weight_col]))
+        if road_weight_col is not None
+        else [(g, 1.0) for g in road_gdf.geometry])
     table = {}
     # Sorted UNDIRECTED pairs: each is measured once and written both ways,
     # so the table is symmetric by construction and the order a set would
@@ -317,8 +327,8 @@ def shared_amounts(nbrs, settlements, services):
         overlap = idx[i].intersection(idx[j])
         if overlap.is_empty:
             continue
-        length = sum(road.intersection(overlap).length
-                     for road in road_geoms) / 1000
+        length = sum(road.intersection(overlap).length * float(w)
+                     for road, w in road_weighted) / 1000
         if length > 0:
             table[(i, j)] = length
             table[(j, i)] = length
@@ -361,7 +371,7 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                  decay_form="inverse_linear", exponent=None, scale_km=None,
                  decay_distance="centroid", overlap_lending="whole",
                  transform_form="none", transform_stage=None,
-                 aggregation_rule="mean_minmax"):
+                 aggregation_rule="mean_minmax", road_weight_col=None):
     # Every parameter a form does not use is REJECTED, not ignored — the
     # mapped-knob test relies on an unimplemented combination raising.
     if decay_form not in DECAY_FORMS:
@@ -437,10 +447,12 @@ def compute_city(settlements, services, barriers, *, adjacency_rule,
                  if barrier_rule == "partial_weighted" else None)
     cent = _centroid_km(universe)
     geom = universe.set_index("USO_AREA_U").geometry
-    amounts = _service_amounts(universe, services)
+    amounts = _service_amounts(universe, services,
+                               road_weight_col=road_weight_col)
     # Built on the post-barrier links, which are exactly the pairs the
     # neighbour sum below looks up. Nothing is built at all under `whole`.
-    shared = (shared_amounts(nbrs, universe, services)
+    shared = (shared_amounts(nbrs, universe, services,
+                             road_weight_col=road_weight_col)
               if overlap_lending == "outside_receiver" else None)
 
     indexed = [i for i in universe["USO_AREA_U"]

@@ -72,20 +72,26 @@ def point_counts(polygon_gdf, point_gdf, *, count_col, id_col="USO_AREA_U"):
     return out
 
 
-def _length_in_polygon(small_gdf, poly_geom_col, line_geom_col):
-    """Total length (km) of the line pieces inside one polygon."""
+def _length_in_polygon(small_gdf, poly_geom_col, line_geom_col,
+                       weight_col=None):
+    """Total length (km) of the line pieces inside one polygon, optionally
+    multiplied by each line's weight (DEL-43: lanes as a capacity proxy)."""
     total_length = 0
     for i, row in small_gdf.iterrows():
         polygon = row[poly_geom_col]
         line = row[line_geom_col]
         intersection = polygon.intersection(line)
         length = intersection.length / 1000
+        if weight_col is not None:
+            length *= float(row[weight_col])
         total_length += length
     return total_length
 
 
-def road_lengths(polygon_gdf, line_gdf, *, length_col, id_col="USO_AREA_U"):
-    """Total (poly)line length in km inside each polygon."""
+def road_lengths(polygon_gdf, line_gdf, *, length_col, id_col="USO_AREA_U",
+                 weight_col=None):
+    """Total (poly)line length in km inside each polygon, optionally weighted
+    per feature by `weight_col` (DEL-43)."""
     polygon_gdf[length_col] = 0.0
 
     line_geom_col = "line_geometry"
@@ -98,7 +104,7 @@ def road_lengths(polygon_gdf, line_gdf, *, length_col, id_col="USO_AREA_U"):
         name_index = polygon_gdf[polygon_gdf[id_col] == name].index.values[0]
         total_road_length = _length_in_polygon(
             small_gdf=group, poly_geom_col="geometry",
-            line_geom_col=line_geom_col)
+            line_geom_col=line_geom_col, weight_col=weight_col)
         polygon_gdf.loc[name_index, length_col] = total_road_length
 
     return polygon_gdf
