@@ -1,0 +1,26 @@
+profile: ratified-2026
+reported: 4062
+unscored: 295
+settlements: 4357
+commit: 6433909
+
+[pop]
+  JJC       mean_rel=1.77728 mean_norm=0.0251738 n=749
+  SDA       mean_rel=1.22972 mean_norm=0.0174179 n=86
+  UAC       mean_rel=1.05687 mean_norm=0.0149697 n=1684
+  Planned   mean_rel=1 mean_norm=0.0141642 n=964
+  UV        mean_rel=0.847265 mean_norm=0.0120008 n=138
+  RUAC      mean_rel=0.716494 mean_norm=0.0101485 n=393
+  JJR       mean_rel=0.400546 mean_norm=0.0056734 n=48
+  ramp_clip=(0, 14.4082)
+
+[popdensity]
+  UV        mean_rel=1.27371 mean_norm=0.0669944 n=138
+  JJR       mean_rel=1.17965 mean_norm=0.0620465 n=48
+  Planned   mean_rel=1 mean_norm=0.0525976 n=964
+  RUAC      mean_rel=0.922936 mean_norm=0.0485443 n=393
+  UAC       mean_rel=0.52873 mean_norm=0.0278099 n=1684
+  SDA       mean_rel=0.516858 mean_norm=0.0271855 n=86
+  JJC       mean_rel=0.0601765 mean_norm=0.00316514 n=749
+  ramp_clip=(0, 6.99144)
+

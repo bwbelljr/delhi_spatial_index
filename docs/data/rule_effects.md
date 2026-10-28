@@ -67,9 +67,11 @@ down.
   the partial rule drops only fully covered shared boundaries.
 - `settlements_list_changed` — how many settlements' stored neighbour list
   (the set of ids, not the weights) differs between the two rules.
-- `preprocess_seconds` — the wall-clock cost of rebuilding the neighbours
-  artifact under the partial rule, so the one-time cost of adopting it is on
-  the record next to its effect.
+- **Not in the block:** the wall-clock cost of rebuilding the neighbours
+  artifact under the partial rule. It changes run to run, so it is printed
+  to the log (`preprocess_seconds: …` on stderr) instead of being pinned
+  inside the fenced bytes; the one-time adoption cost is therefore on the
+  record beside the effect without making the block unreproducible.
 - `psi_code_<denom>_<TYPE>` / `psi_partial_<denom>_<TYPE>` (and, where both
   runs carry `norm_psi`, `norm_code_<denom>_<TYPE>` /
   `norm_partial_<denom>_<TYPE>`) — the mean unnormalised (and normalised) PSI
@@ -89,7 +91,6 @@ median_fractional_w: 0.938525
 links_kept_code_2025: 21211
 links_kept_partial: 29118
 settlements_list_changed: 3155
-preprocess_seconds: 864.935
 n_pop_Planned: 964
 n_pop_UAC: 1684
 n_pop_RUAC: 393
@@ -237,10 +238,11 @@ result here that could change a sentence in the paper rather than a number.
 Both are Raj's to weigh: they are what adopting his own partial-barrier
 decision costs, and neither is a reason on its own to abandon it.
 
-**Cost.** Rebuilding the neighbours artifact under this rule took
-`864.935` seconds (14.4 minutes) on 4,357 settlements — a one-off per
-profile, since the barrier block is in the methodology stamp and `compute`
-refuses a mismatched artifact.
+**Cost.** Rebuilding the neighbours artifact under this rule is a one-off
+per profile, since the barrier block is in the methodology stamp and
+`compute` refuses a mismatched artifact. The measured wall-clock time is
+printed to the log rather than pinned here — it varies with the machine and
+the cache state, and a pinned value would make these bytes unreproducible.
 
 ## The same classification, hand-counted
 

@@ -60,7 +60,7 @@ def write(tmp_path, text, name="p.yaml"):
 # says so.
 SHIPPED = [
     "adj-touch", "band-0km", "band-10km", "band-1km", "band-5km", "code-2025",
-    "manuscript",
+    "manuscript", "ratified-2026", "reclass-media",
     "decay-none", "decay-power05", "decay-power2", "decay-exp2km",
     "decay-exp5km", "decay-boundary",
     "services-no-ration", "services-no-bank",
@@ -805,3 +805,38 @@ def test_an_unknown_second_normalization_is_refused(tmp_path):
     with pytest.raises(ConfigError, match="not allowed"):
         load_config(write(tmp_path, text, name="typo.yaml"),
                     data_dir=str(tmp_path))
+
+
+def test_ratified_profile_pins_the_decided_values(tmp_path):
+    """One assertion per decided value in the spec's table (the 26 Oct
+    instruction, value for value). The two still-open rows —
+    transform.form and aggregation.rule — carry the code-2025 values by
+    default and stay so until Raj decides; a later decision is a one-line
+    profile edit, not a new profile."""
+    cfg = load_config("ratified-2026", data_dir=str(tmp_path))
+    m = cfg.methodology
+    assert m.adjacency.rule == "touch"
+    assert m.adjacency.max_distance_km is None
+    assert m.barrier.rule == "partial_weighted"
+    assert m.barrier.buffer_m == 5.0
+    assert m.barrier.combine == "any"
+    assert m.overlap.lending == "outside_receiver"
+    assert (m.decay.form, m.decay.distance, m.decay.distance_unit) == \
+        ("inverse_linear", "centroid", "km")
+    assert m.transform.form == "none"
+    assert m.aggregation.rule == "mean_minmax"
+    assert m.roads == "eq4_own_only"
+    assert m.second_normalization == "planned_relative"
+    assert m.exclusion.types == ("RV", "Industrial", "Other")
+    assert m.exclusion.stage == "post_neighbors"
+    assert m.exclusion.absent_neighbor == "contributes"
+    assert cfg.categories.scheme == "uso-10"
+    assert set(cfg.categories.mapping) == DELHI_TYPES
+    assert all(source == category
+               for source, category in cfg.categories.mapping.items())
+    assert cfg.outputs.denominators == ("pop", "popdensity")
+    assert cfg.outputs.formats == ("csv", "shp", "joblib")
+    assert cfg.validate.max_missing_population == 15
+    assert cfg.paths.neighbors_artifact == \
+        "colonies_neighbors_ratified-2026.joblib"
+    assert cfg.paths.out_dir == tmp_path

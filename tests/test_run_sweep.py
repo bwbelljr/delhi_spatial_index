@@ -56,8 +56,8 @@ def test_a_stamp_mismatch_forces_a_rebuild(tmp_path):
                              geometry=[Pt(0, 0)], crs="EPSG:7760")
     frame.attrs["methodology"] = {
         "adjacency": {"rule": "within_distance", "max_distance_km": 5.0},
-        "barrier": {"rule": "global_asymmetric", "combine": "any",
-                    "buffer_m": None}}
+        "barrier": {"rule": "partial_weighted", "combine": "any",
+                    "buffer_m": 5.0}}
     assert not run_sweep.artifact_matches(frame, load_config("band-1km"))
     assert run_sweep.artifact_matches(frame, load_config("band-5km"))
 
@@ -332,8 +332,8 @@ def test_plan_point_reads_a_matching_artifact_at_most_once(tmp_path,
                              crs="EPSG:7760")
     frame.attrs["methodology"] = {
         "adjacency": {"rule": "within_distance", "max_distance_km": 5.0},
-        "barrier": {"rule": "global_asymmetric", "combine": "any",
-                    "buffer_m": None}}
+        "barrier": {"rule": "partial_weighted", "combine": "any",
+                    "buffer_m": 5.0}}
     artifact.parent.mkdir(parents=True, exist_ok=True)
     delhi_io.write_neighbors(frame, artifact)
 

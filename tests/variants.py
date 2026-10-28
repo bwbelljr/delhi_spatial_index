@@ -10,6 +10,9 @@ variant that one day needs `touch`/`bbox` will add one then.
 
 A variant states each block it overrides IN FULL, because the CLI round trip
 replaces `methodology.<block>` wholesale: no key is ever inherited. A
+`services` key (DEL-62) is the exception by design: it is a per-kind,
+per-service overlay written into `raw["services"]` by `oracle_profile_path`,
+beside the methodology overrides — never through the reference-kwarg table. A
 variant that does not override `adjacency` at all keeps the `code` base's
 `bbox`. A value is either such a full block mapping or (DEL-63) a scalar
 for a single top-level methodology key — `second_normalization` is one

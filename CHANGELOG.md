@@ -7,6 +7,42 @@ section accumulates changes on in-flight branches.
 
 ## [Unreleased]
 
+- **Variants can override services (DEL-62).** A `VARIANTS` entry may carry a `services` block — a per-kind, per-service overlay written verbatim into the derived profile's `services:` by `oracle_profile_path`, beside the methodology overrides. The reference-kwarg walker skips it explicitly, so the methodology vocabulary stays honest. No variant row uses the channel yet; the lane-weighted-roads row (DEL-43) is its first customer.
+- **Media reclassification is an appendix variant (DEL-53).** The students' 105 single-type changes (81 RV → UV, 4,342/4,342 IDs matched) run through `reclass-media`, the ratified profile pointing at a `USO_RECLAS` layer copy. The category ordering is identical on both denominators; only UV's own level moves on density. Table and verdict in `docs/data/media_reclass.md`. No production code.
+- **The distance-band sweep runs on the ratified rules (DEL-36).**
+  `band-1km`, `band-5km` and `band-10km` are now the ratified profile with
+  only the adjacency pair moved; `summarize_sweep` gained
+  `--baseline-profile`, so the comparison run can be `ratified-2026` (its
+  own profile-named artifact) instead of `code-2025`. The appendix table
+  lives in `docs/data/distance_bands.md`: rank stability only, never level
+  comparisons — Spearman 0.795 at 1 km, 0.738 at 5 and 10 km, top-decile
+  overlap 0.42/0.32/0.31 against the touch baseline.
+- **Paper figures render from the ratified run (DEL-33).**
+  `scripts/render_paper_figures.py` turns the DEL-32 CSVs into the five
+  paper figures: the planned-relative headline (bars by type and the
+  full-Delhi map), the JJC-vs-Planned juxtaposition, and min-max appendix
+  versions of the first two. Committed under `docs/figures/ratified-2026/`
+  with a manifest (row counts, per-type means, ramp clip, commit).
+  - Only the seven reported types appear as a category; settlements with
+    no PSI row (295: RV, Industrial, Other, and 15 without population) are
+    drawn grey.
+  - Two renders on one machine are byte-identical — the determinism the
+    integration test asserts.
+- **The ratified rules now ship as one profile (DEL-31).** `ratified-2026`
+  — a copy of `code-2025` with the decided values: `touch` adjacency,
+  `partial_weighted` barrier at the configurable `5 m`, `outside_receiver`
+  overlap lending, `eq4_own_only` roads, `planned_relative` second
+  normalization (the reported scale, 1 = the average planned colony), and
+  the `[RV, Industrial, Other]` exclusion at `post_neighbors` with
+  `contributes`.
+  - **No shipped number moves.** `code-2025.yaml`, `manuscript.yaml` and
+    every existing fixture are byte-identical; the profile is pinned by its
+    two new production fixtures, and its profile-named `neighbors_artifact`
+    default means a fresh `preprocess` writes
+    `colonies_neighbors_ratified-2026.joblib` beside the historic artifact.
+  - **Still open — `transform.form` and `aggregation.rule`** — the profile
+    carries the `code-2025` values by default; a later decision is a
+    one-line profile edit.
 - **The reported PSI can now be the planned-relative scale (DEL-63).**
   `methodology.second_normalization` is a three-value enum instead of a
   boolean: `minmax` (today's `true`, emits `norm_psi`), `none` (today's

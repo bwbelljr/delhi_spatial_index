@@ -68,6 +68,10 @@ IGNORED_VARIANT_KEYS = frozenset({("decay", "distance_unit"),
 def _variant_overrides(spec):
     out = {}
     for block, mapping in spec.items():
+        # DEL-62: a `services` block is NOT methodology — it is written into
+        # `raw["services"]` by `oracle_profile_path`, beside these overrides.
+        if block == "services":
+            continue
         # DEL-63: a variant value is either a full block mapping or a
         # scalar for a single top-level key (the key name repeated).
         pairs = ([(block, mapping)] if isinstance(mapping, str)
