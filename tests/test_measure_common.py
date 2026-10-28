@@ -432,6 +432,8 @@ DOCUMENT_GENERATORS = {
     "layer_pathologies.md": "scripts/measure_layer_pathologies.py",
     "phase6_sweep.md": "scripts/summarize_sweep.py",
     "distance_bands.md": "scripts/summarize_sweep.py",
+    "decay_sweep.md": "scripts/summarize_sweep.py",
+    "adjacency_variants.md": "scripts/summarize_sweep.py",
 }
 
 
