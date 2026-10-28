@@ -94,8 +94,8 @@ POINT_SERVICES = {
 # TWO LineString rows, so "sum every road row" is load-bearing: the first row
 # alone gives M nothing.
 ROADS = [
-    ("H+L", [(1500, 200), (1500, 2200)]),   # 0.6 km in L, 1.2 km in H
-    ("M",   [(4800, 800), (8200, 800)]),    # 1.0 km in each part of M
+    ("H+L", [(1500, 200), (1500, 2200)], 2),   # 0.6 km in L, 1.2 km in H
+    ("M",   [(4800, 800), (8200, 800)], 6),    # 1.0 km in each part of M
 ]
 
 ROAD_KM = {"H": 1.2, "L": 0.6, "M": 2.0}
@@ -275,7 +275,8 @@ def main():
     points = [(service, host.split("+"), Point(*_pt(x, y)))
               for service, pts in POINT_SERVICES.items()
               for host, x, y in pts]
-    roads = [LineString([_pt(*p) for p in coords]) for _, coords in ROADS]
+    roads = [LineString([_pt(*p) for p in coords])
+             for _, coords, _lanes in ROADS]
     _assert_relations(geoms, points, roads)
 
     settlement_feats = []
@@ -297,10 +298,10 @@ def main():
             service_feats.append(_feature(
                 {"type": "Point", "coordinates": _pt(x, y)},
                 {"service": service, "host": host}))
-    for host, coords in ROADS:
+    for host, coords, lanes in ROADS:
         service_feats.append(_feature(
             {"type": "LineString", "coordinates": [_pt(*p) for p in coords]},
-            {"service": "road", "host": host}))
+            {"service": "road", "host": host, "lanes": lanes}))
     _dump(OUT / "services.geojson", service_feats)
 
     # No barrier coverage in this tier (spec § 2): an EMPTY collection, which
