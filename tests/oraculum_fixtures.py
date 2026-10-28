@@ -98,7 +98,8 @@ def oracle_config(base, city=ORACULUM):
 
 
 def oracle_profile_path(base, directory, city=ORACULUM, *,
-                        methodology_overrides=None, name=None):
+                        methodology_overrides=None, services_overrides=None,
+                        name=None):
     """Write the derived profile as YAML into `directory`; return the path,
     for the tests that drive the real CLI with `--config <path>`.
 
@@ -130,6 +131,11 @@ def oracle_profile_path(base, directory, city=ORACULUM, *,
     for block, values in (methodology_overrides or {}).items():
         raw["methodology"][block] = (values if isinstance(values, str)
                                      else dict(values))
+    # DEL-62: the services channel, beside — deliberately not through — the
+    # methodology overrides. The overlay is per kind and per service name, so
+    # a variant never has to restate the five services it keeps.
+    for kind, values in (services_overrides or {}).items():
+        raw["services"].setdefault(kind, {}).update(dict(values))
     stem = base if name is None else f"{base}.{name}"
     path = Path(directory) / f"{stem}.oracle.yaml"
     path.write_text(yaml.safe_dump(raw, sort_keys=False))
