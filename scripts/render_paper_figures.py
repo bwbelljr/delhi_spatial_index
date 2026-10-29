@@ -161,7 +161,6 @@ def _save(fig, out_dir, name):
 
 def render_psi_by_type(run, out_dir, *, scale="rel"):
     """Figure 4: seven types × two denominators, headlines then appendix."""
-    column = SCALE_COLUMNS[scale]
     means_column = "mean_rel" if scale == "rel" else "mean_norm"
     means = {denom: type_means(run[denom]) for denom in DENOMINATORS}
     order = list(means[HEADLINE_DENOM].index)

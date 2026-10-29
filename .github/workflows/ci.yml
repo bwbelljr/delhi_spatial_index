@@ -28,6 +28,9 @@ jobs:
       - name: Install dependencies (lockfile must be current)
         run: uv sync --locked
 
+      - name: Lint (ruff — pyflakes + syntax, archive/ excluded)
+        run: uv run ruff check .
+
       - name: Oracle test suite
         run: uv run pytest -W error
 

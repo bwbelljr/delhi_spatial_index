@@ -5,8 +5,6 @@ build could be 'fixed' by hand-editing the fixture, turning the refactor's
 correctness proof into a record of whatever the code now does. From cycle 3C
 this runs for BOTH cities (spec § 4.2).
 """
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
